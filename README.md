@@ -37,11 +37,6 @@ A modern, all-in-one Windows optimization utility with a persistent, tabbed, dar
 - Disable Game Bar
 - Disable Copilot
 
-## Screenshots
-
-![Main UI](screenshot-main.png)
-![Optional Tweaks](screenshot-optional.png)
-![About Panel](screenshot-about.png)
 
 ## Troubleshooting
 
@@ -52,7 +47,6 @@ A modern, all-in-one Windows optimization utility with a persistent, tabbed, dar
 ## Credits
 
 - Created by Rat
-- Inspired by Chris Titus Tech
 - Uses [Nvidia Profile Inspector](https://github.com/Orbmu2k/nvidiaProfileInspector)
 
 ## License
