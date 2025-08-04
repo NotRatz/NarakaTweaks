@@ -3,6 +3,27 @@
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
+
+# --- Auto-download all required files if missing (for irm ... | iex users) ---
+$needDownload = $false
+if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
+    $needDownload = $true
+}
+if ($needDownload) {
+    $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
+    $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
+    $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
+    Write-Host 'Downloading full NarakaTweaks package...'
+    Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+    Remove-Item $zipPath -Force
+    $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
+    $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
+    Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$mainScript"
+    exit
+}
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
 RatzTweaks requires Windows PowerShell 5.1 (not PowerShell 7+).
