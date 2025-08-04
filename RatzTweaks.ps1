@@ -1,5 +1,8 @@
 
 # --- PowerShell version check and environment guard ---
+# Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
+if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
 RatzTweaks requires Windows PowerShell 5.1 (not PowerShell 7+).
