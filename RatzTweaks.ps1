@@ -1,8 +1,17 @@
 
+
 # --- PowerShell version check and environment guard ---
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
+
+# --- Suppress all PowerShell window output ---
+function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
+function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
+$InformationPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'SilentlyContinue'
 
 # --- Auto-download all required files if missing (for irm ... | iex users) ---
 $needDownload = $false
@@ -57,11 +66,12 @@ trap {
 }
 # Show-LogWindow: Displays the log in a scrollable window
 function Show-LogWindow {
+
     $form = New-Object Windows.Forms.Form
     $form.Text = 'RatzTweaks Log'
     $form.Size = New-Object Drawing.Size(700, 500)
     $form.StartPosition = 'CenterScreen'
-    $form.BackColor = [Drawing.Color]::FromArgb(32,32,32)
+    $form.BackColor = [Drawing.Color]::Black
     $form.ForeColor = [Drawing.Color]::White
 
     $txtLog = New-Object Windows.Forms.TextBox
@@ -156,24 +166,26 @@ function Hide-AllPanels {
 
 # Modern dark-themed, sidebar/tabbed UI inspired by Chris Titus Tech
 function Show-IntroUI {
+
     $form = New-Object Windows.Forms.Form
     $form.Text = '' # Remove text for custom top bar
     $form.Size = New-Object Drawing.Size(900, 600)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'None' # Remove Windows title bar
     $form.MaximizeBox = $false
-    $form.BackColor = [Drawing.Color]::FromArgb(32,32,32)
+    $form.BackColor = [Drawing.Color]::Black
     $form.ForeColor = [Drawing.Color]::White
 
     # Custom Top Bar
+
     $topBar = New-Object Windows.Forms.Panel
     $topBar.Size = New-Object Drawing.Size(900, 40)
     $topBar.Location = New-Object Drawing.Point(0,0)
-    $topBar.BackColor = [Drawing.Color]::FromArgb(20,20,20)
+    $topBar.BackColor = [Drawing.Color]::Black
     $form.Controls.Add($topBar)
 
     $lblTitle = New-Object Windows.Forms.Label
-    $lblTitle.Text = 'RatzTweaks Utility'
+    $lblTitle.Text = 'Rat'
     $lblTitle.Font = New-Object Drawing.Font('Segoe UI', 16, [Drawing.FontStyle]::Bold)
     $lblTitle.ForeColor = [Drawing.Color]::White
     $lblTitle.AutoSize = $true
@@ -692,28 +704,40 @@ function Invoke-AllTweaks {
         'reg add "HKCU\Control Panel\Keyboard" /v "KeyboardDelay" /t REG_SZ /d "0" /f',
         'reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "C:\\Windows\\System32\\dwm.exe" /t REG_SZ /d "NoDTToDITMouseBatch" /f'
     )
+
     foreach ($cmd in $regCmds) {
         try {
-            Invoke-Expression $cmd
+            # Extract the registry path from the reg add command and pre-create the key if needed
+            if ($cmd -match 'reg add "([^"]+)"') {
+                $regPath = $matches[1]
+                $hive, $subkey = $regPath -split('\\',2)
+                if ($hive -and $subkey) {
+                    $psHive = switch ($hive.ToUpper()) {
+                        'HKLM' { 'HKLM:' }
+                        'HKCU' { 'HKCU:' }
+                        default { $hive + ':' }
+                    }
+                    $fullKey = $psHive + $subkey
+                    if (-not (Test-Path $fullKey)) { New-Item -Path $fullKey -Force | Out-Null }
+                }
+            }
+            Invoke-Expression $cmd 2>$null
         } catch {
-            $errMsg = "ERROR running: $cmd`n$($_.Exception.Message)"
-            if ($script:txtProgress) { $script:txtProgress.Lines += $errMsg }
-            if ($global:RatzLog) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $errMsg }
+            # Suppress error output, optionally log to file if needed
         }
     }
 
     # --- Always run all utility tweaks (formerly optional, now always run, no user input) ---
+
     try {
         Disable-MSIMode
         Disable-BackgroundApps
         Disable-Widgets
         Disable-Gamebar
         Disable-Copilot
-        Add-Log 'All utility tweaks applied.'
+        # No logging to PowerShell window
     } catch {
-        $errMsg = "ERROR running utility tweaks: $($_.Exception.Message)"
-        if ($script:txtProgress) { $script:txtProgress.Lines += $errMsg }
-        if ($global:RatzLog) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $errMsg }
+        # Suppress error output
     }
 
     # Set timer resolution using embedded C# service (no external EXE needed)
@@ -814,34 +838,50 @@ function Disable-MSIMode {
 
 function Disable-BackgroundApps {
     try {
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' -Name 'GlobalUserDisabled' -Value 1 -Type DWord -Force
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy' -Name 'LetAppsRunInBackground' -Value 2 -Type DWord -Force
+        $key1 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications'
+        $key2 = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
+        if (-not (Test-Path $key1)) { New-Item -Path $key1 -Force | Out-Null }
+        if (-not (Test-Path $key2)) { New-Item -Path $key2 -Force | Out-Null }
+        Set-ItemProperty -Path $key1 -Name 'GlobalUserDisabled' -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'LetAppsRunInBackground' -Value 2 -Type DWord -Force
         Add-Log 'Background Apps disabled.'
     } catch { Add-Log "ERROR in Disable-BackgroundApps: $($_.Exception.Message)" }
 }
 
 function Disable-Widgets {
     try {
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -Name 'AllowNewsAndInterests' -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds' -Name 'ShellFeedsTaskbarViewMode' -Value 2 -Type DWord -Force
+        $key1 = 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh'
+        $key2 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds'
+        if (-not (Test-Path $key1)) { New-Item -Path $key1 -Force | Out-Null }
+        if (-not (Test-Path $key2)) { New-Item -Path $key2 -Force | Out-Null }
+        Set-ItemProperty -Path $key1 -Name 'AllowNewsAndInterests' -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'ShellFeedsTaskbarViewMode' -Value 2 -Type DWord -Force
         Add-Log 'Widgets disabled.'
     } catch { Add-Log "ERROR in Disable-Widgets: $($_.Exception.Message)" }
 }
 
 function Disable-Gamebar {
     try {
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' -Name 'AppCaptureEnabled' -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\GameBar' -Name 'ShowStartupPanel' -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\GameBar' -Name 'AutoGameModeEnabled' -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\GameBar' -Name 'GamePanelStartupTipIndex' -Value 3 -Type DWord -Force
+        $key1 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'
+        $key2 = 'HKCU:\Software\Microsoft\GameBar'
+        if (-not (Test-Path $key1)) { New-Item -Path $key1 -Force | Out-Null }
+        if (-not (Test-Path $key2)) { New-Item -Path $key2 -Force | Out-Null }
+        Set-ItemProperty -Path $key1 -Name 'AppCaptureEnabled' -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'ShowStartupPanel' -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'AutoGameModeEnabled' -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'GamePanelStartupTipIndex' -Value 3 -Type DWord -Force
         Add-Log 'Game Bar disabled.'
     } catch { Add-Log "ERROR in Disable-Gamebar: $($_.Exception.Message)" }
 }
 
 function Disable-Copilot {
     try {
-        Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ShowCopilotButton' -Value 0 -Type DWord -Force
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot' -Name 'TurnOffWindowsCopilot' -Value 1 -Type DWord -Force
+        $key1 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+        $key2 = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'
+        if (-not (Test-Path $key1)) { New-Item -Path $key1 -Force | Out-Null }
+        if (-not (Test-Path $key2)) { New-Item -Path $key2 -Force | Out-Null }
+        Set-ItemProperty -Path $key1 -Name 'ShowCopilotButton' -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path $key2 -Name 'TurnOffWindowsCopilot' -Value 1 -Type DWord -Force
         Add-Log 'Copilot disabled.'
     } catch { Add-Log "ERROR in Disable-Copilot: $($_.Exception.Message)" }
 }
