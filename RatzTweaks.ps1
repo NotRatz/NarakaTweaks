@@ -8,13 +8,14 @@ if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 
 # --- Show name in big text in PowerShell window, then suppress all further output ---
 Write-Host ''
-Write-Host 'RRRRR    AAA   TTTTT' -ForegroundColor Cyan
-Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
-Write-Host 'RRRRR   AAAAA    T  ' -ForegroundColor Cyan
-Write-Host 'RR RR   A   A    T  ' -ForegroundColor Cyan
-Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
+Write-Host '┌───────────────────────────────────────────────┐' -ForegroundColor DarkGreen
+Write-Host '│  R A T Z   T W E A K S   T E R M I N A L     │' -ForegroundColor Green
+Write-Host '├───────────────────────────────────────────────┤' -ForegroundColor DarkGreen
+Write-Host '│  User: RAT           Host: NARAKA-PC         │' -ForegroundColor Gray
+Write-Host '│  Mode: HACKER         Status: READY          │' -ForegroundColor Gray
+Write-Host '└───────────────────────────────────────────────┘' -ForegroundColor DarkGreen
 Write-Host ''
-Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
+Write-Host 'rat@naraka:~$' -ForegroundColor Green -NoNewline; Write-Host ' ./RatzTweaks.ps1' -ForegroundColor White
 Write-Host ''
 Write-Host 'To close: [X] in top right' -ForegroundColor DarkGray
 Write-Host ''
@@ -187,7 +188,7 @@ function Show-IntroUI {
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'None' # Remove Windows title bar
     $form.MaximizeBox = $false
-    $form.BackColor = [Drawing.Color]::Black
+    $form.BackColor = [Drawing.Color]::FromArgb(18,18,18)
     $form.ForeColor = [Drawing.Color]::White
 
     # Custom Top Bar
@@ -195,13 +196,13 @@ function Show-IntroUI {
     $topBar = New-Object Windows.Forms.Panel
     $topBar.Size = New-Object Drawing.Size(900, 40)
     $topBar.Location = New-Object Drawing.Point(0,0)
-    $topBar.BackColor = [Drawing.Color]::Black
+    $topBar.BackColor = [Drawing.Color]::FromArgb(10,40,10)
     $form.Controls.Add($topBar)
 
     $lblTitle = New-Object Windows.Forms.Label
     $lblTitle.Text = 'Rat Naraka Tweaks'
-    $lblTitle.Font = New-Object Drawing.Font('Segoe UI', 16, [Drawing.FontStyle]::Bold)
-    $lblTitle.ForeColor = [Drawing.Color]::White
+    $lblTitle.Font = New-Object Drawing.Font('Consolas', 18, [Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [Drawing.Color]::Lime
     $lblTitle.AutoSize = $true
     $lblTitle.Location = New-Object Drawing.Point(20, 7)
     $topBar.Controls.Add($lblTitle)
@@ -211,10 +212,10 @@ function Show-IntroUI {
     $btnClose.Text = 'X'
     $btnClose.Size = New-Object Drawing.Size(40, 32)
     $btnClose.Location = New-Object Drawing.Point(850, 4)
-    $btnClose.BackColor = [Drawing.Color]::FromArgb(40,40,40)
-    $btnClose.ForeColor = [Drawing.Color]::White
+    $btnClose.BackColor = [Drawing.Color]::FromArgb(30,60,30)
+    $btnClose.ForeColor = [Drawing.Color]::Lime
     $btnClose.FlatStyle = 'Flat'
-    $btnClose.Font = New-Object Drawing.Font('Segoe UI', 14, [Drawing.FontStyle]::Bold)
+    $btnClose.Font = New-Object Drawing.Font('Consolas', 14, [Drawing.FontStyle]::Bold)
     $btnClose.Add_Click({ $form.Close() })
     $topBar.Controls.Add($btnClose)
 
@@ -236,14 +237,14 @@ function Show-IntroUI {
     $sidebar = New-Object Windows.Forms.Panel
     $sidebar.Size = New-Object Drawing.Size(180, 560)
     $sidebar.Location = New-Object Drawing.Point(0,40)
-    $sidebar.BackColor = [Drawing.Color]::FromArgb(24,24,24)
+    $sidebar.BackColor = [Drawing.Color]::FromArgb(10,30,10)
     $form.Controls.Add($sidebar)
 
     # Main content panel
     $mainPanel = New-Object Windows.Forms.Panel
     $mainPanel.Size = New-Object Drawing.Size(700, 560)
     $mainPanel.Location = New-Object Drawing.Point(180,40)
-    $mainPanel.BackColor = [Drawing.Color]::FromArgb(40,40,40)
+    $mainPanel.BackColor = [Drawing.Color]::FromArgb(18,18,18)
     $form.Controls.Add($mainPanel)
 
     # Sidebar buttons
@@ -251,40 +252,40 @@ function Show-IntroUI {
     $btnMain.Text = 'Main Tweaks'
     $btnMain.Size = New-Object Drawing.Size(160, 50)
     $btnMain.Location = New-Object Drawing.Point(10, 30)
-    $btnMain.BackColor = [Drawing.Color]::FromArgb(48,48,48)
-    $btnMain.ForeColor = [Drawing.Color]::White
+    $btnMain.BackColor = [Drawing.Color]::FromArgb(20,80,20)
+    $btnMain.ForeColor = [Drawing.Color]::Lime
     $btnMain.FlatStyle = 'Flat'
-    $btnMain.Font = New-Object Drawing.Font('Segoe UI', 12, [Drawing.FontStyle]::Bold)
+    $btnMain.Font = New-Object Drawing.Font('Consolas', 12, [Drawing.FontStyle]::Bold)
     $sidebar.Controls.Add($btnMain)
 
     $btnGPU = New-Object Windows.Forms.Button
     $btnGPU.Text = 'GPU Tweaks'
     $btnGPU.Size = New-Object Drawing.Size(160, 50)
     $btnGPU.Location = New-Object Drawing.Point(10, 90)
-    $btnGPU.BackColor = [Drawing.Color]::FromArgb(48,48,48)
-    $btnGPU.ForeColor = [Drawing.Color]::White
+    $btnGPU.BackColor = [Drawing.Color]::FromArgb(20,80,20)
+    $btnGPU.ForeColor = [Drawing.Color]::Lime
     $btnGPU.FlatStyle = 'Flat'
-    $btnGPU.Font = New-Object Drawing.Font('Segoe UI', 12, [Drawing.FontStyle]::Bold)
+    $btnGPU.Font = New-Object Drawing.Font('Consolas', 12, [Drawing.FontStyle]::Bold)
     $sidebar.Controls.Add($btnGPU)
 
     $btnOptional = New-Object Windows.Forms.Button
     $btnOptional.Text = 'Optional Tweaks'
     $btnOptional.Size = New-Object Drawing.Size(160, 50)
     $btnOptional.Location = New-Object Drawing.Point(10, 150)
-    $btnOptional.BackColor = [Drawing.Color]::FromArgb(48,48,48)
-    $btnOptional.ForeColor = [Drawing.Color]::White
+    $btnOptional.BackColor = [Drawing.Color]::FromArgb(20,80,20)
+    $btnOptional.ForeColor = [Drawing.Color]::Lime
     $btnOptional.FlatStyle = 'Flat'
-    $btnOptional.Font = New-Object Drawing.Font('Segoe UI', 12, [Drawing.FontStyle]::Bold)
+    $btnOptional.Font = New-Object Drawing.Font('Consolas', 12, [Drawing.FontStyle]::Bold)
     $sidebar.Controls.Add($btnOptional)
 
     $btnAbout = New-Object Windows.Forms.Button
     $btnAbout.Text = 'About'
     $btnAbout.Size = New-Object Drawing.Size(160, 50)
     $btnAbout.Location = New-Object Drawing.Point(10, 210)
-    $btnAbout.BackColor = [Drawing.Color]::FromArgb(48,48,48)
-    $btnAbout.ForeColor = [Drawing.Color]::White
+    $btnAbout.BackColor = [Drawing.Color]::FromArgb(20,80,20)
+    $btnAbout.ForeColor = [Drawing.Color]::Lime
     $btnAbout.FlatStyle = 'Flat'
-    $btnAbout.Font = New-Object Drawing.Font('Segoe UI', 12, [Drawing.FontStyle]::Bold)
+    $btnAbout.Font = New-Object Drawing.Font('Consolas', 12, [Drawing.FontStyle]::Bold)
     $sidebar.Controls.Add($btnAbout)
 
     # Progress/Log area (larger)
@@ -294,8 +295,8 @@ function Show-IntroUI {
     $txtProgress.ScrollBars = 'Vertical'
     $txtProgress.Size = New-Object Drawing.Size(660, 140)
     $txtProgress.Location = New-Object Drawing.Point(20, 370)
-    $txtProgress.BackColor = [Drawing.Color]::FromArgb(24,24,24)
-    $txtProgress.ForeColor = [Drawing.Color]::White
+    $txtProgress.BackColor = [Drawing.Color]::FromArgb(10,30,10)
+    $txtProgress.ForeColor = [Drawing.Color]::Lime
     $txtProgress.Font = New-Object Drawing.Font('Consolas', 10)
     $mainPanel.Controls.Add($txtProgress)
 
@@ -303,7 +304,7 @@ function Show-IntroUI {
     $panelMain = New-Object Windows.Forms.Panel
     $panelMain.Size = New-Object Drawing.Size(660, 320)
     $panelMain.Location = New-Object Drawing.Point(20, 30)
-    $panelMain.BackColor = $mainPanel.BackColor
+    $panelMain.BackColor = [Drawing.Color]::FromArgb(18,18,18)
     $mainPanel.Controls.Add($panelMain)
 
     $panelGPU = New-Object Windows.Forms.Panel
@@ -332,8 +333,8 @@ function Show-IntroUI {
     $lblMain.Text = "Welcome to RatzTweaks!`n`nThis utility will apply all main system tweaks, registry edits, and timer resolution optimizations.`n`nClick 'Start' to begin."
     $lblMain.Size = New-Object Drawing.Size(480, 120)
     $lblMain.Location = New-Object Drawing.Point(10, 30)
-    $lblMain.Font = New-Object Drawing.Font('Segoe UI', 13, [Drawing.FontStyle]::Bold)
-    $lblMain.ForeColor = [Drawing.Color]::White
+    $lblMain.Font = New-Object Drawing.Font('Consolas', 13, [Drawing.FontStyle]::Bold)
+    $lblMain.ForeColor = [Drawing.Color]::Lime
     $panelMain.Controls.Add($lblMain)
 
 
