@@ -8,13 +8,15 @@ if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 
 # --- Show name in big text in PowerShell window, then suppress all further output ---
 Write-Host ''
-Write-Host '██████   █████  ███████' -ForegroundColor Cyan
-Write-Host '██   ██ ██   ██ ██     ' -ForegroundColor Cyan
-Write-Host '██████  ███████ █████  ' -ForegroundColor Cyan
-Write-Host '██      ██   ██ ██     ' -ForegroundColor Cyan
-Write-Host '██      ██   ██ ███████' -ForegroundColor Cyan
+Write-Host 'RRRRR    AAA   TTTTT' -ForegroundColor Cyan
+Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
+Write-Host 'RRRRR   AAAAA    T  ' -ForegroundColor Cyan
+Write-Host 'RR RR   A   A    T  ' -ForegroundColor Cyan
+Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
+Write-Host ''
+Write-Host 'To close: [X] in top right' -ForegroundColor DarkGray
 Write-Host ''
 Start-Sleep -Milliseconds 1200
 function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
