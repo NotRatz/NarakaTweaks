@@ -5,7 +5,18 @@
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 
-# --- Suppress all PowerShell window output ---
+
+# --- Show name in big text in PowerShell window, then suppress all further output ---
+Write-Host ''
+Write-Host '██████   █████  ███████' -ForegroundColor Cyan
+Write-Host '██   ██ ██   ██ ██     ' -ForegroundColor Cyan
+Write-Host '██████  ███████ █████  ' -ForegroundColor Cyan
+Write-Host '██      ██   ██ ██     ' -ForegroundColor Cyan
+Write-Host '██      ██   ██ ███████' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
+Write-Host ''
+Start-Sleep -Milliseconds 1200
 function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
 function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
 $InformationPreference = 'SilentlyContinue'
@@ -30,8 +41,9 @@ if ($needDownload) {
     $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
     $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
     Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$mainScript"
-    exit
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`"" -WindowStyle Hidden
+    # Ensure the original process exits immediately to prevent double execution
+    Stop-Process -Id $PID -Force
 }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
@@ -185,7 +197,7 @@ function Show-IntroUI {
     $form.Controls.Add($topBar)
 
     $lblTitle = New-Object Windows.Forms.Label
-    $lblTitle.Text = 'Rat'
+    $lblTitle.Text = 'Rat Naraka Tweaks'
     $lblTitle.Font = New-Object Drawing.Font('Segoe UI', 16, [Drawing.FontStyle]::Bold)
     $lblTitle.ForeColor = [Drawing.Color]::White
     $lblTitle.AutoSize = $true
