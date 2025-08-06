@@ -208,7 +208,7 @@ function Show-IntroUI {
 
     # Custom close button
     $btnClose = New-Object Windows.Forms.Button
-    $btnClose.Text = '✕'
+    $btnClose.Text = 'X'
     $btnClose.Size = New-Object Drawing.Size(40, 32)
     $btnClose.Location = New-Object Drawing.Point(850, 4)
     $btnClose.BackColor = [Drawing.Color]::FromArgb(40,40,40)
