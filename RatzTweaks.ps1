@@ -1,5 +1,3 @@
-
-
 # --- PowerShell version check and environment guard ---
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -385,7 +383,7 @@ function Show-IntroUI {
     $lblOptional.ForeColor = [Drawing.Color]::White
     $panelOptional.Controls.Add($lblOptional)
 
-    $utilityDir = Join-Path $PSScriptRoot 'UTILITY'
+    $utilityDir = Join-Path $script:SafeScriptRoot 'UTILITY'
     # Exclude 'option 10.' from the selectable tweaks (by filename or by name)
     $ps1Files = Get-ChildItem -Path $utilityDir -Filter '*.ps1' |
         Where-Object { $_.Name -notlike '*Disable Run as Admin.ps1' -and $_.BaseName -notmatch '^(10\.|option 10)' }
@@ -441,7 +439,7 @@ function Show-IntroUI {
     $panelOptional.Controls.Add($finishBtn)
 
     # About Panel Content with rat image
-    $imgPath = Join-Path $PSScriptRoot 'ratznaked.jpg'
+    $imgPath = Join-Path $script:SafeScriptRoot 'ratznaked.jpg'
     $imgWidth = 220
     $imgHeight = 140
     $imgX = 10
@@ -908,7 +906,7 @@ function Invoke-NVPI {
     if (!(Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
     $zipPath = Join-Path $tempDir 'nvidiaProfileInspector.zip'
     $nvpiExe = Join-Path $tempDir 'nvidiaProfileInspector.exe'
-    $nipPath = Join-Path $PSScriptRoot 'RatzSettings.nip'
+    $nipPath = Join-Path $script:SafeScriptRoot 'RatzSettings.nip'
     try {
         Invoke-WebRequest -Uri $nvpiUrl -OutFile $zipPath -UseBasicParsing
         Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -971,7 +969,7 @@ function Show-RestartPrompt {
     $form.Size = New-Object Drawing.Size(600,500)
     $form.StartPosition = 'CenterScreen'
 
-    $imgPath = Join-Path $PSScriptRoot 'ratz newds do not open plox\ratznaked.jpg'
+    $imgPath = Join-Path $script:SafeScriptRoot 'ratz newds do not open plox\ratznaked.jpg'
     if (Test-Path $imgPath) {
         $pic = New-Object Windows.Forms.PictureBox
         $pic.Image = [System.Drawing.Image]::FromFile($imgPath)
