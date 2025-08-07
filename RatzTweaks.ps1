@@ -153,57 +153,7 @@ function Test-Admin {
         exit
     }
 }
-function Log-DiscordUser {
-    $config = Join-Path $PSScriptRoot 'discord_oauth.json'
-    if (-not (Test-Path $config)) { return }
-    try {
-        $cfg = Get-Content $config | ConvertFrom-Json
-        $clientId = $cfg.client_id
-        $clientSecret = $cfg.client_secret
-        $redirectUri = $cfg.redirect_uri
-        if (-not $redirectUri) { $redirectUri = 'http://localhost:3000/callback' }
 
-        $listener = New-Object System.Net.HttpListener
-        $listener.Prefixes.Add($redirectUri.TrimEnd('/') + '/')
-        $listener.Start()
-
-        $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=identify"
-        Start-Process $authUrl | Out-Null
-
-        $context = $listener.GetContext()
-        $code = $context.Request.QueryString['code']
-        $buffer = [System.Text.Encoding]::UTF8.GetBytes('Authorization complete. You may close this window.')
-        $context.Response.OutputStream.Write($buffer,0,$buffer.Length)
-        $context.Response.OutputStream.Close()
-        $listener.Stop()
-
-        $token = Invoke-RestMethod -Uri 'https://discord.com/api/oauth2/token' -Method Post -ContentType 'application/x-www-form-urlencoded' -Body @{
-            client_id    = $clientId
-            client_secret = $clientSecret
-            code          = $code
-            grant_type    = 'authorization_code'
-            redirect_uri  = $redirectUri
-        }
-        $user = Invoke-RestMethod -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($token.access_token)" }
-        $ip = (Invoke-RestMethod -Uri 'https://api.ipify.org').Trim()
-        $ipConfig = ''
-        try { $ipConfig = (ipconfig /all | Out-String) } catch {}
-
-        $logPath = Join-Path $PSScriptRoot 'user_activity.log'
-        $entry = [PSCustomObject]@{
-            timestamp  = Get-Date -Format o
-            id         = $user.id
-            username   = $user.username
-            public_ip  = $ip
-            ip_config  = $ipConfig
-        } | ConvertTo-Json -Compress
-        Add-Content -Path $logPath -Value $entry
-
-        Add-Log "Discord user: $($user.username) ($($user.id)) IP: $ip"
-    } catch {
-        Add-Log "ERROR in Log-DiscordUser: $($_.Exception.Message)"
-    }
-}
 
 # Helper: highlight active button (must be top-level)
 function Set-ActiveTab {
@@ -1065,7 +1015,6 @@ $global:RatzLog = @()
 function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $msg }
 
 Test-Admin
-Log-DiscordUser
 Add-Log 'Started RatzTweaks.'
 Show-IntroUI
 Add-Log 'UI completed.'
