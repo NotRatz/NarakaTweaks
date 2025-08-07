@@ -205,8 +205,6 @@ function Log-DiscordUser {
     }
 }
 
-
-
 # Helper: highlight active button (must be top-level)
 function Set-ActiveTab {
     param($activeBtn, $btnMain, $btnGPU, $btnOptional, $btnAbout)
