@@ -902,7 +902,7 @@ function Disable-Copilot {
 
 function Invoke-NVPI {
     # Download NVPI (Nvidia Profile Inspector) and import RatzSettings.nip silently
-    $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v6.2.0/NVPI-R.zip'
+    $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
     $tempDir = Join-Path $env:TEMP 'NVPI'
     if (!(Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
     $zipPath = Join-Path $tempDir 'nvidiaProfileInspector.zip'
