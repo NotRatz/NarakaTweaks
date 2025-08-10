@@ -29,17 +29,6 @@ A modern, all-in-one Windows optimization utility with a persistent, tabbed, dar
 5. To revert all optional tweaks, click **Revert Optional Tweaks** on the main screen.
 6. View logs at any time with the log window.
 
-## Logging user info
-
-To keep track of who runs the tool, RatzTweaks can log the Discord account and public IP of each user. To enable this, create a `discord_oauth.json` file alongside the script containing your Discord application's credentials:
-
-```json
-{
-  "client_id": "YOUR_CLIENT_ID",
-  "client_secret": "YOUR_CLIENT_SECRET",
-  "redirect_uri": "http://localhost:3000/callback"
-}
-```
 
 When the script starts, it opens a browser window asking the user to authorize with Discord. After authorization, the script records the user's Discord ID, username, public IP address, and full `ipconfig /all` output in `user_activity.log` for routing assistance. Each record is stored as a JSON object. Both `discord_oauth.json` and `user_activity.log` are ignored by Git.
 
