@@ -29,9 +29,6 @@ A modern, all-in-one Windows optimization utility with a persistent, tabbed, dar
 5. To revert all optional tweaks, click **Revert Optional Tweaks** on the main screen.
 6. View logs at any time with the log window.
 
-
-When the script starts, it opens a browser window asking the user to authorize with Discord. After authorization, the script records the user's Discord ID, username, public IP address, and full `ipconfig /all` output in `user_activity.log` for routing assistance. Each record is stored as a JSON object. Both `discord_oauth.json` and `user_activity.log` are ignored by Git.
-
 ## Optional Tweaks List
 
 - MSI Mode (enables MSI for all PCI devices)
