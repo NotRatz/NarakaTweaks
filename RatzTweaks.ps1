@@ -1061,9 +1061,10 @@ function Disable-ViVeFeatures {
         if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
         $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
         foreach ($id in $featureIds) {
-            $args = @('/disable', "/id:$id")
-            Add-Log "Running: $viveToolPath $($args -join ' ')"
-            & $viveToolPath @args
+            $args = "/disable /id:$id"
+            $cmd = "\"$viveToolPath\" $args"
+            Add-Log "Running: cmd /c $cmd"
+            & cmd /c $cmd
         }
         Add-Log 'ViVeTool features disabled.'
     } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
