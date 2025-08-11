@@ -386,12 +386,25 @@ function Show-IntroUI {
     # Exclude 'option 10.' from the selectable tweaks (by filename or by name)
     $ps1Files = Get-ChildItem -Path $utilityDir -Filter '*.ps1' |
         Where-Object { $_.Name -notlike '*Disable Run as Admin.ps1' -and $_.BaseName -notmatch '^(10\.|option 10)' }
+    $optionalDescriptions = @{
+        'MSI Mode' = 'Enables Message Signaled Interrupts for all PCI devices for improved latency.'
+        'Disable Background Apps' = 'Prevents apps from running in the background to save resources.'
+        'Disable Widgets' = 'Removes Windows taskbar widgets for a cleaner UI and less resource use.'
+        'Disable Gamebar' = 'Disables the Xbox Game Bar overlay and background services.'
+        'Disable Copilot' = 'Removes the Windows Copilot AI assistant from the taskbar.'
+        'Disable Windows Features (ViVeTool)' = 'Disables specific experimental Windows features using ViVeTool.'
+    }
     $checkboxes = @()
     $orderedPs1Files = @()
     $y = 60
     foreach ($file in $ps1Files) {
+        $desc = $optionalDescriptions[$file.BaseName]
         $cb = New-Object Windows.Forms.CheckBox
-        $cb.Text = $file.BaseName
+        if ($desc) {
+            $cb.Text = "$($file.BaseName) — $desc"
+        } else {
+            $cb.Text = $file.BaseName
+        }
         $cb.Size = New-Object Drawing.Size(600,24)
         $cb.Location = New-Object Drawing.Point(30,$y)
         $cb.Font = New-Object Drawing.Font('Segoe UI',11)
@@ -401,8 +414,9 @@ function Show-IntroUI {
         $y += 30
     }
     # Add ViVeTool features as an optional tweak
+    $descViVe = $optionalDescriptions['Disable Windows Features (ViVeTool)']
     $cbViVe = New-Object Windows.Forms.CheckBox
-    $cbViVe.Text = 'Disable Windows Features (ViVeTool)'
+    $cbViVe.Text = "Disable Windows Features (ViVeTool) — $descViVe"
     $cbViVe.Size = New-Object Drawing.Size(600,24)
     $cbViVe.Location = New-Object Drawing.Point(30,$y)
     $cbViVe.Font = New-Object Drawing.Font('Segoe UI',11)
