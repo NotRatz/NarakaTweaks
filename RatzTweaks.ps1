@@ -400,6 +400,16 @@ function Show-IntroUI {
         $orderedPs1Files += $file
         $y += 30
     }
+    # Add ViVeTool features as an optional tweak
+    $cbViVe = New-Object Windows.Forms.CheckBox
+    $cbViVe.Text = 'Disable Windows Features (ViVeTool)'
+    $cbViVe.Size = New-Object Drawing.Size(600,24)
+    $cbViVe.Location = New-Object Drawing.Point(30,$y)
+    $cbViVe.Font = New-Object Drawing.Font('Segoe UI',11)
+    $panelOptional.Controls.Add($cbViVe)
+    $checkboxes += $cbViVe
+    $orderedPs1Files += $null  # Placeholder for ViVeTool
+    $y += 30
     $okBtn = New-Object Windows.Forms.Button
     $okBtn.Text = 'Apply Selected'
     $okBtn.Size = New-Object Drawing.Size(180,40)
@@ -409,7 +419,13 @@ function Show-IntroUI {
         try {
             $global:selectedTweaks = @()
             for ($i=0; $i -lt $checkboxes.Count; $i++) {
-                if ($checkboxes[$i].Checked) { $global:selectedTweaks += $orderedPs1Files[$i].FullName }
+                if ($checkboxes[$i].Checked) {
+                    if ($orderedPs1Files[$i] -eq $null) {
+                        $global:selectedTweaks += 'ViVeToolFeatures'
+                    } else {
+                        $global:selectedTweaks += $orderedPs1Files[$i].FullName
+                    }
+                }
             }
             $okBtn.Enabled = $false
             $okBtn.Text = 'Applied!'
@@ -577,20 +593,30 @@ function Show-IntroUI {
                 'Disable Widgets' = 'Disable-Widgets'
                 'Disable Gamebar' = 'Disable-Gamebar'
                 'Disable Copilot' = 'Disable-Copilot'
+                'ViVeToolFeatures' = 'Disable-ViVeFeatures'
             }
             foreach ($tweakPath in $global:selectedTweaks) {
-                $tweakName = [System.IO.Path]::GetFileNameWithoutExtension($tweakPath)
-                # Remove any numeric prefix and dot/space (e.g. '2. MSI Mode' -> 'MSI Mode')
-                $tweakKey = $tweakName -replace '^[0-9]+[. ]*', ''
-                if ($tweakMap.ContainsKey($tweakKey)) {
+                if ($tweakPath -eq 'ViVeToolFeatures') {
                     try {
-                        & $tweakMap[$tweakKey]
-                        Update-ProgressLog ("Tweak completed: " + $tweakKey)
+                        Disable-ViVeFeatures
+                        Update-ProgressLog ("Tweak completed: Disable Windows Features (ViVeTool)")
                     } catch {
-                        Update-ProgressLog ("ERROR running optional tweak: $tweakKey - " + $_.Exception.Message)
+                        Update-ProgressLog ("ERROR running optional tweak: ViVeToolFeatures - " + $_.Exception.Message)
                     }
                 } else {
-                    Add-Log "Unknown optional tweak: $tweakKey"
+                    $tweakName = [System.IO.Path]::GetFileNameWithoutExtension($tweakPath)
+                    # Remove any numeric prefix and dot/space (e.g. '2. MSI Mode' -> 'MSI Mode')
+                    $tweakKey = $tweakName -replace '^[0-9]+[. ]*', ''
+                    if ($tweakMap.ContainsKey($tweakKey)) {
+                        try {
+                            & $tweakMap[$tweakKey]
+                            Update-ProgressLog ("Tweak completed: " + $tweakKey)
+                        } catch {
+                            Update-ProgressLog ("ERROR running optional tweak: $tweakKey - " + $_.Exception.Message)
+                        }
+                    } else {
+                        Add-Log "Unknown optional tweak: $tweakKey"
+                    }
                 }
             }
             Update-ProgressLog 'Selected optional tweaks applied.'
@@ -1013,6 +1039,20 @@ $global:RatzLog = @()
 function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $msg }
 
 Test-Admin
+
+# Disable specific Windows features using ViVeTool
+function Disable-ViVeFeatures {
+    try {
+        $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
+        if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
+        $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+        foreach ($id in $featureIds) {
+            Start-Process -FilePath $viveToolPath -ArgumentList "/disable /id:$id" -Wait -NoNewWindow
+        }
+        Add-Log 'ViVeTool features disabled.'
+    } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+}
+Disable-ViVeFeatures
 Add-Log 'Started RatzTweaks.'
 Show-IntroUI
 Add-Log 'UI completed.'
