@@ -1062,7 +1062,7 @@ function Disable-ViVeFeatures {
         $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
         foreach ($id in $featureIds) {
             $args = "/disable /id:$id"
-            $cmd = "\"$viveToolPath\" $args"
+            $cmd = "`"$viveToolPath`" $args"
             Add-Log "Running: cmd /c $cmd"
             & cmd /c $cmd
         }
