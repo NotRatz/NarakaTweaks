@@ -401,7 +401,7 @@ function Show-IntroUI {
         $desc = $optionalDescriptions[$file.BaseName]
         $cb = New-Object Windows.Forms.CheckBox
         if ($desc) {
-            $cb.Text = "$($file.BaseName) — $desc"
+            $cb.Text = "$($file.BaseName) - $desc"
         } else {
             $cb.Text = $file.BaseName
         }
@@ -416,7 +416,7 @@ function Show-IntroUI {
     # Add ViVeTool features as an optional tweak
     $descViVe = $optionalDescriptions['Disable Windows Features (ViVeTool)']
     $cbViVe = New-Object Windows.Forms.CheckBox
-    $cbViVe.Text = "Disable Windows Features (ViVeTool) — $descViVe"
+    $cbViVe.Text = "Disable Windows Features (ViVeTool) - $descViVe"
     $cbViVe.Size = New-Object Drawing.Size(600,24)
     $cbViVe.Location = New-Object Drawing.Point(30,$y)
     $cbViVe.Font = New-Object Drawing.Font('Segoe UI',11)
