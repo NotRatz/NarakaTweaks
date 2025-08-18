@@ -1249,16 +1249,29 @@ function Start-DiscordOAuthAndLog {
 }
 
 function Get-DiscordSecret {
-    # Prefer environment variable for convenience (zero-config)
-    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) {
-        return $env:RATZ_DISCORD_SECRET
-    }
+    # 1) Prefer environment variable if set
+    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) { return $env:RATZ_DISCORD_SECRET }
+
     $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
     if (-not (Test-Path $secretFile)) { return $null }
+
+    $enc = Get-Content $secretFile -Raw
+    if (-not $enc) { return $null }
+
+    # 2) Try DPAPI-style decrypt (ConvertTo-SecureString without a key)
     try {
-        $enc = Get-Content $secretFile -Raw
-        $secure = $enc | ConvertTo-SecureString
+        $secure = ConvertTo-SecureString $enc
         return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    } catch {
+        # continue to next method
+    }
+
+    # 3) Try decrypting with a symmetric key (shared AES key). This allows a single repo-stored .secret to be decryptable by the script.
+    # WARNING: embedding the key in the script reduces secrecy. Replace the bytes below with your key if you pre-encrypt the secret with the same key.
+    $embeddedKey = @(196,37,88,201,15,220,44,77,182,91,12,233,250,44,90,199,11,72,239,66,14,245,132,99,211,56,7,143,201,34,55,162)
+    try {
+        $secure2 = ConvertTo-SecureString $enc -Key $embeddedKey
+        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2))
     } catch {
         return $null
     }
