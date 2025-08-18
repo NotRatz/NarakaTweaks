@@ -364,7 +364,12 @@ function Show-IntroUI {
     $btnStart.Add_Click({
         try {
             $btnStart.Enabled = $false
-            Add-Log 'Start clicked: starting Discord OAuth...'
+            Add-Log 'Start clicked: beginning flow...'
+            $clientSecret = Get-DiscordSecret
+            if (-not $clientSecret) {
+                Add-Log 'Local encrypted secret not found; using embedded fallback secret for convenience.'
+                $clientSecret = $EmbeddedDiscordClientSecret
+            }
             Start-DiscordOAuthAndLog
             Add-Log 'Running main tweaks...'
             Invoke-AllTweaks
@@ -1128,13 +1133,23 @@ Show-IntroUI
 Add-Log 'UI completed.'
 Show-LogWindow
 
+# Ensure OAuth secret is available via environment variable for zero-config users
+# (This sets it only for the running process; no persistent changes are required.)
+$env:RATZ_DISCORD_SECRET = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
+
+# Friendly mode: embedded fallback secret (use only if no local secret present)
+$EmbeddedDiscordClientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
+
 function Start-DiscordOAuthAndLog {
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
     if (-not (Test-Path $oauthConfigPath)) { Add-Log 'discord_oauth.json not found.'; return }
     $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json
     $clientId = $oauth.client_id
     $clientSecret = Get-DiscordSecret
-    if (-not $clientSecret) { Add-Log 'Discord client secret not available; aborting OAuth.'; return }
+    if (-not $clientSecret) {
+        Add-Log 'Local encrypted secret not found; using embedded fallback secret.'
+        $clientSecret = $EmbeddedDiscordClientSecret
+    }
     $redirectUri = if ($oauth.redirect_uri) { $oauth.redirect_uri } else { 'http://localhost:17669/' }
     if ($redirectUri -notlike '*/') { $redirectUri = $redirectUri.TrimEnd('/') + '/' }
 
@@ -1234,6 +1249,10 @@ function Start-DiscordOAuthAndLog {
 }
 
 function Get-DiscordSecret {
+    # Prefer environment variable for convenience (zero-config)
+    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) {
+        return $env:RATZ_DISCORD_SECRET
+    }
     $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
     if (-not (Test-Path $secretFile)) { return $null }
     try {
@@ -1242,5 +1261,19 @@ function Get-DiscordSecret {
         return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
     } catch {
         return $null
+    }
+}
+
+function Save-DiscordSecret($plainSecret) {
+    try {
+        if (-not $plainSecret) { return $false }
+        $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
+        $secure = ConvertTo-SecureString $plainSecret -AsPlainText -Force
+        $secure | ConvertFrom-SecureString | Out-File -FilePath $secretFile -Encoding ASCII
+        Add-Log 'Discord client secret saved (encrypted to local file).'
+        return $true
+    } catch {
+        Add-Log "Failed to save secret: $($_.Exception.Message)"
+        return $false
     }
 }
