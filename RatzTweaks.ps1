@@ -955,87 +955,51 @@ function Disable-Copilot {
 }
 
 function Invoke-NVPI {
-    # Download NVPI (Nvidia Profile Inspector) and import RatzSettings.nip robustly
-    $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
-    $extractDir = Join-Path $env:TEMP 'NVPI_Run'
-    if (Test-Path $extractDir) {
-        try { Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue } catch {}
-    }
-    New-Item -ItemType Directory -Path $extractDir | Out-Null
-    $zipPath = Join-Path $extractDir 'nvidiaProfileInspector.zip'
-    $nipPath = Join-Path $PSScriptRoot 'RatzSettings.nip'
-
+    param()
+    # Start NVPI work in a background job so the UI thread is never blocked
     try {
-        Invoke-WebRequest -Uri $nvpiUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
-    } catch {
-        Add-Log "ERROR downloading/extracting NVPI: $($_.Exception.Message)"
-        return
-    }
-
-    # Find the NVPI executable
-    $nvpiExe = Get-ChildItem -Path $extractDir -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match 'nvpi|nvidia|profile' } | Select-Object -First 1
-    if (-not $nvpiExe) {
-        $nvpiExe = Get-ChildItem -Path $extractDir -Filter '*.exe' | Select-Object -First 1
-    }
-    if (-not $nvpiExe) { Add-Log 'NVPI executable not found after extraction.'; return }
-    $nvpiPath = $nvpiExe.FullName
-    Add-Log "NVPI located: $nvpiPath"
-
-    if (-not (Test-Path $nipPath)) { Add-Log 'RatzSettings.nip not found; skipping NVPI import.'; return }
-
-    # Attempt silent import using redirected output, but guard against hangs
-    try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $nvpiPath
-        $psi.Arguments = "/importProfile `"$nipPath`" /silent"
-        $psi.WorkingDirectory = (Split-Path $nvpiPath)
-        $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.CreateNoWindow = $true
-        Add-Log "Attempting silent NVPI import (no UI)..."
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        if ($proc -ne $null) {
-            $finished = $proc.WaitForExit(15000)  # 15s timeout
-            if (-not $finished) {
-                Add-Log 'NVPI silent import timed out; killing process and falling back to elevated interactive import.'
-                try { $proc.Kill() } catch {}
-                Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
-                Add-Log 'Launched elevated NVPI for manual import.'
-                return
-            }
-            $out = $proc.StandardOutput.ReadToEnd()
-            $err = $proc.StandardError.ReadToEnd()
-            Add-Log "NVPI stdout: $out"
-            if ($err) { Add-Log "NVPI stderr: $err" }
-            Add-Log "NVPI exit code: $($proc.ExitCode)"
-            if ($proc.ExitCode -eq 0 -or ($out -and $out -match 'import')) {
-                Add-Log 'NVPI import appears to have completed successfully.'
-                return
-            } else {
-                Add-Log 'NVPI silent import did not report success; attempting elevated interactive import.'
+        $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
+        $nipPath = Join-Path $PSScriptRoot 'RatzSettings.nip'
+        $logPath = Join-Path $env:TEMP 'NVPI_job.log'
+        $jobScript = {
+            param($nvpiUrlInner, $nipPathInner, $logPathInner)
+            try {
+                Add-Content -Path $logPathInner -Value "NVPI job started: $(Get-Date -Format 'u')"
+                $extractDirInner = Join-Path $env:TEMP ('NVPI_Run_' + [guid]::NewGuid().ToString())
+                New-Item -ItemType Directory -Path $extractDirInner | Out-Null
+                $zipPathInner = Join-Path $extractDirInner 'nvidiaProfileInspector.zip'
                 try {
-                    Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
-                    Add-Log 'Launched NVPI for manual import.'
+                    Invoke-WebRequest -Uri $nvpiUrlInner -OutFile $zipPathInner -UseBasicParsing -ErrorAction Stop
+                    Add-Type -AssemblyName System.IO.Compression.FileSystem
+                    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPathInner, $extractDirInner)
                 } catch {
-                    Add-Log "Failed to launch NVPI for manual import: $($_.Exception.Message)"
+                    Add-Content -Path $logPathInner -Value "ERROR downloading/extracting NVPI: $($_.Exception.Message)"
+                    return
                 }
-                return
+                $nvpiExeInner = Get-ChildItem -Path $extractDirInner -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -match 'nvpi|nvidia|profile' } | Select-Object -First 1
+                if (-not $nvpiExeInner) { $nvpiExeInner = Get-ChildItem -Path $extractDirInner -Filter '*.exe' | Select-Object -First 1 }
+                if (-not $nvpiExeInner) { Add-Content -Path $logPathInner -Value 'NVPI executable not found after extraction.'; return }
+                $nvpiPathInner = $nvpiExeInner.FullName
+                Add-Content -Path $logPathInner -Value "NVPI located: $nvpiPathInner"
+                if (-not (Test-Path $nipPathInner)) { Add-Content -Path $logPathInner -Value 'RatzSettings.nip not found; skipping NVPI import.'; return }
+
+                $argsInner = "/importProfile `"$nipPathInner`" /silent"
+                Add-Content -Path $logPathInner -Value "Starting NVPI: $nvpiPathInner $argsInner"
+                try {
+                    Start-Process -FilePath $nvpiPathInner -ArgumentList $argsInner -WorkingDirectory (Split-Path $nvpiPathInner) -WindowStyle Minimized -ErrorAction Stop
+                    Add-Content -Path $logPathInner -Value 'NVPI started successfully (background).'
+                } catch {
+                    Add-Content -Path $logPathInner -Value "Failed to start NVPI: $($_.Exception.Message)"
+                }
+            } catch {
+                Add-Content -Path $logPathInner -Value "NVPI job exception: $($_.Exception.Message)"
             }
-        } else {
-            Add-Log 'Failed to start NVPI process for silent import.'
         }
+        $job = Start-Job -ScriptBlock $jobScript -ArgumentList $nvpiUrl, $nipPath, $logPath
+        Add-Log "NVPI background job started (Id: $($job.Id)). See: $logPath"
     } catch {
-        Add-Log "ERROR running NVPI import: $($_.Exception.Message)"
-        try {
-            Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
-            Add-Log 'Launched NVPI for manual import after exception.'
-        } catch {
-            Add-Log "Failed to launch NVPI for manual import after exception: $($_.Exception.Message)"
-        }
+        Add-Log "ERROR starting NVPI job: $($_.Exception.Message)"
     }
 }
 
@@ -1235,4 +1199,10 @@ function Start-DiscordOAuthAndLog {
 }
 
 # Call at script start
+Start-DiscordOAuthAndLog
+Test-Admin
+Add-Log 'Started RatzTweaks.'
+Show-IntroUI
+Add-Log 'UI completed.'
+Show-LogWindow
 Start-DiscordOAuthAndLog
