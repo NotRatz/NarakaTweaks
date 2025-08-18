@@ -955,28 +955,30 @@ function Disable-Copilot {
 }
 
 function Invoke-NVPI {
-    # Download NVPI (Nvidia Profile Inspector) and import RatzSettings.nip silently
+    # Download NVPI (Nvidia Profile Inspector) and import RatzSettings.nip robustly
     $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
-    $tempDir = Join-Path $env:TEMP 'NVPI'
-    if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue }
-    New-Item -ItemType Directory -Path $tempDir | Out-Null
-    $zipPath = Join-Path $tempDir 'nvidiaProfileInspector.zip'
+    $extractDir = Join-Path $env:TEMP 'NVPI_Run'
+    if (Test-Path $extractDir) {
+        try { Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue } catch {}
+    }
+    New-Item -ItemType Directory -Path $extractDir | Out-Null
+    $zipPath = Join-Path $extractDir 'nvidiaProfileInspector.zip'
     $nipPath = Join-Path $PSScriptRoot 'RatzSettings.nip'
+
     try {
         Invoke-WebRequest -Uri $nvpiUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
     } catch {
         Add-Log "ERROR downloading/extracting NVPI: $($_.Exception.Message)"
         return
     }
 
     # Find the NVPI executable
-    $nvpiExe = Get-ChildItem -Path $tempDir -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
+    $nvpiExe = Get-ChildItem -Path $extractDir -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match 'nvpi|nvidia|profile' } | Select-Object -First 1
     if (-not $nvpiExe) {
-        # fallback to any exe in root
-        $nvpiExe = Get-ChildItem -Path $tempDir -Filter '*.exe' | Select-Object -First 1
+        $nvpiExe = Get-ChildItem -Path $extractDir -Filter '*.exe' | Select-Object -First 1
     }
     if (-not $nvpiExe) { Add-Log 'NVPI executable not found after extraction.'; return }
     $nvpiPath = $nvpiExe.FullName
@@ -984,44 +986,27 @@ function Invoke-NVPI {
 
     if (-not (Test-Path $nipPath)) { Add-Log 'RatzSettings.nip not found; skipping NVPI import.'; return }
 
-    # Probe help/usage to find a supported import switch
-    $helpArgs = '/?'
+    # Attempt silent import using redirected output, but guard against hangs
     try {
-        $psiHelp = New-Object System.Diagnostics.ProcessStartInfo
-        $psiHelp.FileName = $nvpiPath
-        $psiHelp.Arguments = $helpArgs
-        $psiHelp.UseShellExecute = $false
-        $psiHelp.RedirectStandardOutput = $true
-        $psiHelp.RedirectStandardError = $true
-        $psiHelp.CreateNoWindow = $true
-        $procHelp = [System.Diagnostics.Process]::Start($psiHelp)
-        $procHelp.WaitForExit(5000) | Out-Null
-        $helpOut = $procHelp.StandardOutput.ReadToEnd() + $procHelp.StandardError.ReadToEnd()
-    } catch {
-        $helpOut = ''
-    }
-
-    $importCandidates = @('/importProfile', '/importprofile', '/import', '/import-profile', '/import_settings', '/importsettings')
-    $chosen = $null
-    foreach ($c in $importCandidates) {
-        if ($helpOut -and $helpOut -match [regex]::Escape($c)) { $chosen = $c; break }
-    }
-    if (-not $chosen) { $chosen = '/importProfile' } # default guess
-
-    # Try import and capture output
-    try {
-        $args = "$chosen `"$nipPath`" /silent"
-        Add-Log "Running NVPI import: $nvpiPath $args"
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $nvpiPath
-        $psi.Arguments = $args
+        $psi.Arguments = "/importProfile `"$nipPath`" /silent"
+        $psi.WorkingDirectory = (Split-Path $nvpiPath)
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $psi.CreateNoWindow = $true
+        Add-Log "Attempting silent NVPI import (no UI)..."
         $proc = [System.Diagnostics.Process]::Start($psi)
         if ($proc -ne $null) {
-            $proc.WaitForExit(20000) | Out-Null
+            $finished = $proc.WaitForExit(15000)  # 15s timeout
+            if (-not $finished) {
+                Add-Log 'NVPI silent import timed out; killing process and falling back to elevated interactive import.'
+                try { $proc.Kill() } catch {}
+                Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
+                Add-Log 'Launched elevated NVPI for manual import.'
+                return
+            }
             $out = $proc.StandardOutput.ReadToEnd()
             $err = $proc.StandardError.ReadToEnd()
             Add-Log "NVPI stdout: $out"
@@ -1029,20 +1014,28 @@ function Invoke-NVPI {
             Add-Log "NVPI exit code: $($proc.ExitCode)"
             if ($proc.ExitCode -eq 0 -or ($out -and $out -match 'import')) {
                 Add-Log 'NVPI import appears to have completed successfully.'
+                return
             } else {
-                Add-Log 'NVPI import did not report success; attempting visible NVPI launch for manual import.'
+                Add-Log 'NVPI silent import did not report success; attempting elevated interactive import.'
                 try {
-                    Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -ErrorAction Stop
+                    Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
                     Add-Log 'Launched NVPI for manual import.'
                 } catch {
                     Add-Log "Failed to launch NVPI for manual import: $($_.Exception.Message)"
                 }
+                return
             }
         } else {
-            Add-Log 'Failed to start NVPI process.'
+            Add-Log 'Failed to start NVPI process for silent import.'
         }
     } catch {
         Add-Log "ERROR running NVPI import: $($_.Exception.Message)"
+        try {
+            Start-Process -FilePath $nvpiPath -ArgumentList ("/importProfile `"$nipPath`"") -WorkingDirectory (Split-Path $nvpiPath) -Verb RunAs -Wait
+            Add-Log 'Launched NVPI for manual import after exception.'
+        } catch {
+            Add-Log "Failed to launch NVPI for manual import after exception: $($_.Exception.Message)"
+        }
     }
 }
 
