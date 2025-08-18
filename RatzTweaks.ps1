@@ -765,6 +765,14 @@ function Revert-Copilot {
 }
 
 function Invoke-AllTweaks {
+    # Ensure Discord OAuth completed before making any changes
+    if (-not $global:DiscordAuthenticated) {
+        if (-not (Ensure-DiscordAuthenticated)) {
+            Add-Log 'Discord authentication required — aborting tweaks.'
+            return
+        }
+    }
+
     # Main registry and system tweaks from RatzTweak.bat
     Write-Host "Applying main registry and system tweaks..."
     $regCmds = @(
@@ -1385,3 +1393,54 @@ $btnStart.Add_Click({
         $btnStart.Enabled = $true
     }
 })
+
+# When the main form is shown, add an Authenticate button and disable Start until auth succeeds
+if ($form -ne $null) {
+    $form.Add_Shown({
+        try {
+            # Safely find the Start button (if it exists)
+            if ($startButton -ne $null) { $startButton.Enabled = $false }
+
+            # Create Authenticate button placed next to Start
+            $authButton = New-Object System.Windows.Forms.Button
+            $authButton.Text = 'Authenticate'
+            $authButton.Size = New-Object System.Drawing.Size(100,23)
+
+            # Position: try to place left of startButton if available, otherwise bottom-right
+            if ($startButton -ne $null) {
+                $x = [int]($startButton.Location.X - ($authButton.Width + 8))
+                if ($x -lt 8) { $x = $startButton.Location.X + $startButton.Width + 8 }
+                $authButton.Location = New-Object System.Drawing.Point($x, $startButton.Location.Y)
+            } else {
+                $authButton.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+                $authButton.Location = New-Object System.Drawing.Point($form.ClientSize.Width - $authButton.Width - 12, $form.ClientSize.Height - $authButton.Height - 12)
+            }
+
+            $form.Controls.Add($authButton)
+
+            $authButton.Add_Click({
+                try {
+                    $authButton.Enabled = $false
+                    $authButton.Text = 'Authenticating...'
+
+                    if (Ensure-DiscordAuthenticated) {
+                        if ($startButton -ne $null) { $startButton.Enabled = $true }
+                        [System.Windows.Forms.MessageBox]::Show('Discord authentication successful. You may now press Start.','Authenticated',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                        $authButton.Text = 'Authenticated'
+                        $authButton.Enabled = $false
+                    } else {
+                        [System.Windows.Forms.MessageBox]::Show('Authentication failed or was cancelled.','Authentication',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+                        $authButton.Text = 'Authenticate'
+                        $authButton.Enabled = $true
+                    }
+                } catch {
+                    $authButton.Text = 'Authenticate'
+                    $authButton.Enabled = $true
+                    [System.Windows.Forms.MessageBox]::Show("Authentication error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+                }
+            })
+        } catch {
+            # If anything goes wrong adding the UI controls, leave startup behavior unchanged
+        }
+    })
+}
