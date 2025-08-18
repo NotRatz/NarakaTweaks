@@ -3,7 +3,24 @@
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 
+# If the script is executed via 'irm | iex' the script has no file path; try to
+# locate the project root by searching upward from the invocation directory
+# for a folder that contains the 'UTILITY' folder (this repository layout).
+function Resolve-ProjectRoot {
+    param($startPath)
+    $startPath = $startPath -or (Get-Location).Path
+    $cur = $startPath
+    while ($cur) {
+        if (Test-Path (Join-Path $cur 'UTILITY')) { return $cur }
+        $parent = Split-Path -Parent $cur
+        if (-not $parent -or $parent -eq $cur) { break }
+        $cur = $parent
+    }
+    return $startPath
+}
 
+$resolvedRoot = Resolve-ProjectRoot -startPath $PSScriptRoot
+if ($resolvedRoot -and (Test-Path (Join-Path $resolvedRoot 'UTILITY'))) { $PSScriptRoot = $resolvedRoot }
 # --- Show name in big text in PowerShell window, then suppress all further output ---
 Write-Host ''
 Write-Host 'RRRRR    AAA   TTTTT' -ForegroundColor Cyan
