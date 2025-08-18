@@ -1021,9 +1021,6 @@ function Set-PowerPlan {
     }
 }
 
-function Show-OptionalTweaksUI {
-    # No longer needed; now integrated in main UI
-}
 
 function Invoke-SelectedOptionalTweaks {
     # Run selected optional tweaks asynchronously and wait for all to finish
