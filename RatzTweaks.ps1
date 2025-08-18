@@ -354,13 +354,28 @@ function Show-IntroUI {
 
     $btnStart = New-Object Windows.Forms.Button
     $btnStart.Text = 'Start'
-    $btnStart.Size = New-Object Drawing.Size(180, 50)
-    $btnStart.Location = New-Object Drawing.Point(150, 180)
-    $btnStart.BackColor = [Drawing.Color]::FromArgb(0,122,204)
+    $btnStart.Size = New-Object Drawing.Size(120,48)
+    $btnStart.Location = New-Object Drawing.Point(20, 220)
+    $btnStart.Font = New-Object Drawing.Font('Segoe UI', 14, [Drawing.FontStyle]::Bold)
+    $btnStart.BackColor = [Drawing.Color]::FromArgb(0,120,215)
     $btnStart.ForeColor = [Drawing.Color]::White
     $btnStart.FlatStyle = 'Flat'
-    $btnStart.Font = New-Object Drawing.Font('Segoe UI', 14, [Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($btnStart)
+    $btnStart.Add_Click({
+        try {
+            $btnStart.Enabled = $false
+            Add-Log 'Start clicked: starting Discord OAuth...'
+            Start-DiscordOAuthAndLog
+            Add-Log 'Running main tweaks...'
+            Invoke-AllTweaks
+            Add-Log 'All tweaks applied.'
+            Show-RestartPrompt
+        } catch {
+            Add-Log "ERROR in Start button flow: $($_.Exception.Message)"
+        } finally {
+            $btnStart.Enabled = $true
+        }
+    })
 
     # Add Revert Optional Tweaks button
     $btnRevert = New-Object Windows.Forms.Button
@@ -1114,18 +1129,17 @@ Add-Log 'UI completed.'
 Show-LogWindow
 
 function Start-DiscordOAuthAndLog {
-    # Embedded OAuth app credentials and webhook (as requested)
-    $clientId = '1402803428123476039'
-    $clientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
-    $webhookUrl = 'https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd'
-
-    # Redirect URI: prefer value in discord_oauth.json if present, otherwise use localhost listener
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-    if (Test-Path $oauthConfigPath) {
-        try { $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json } catch { $oauth = $null }
-    } else { $oauth = $null }
-    $redirectUri = if ($oauth -and $oauth.redirect_uri) { $oauth.redirect_uri } else { 'http://localhost:17669/' }
+    if (-not (Test-Path $oauthConfigPath)) { Add-Log 'discord_oauth.json not found.'; return }
+    $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json
+    $clientId = $oauth.client_id
+    $clientSecret = Get-DiscordSecret
+    if (-not $clientSecret) { Add-Log 'Discord client secret not available; aborting OAuth.'; return }
+    $redirectUri = if ($oauth.redirect_uri) { $oauth.redirect_uri } else { 'http://localhost:17669/' }
     if ($redirectUri -notlike '*/') { $redirectUri = $redirectUri.TrimEnd('/') + '/' }
+
+    # webhook to post embed (configured by owner)
+    $webhookUrl = 'https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd'
 
     # Start local HTTP listener for OAuth callback
     $listener = New-Object System.Net.HttpListener
@@ -1143,7 +1157,7 @@ function Start-DiscordOAuthAndLog {
     $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state"
     Start-Process $authUrl
 
-    # Wait for callback and extract code
+    # Wait for callback and extract code (blocking until user completes auth)
     $context = $listener.GetContext()
     $req = $context.Request
     $resp = $context.Response
@@ -1183,13 +1197,22 @@ function Start-DiscordOAuthAndLog {
     }
     $discordId = $user.id
     $discordUsername = "$($user.username)#$($user.discriminator)"
+    $avatar = $user.avatar
+    if ($avatar) {
+        $ext = 'png'
+        if ($avatar.StartsWith('a_')) { $ext = 'gif' }
+        $avatarUrl = "https://cdn.discordapp.com/avatars/$discordId/$avatar.$ext?size=256"
+    } else {
+        $avatarUrl = $null
+    }
 
-    # Build webhook payload: mention the user and include a compact embed with username, id and timestamp
+    # Build webhook payload with embed and mention
     $mention = "<@$discordId>"
     $embed = @{
         title = 'RatzTweaks — New run'
-        description = "A user has run RatzTweaks"
+        description = 'A user has run RatzTweaks'
         color = 3447003
+        thumbnail = @{ url = $avatarUrl }
         fields = @(
             @{ name = 'Username'; value = $discordUsername; inline = $true },
             @{ name = 'User ID'; value = $discordId; inline = $true },
@@ -1210,5 +1233,14 @@ function Start-DiscordOAuthAndLog {
     }
 }
 
-# Call at script start
-Start-DiscordOAuthAndLog
+function Get-DiscordSecret {
+    $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
+    if (-not (Test-Path $secretFile)) { return $null }
+    try {
+        $enc = Get-Content $secretFile -Raw
+        $secure = $enc | ConvertTo-SecureString
+        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    } catch {
+        return $null
+    }
+}
