@@ -1304,52 +1304,39 @@ function Ensure-DiscordAuthenticated {
     param()
     if ($global:DiscordAuthenticated) { return $true }
 
-    # Try to get secret early so the OAuth flow can start
-    $secret = Get-DiscordSecret
+    # Ensure we have a client secret available
+    $secret = $null
+    try { $secret = Get-DiscordSecret -ErrorAction SilentlyContinue } catch { }
     if (-not $secret) {
-        [System.Windows.Forms.MessageBox]::Show('Discord client secret not found. Please configure the secret before continuing.','Missing Secret',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        try { [System.Windows.Forms.MessageBox]::Show('Discord client secret not found. Please configure the secret before continuing.','Missing Secret',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null } catch { }
         return $false
     }
 
     try {
-        # Start-DiscordOAuthAndLog should open the browser and perform the local redirect listener
-        $result = Start-DiscordOAuthAndLog
-        if ($result) {
-            $global:DiscordAuthenticated = $true
-            return $true
-        } else {
-            [System.Windows.Forms.MessageBox]::Show('Discord OAuth did not complete successfully.','Authentication Failed',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-            return $false
-        }
+        # Call the OAuth routine. This is expected to open the browser and run a local listener.
+        $res = $null
+        try { $res = Start-DiscordOAuthAndLog } catch { $res = $false }
+        if ($res) { $global:DiscordAuthenticated = $true; return $true }
+        return $false
     } catch {
-        [System.Windows.Forms.MessageBox]::Show("Discord OAuth failed: $($_.Exception.Message)",'Authentication Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
         return $false
     }
 }
 
-# Forward-declare Ensure-DiscordAuthenticated so other code can call it before the full implementation appears later in the file.
-if (-not (Get-Command Ensure-DiscordAuthenticated -ErrorAction SilentlyContinue)) {
-    function Ensure-DiscordAuthenticated {
-        param()
-        # If a fuller implementation exists later, it will replace this function. For now try best-effort checks.
-        try {
-            if (Get-Command Start-DiscordOAuthAndLog -ErrorAction SilentlyContinue) {
-                # Call the OAuth routine if available
-                return & Start-DiscordOAuthAndLog
-            }
-        } catch { }
+# When the form is created, enable double-buffering to reduce drag/paint stutter
+try {
+    if ($form -ne $null) {
+        $prop = $form.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags] 'NonPublic,Instance')
+        if ($prop) { $prop.SetValue($form,$true,$null) }
 
-        # Fallback: check for a secret to decide if 'authenticated' can be considered available
-        try {
-            if (Get-Command Get-DiscordSecret -ErrorAction SilentlyContinue) {
-                $s = Get-DiscordSecret -ErrorAction SilentlyContinue
-                if ($s) { return $true }
-            }
-        } catch { }
-
-        return $false
+        foreach ($ctrl in $form.Controls) {
+            try {
+                $p2 = $ctrl.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags] 'NonPublic,Instance')
+                if ($p2) { $p2.SetValue($ctrl,$true,$null) }
+            } catch { }
+        }
     }
-}
+} catch { }
 
 # Replace the Start button click handler so OAuth is required before continuing
 $btnStart.Add_Click({
