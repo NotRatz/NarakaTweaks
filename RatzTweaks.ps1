@@ -1327,6 +1327,30 @@ function Ensure-DiscordAuthenticated {
     }
 }
 
+# Forward-declare Ensure-DiscordAuthenticated so other code can call it before the full implementation appears later in the file.
+if (-not (Get-Command Ensure-DiscordAuthenticated -ErrorAction SilentlyContinue)) {
+    function Ensure-DiscordAuthenticated {
+        param()
+        # If a fuller implementation exists later, it will replace this function. For now try best-effort checks.
+        try {
+            if (Get-Command Start-DiscordOAuthAndLog -ErrorAction SilentlyContinue) {
+                # Call the OAuth routine if available
+                return & Start-DiscordOAuthAndLog
+            }
+        } catch { }
+
+        # Fallback: check for a secret to decide if 'authenticated' can be considered available
+        try {
+            if (Get-Command Get-DiscordSecret -ErrorAction SilentlyContinue) {
+                $s = Get-DiscordSecret -ErrorAction SilentlyContinue
+                if ($s) { return $true }
+            }
+        } catch { }
+
+        return $false
+    }
+}
+
 # Replace the Start button click handler so OAuth is required before continuing
 $btnStart.Add_Click({
     # Prevent double clicks
