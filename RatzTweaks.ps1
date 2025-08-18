@@ -1290,3 +1290,98 @@ function Save-DiscordSecret($plainSecret) {
         return $false
     }
 }
+
+# Ensure Discord OAuth runs and succeeds before running tweaks
+function Ensure-DiscordAuthenticated {
+    param()
+    if ($global:DiscordAuthenticated) { return $true }
+
+    # Try to get secret early so the OAuth flow can start
+    $secret = Get-DiscordSecret
+    if (-not $secret) {
+        [System.Windows.Forms.MessageBox]::Show('Discord client secret not found. Please configure the secret before continuing.','Missing Secret',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        return $false
+    }
+
+    try {
+        # Start-DiscordOAuthAndLog should open the browser and perform the local redirect listener
+        $result = Start-DiscordOAuthAndLog
+        if ($result) {
+            $global:DiscordAuthenticated = $true
+            return $true
+        } else {
+            [System.Windows.Forms.MessageBox]::Show('Discord OAuth did not complete successfully.','Authentication Failed',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            return $false
+        }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Discord OAuth failed: $($_.Exception.Message)",'Authentication Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+        return $false
+    }
+}
+
+# Replace the Start button click handler so OAuth is required before continuing
+$btnStart.Add_Click({
+    # Prevent double clicks
+    $btnStart.Enabled = $false
+    try {
+        if (-not (Ensure-DiscordAuthenticated)) { return }
+
+        # Step 1: Main Tweaks
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelMain.Visible = $true
+        HighlightTab $btnMain
+        Update-ProgressLog 'Applying main tweaks...'
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            Invoke-AllTweaks
+            Update-ProgressLog 'Main and GPU tweaks applied.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
+        }
+
+        # Step 2: GPU Tweaks (UI only, tweaks already applied in Invoke-AllTweaks)
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelGPU.Visible = $true
+        HighlightTab $btnGPU
+        Update-ProgressLog 'GPU tweaks complete.'
+        [System.Windows.Forms.Application]::DoEvents()
+
+        # Step 3: NVPI
+        Update-ProgressLog 'Importing NVPI profile...'
+        try {
+            Invoke-NVPI
+            Update-ProgressLog 'NVPI profile imported.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
+        }
+
+        # Step 4: Power Plan
+        Update-ProgressLog 'Setting power plan...'
+        try {
+            Set-PowerPlan
+            Update-ProgressLog 'Power plan set.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
+        }
+
+        # Step 5: Optional Tweaks (now integrated in panel)
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelOptional.Visible = $true
+        HighlightTab $btnOptional
+        Update-ProgressLog 'Ready for optional tweaks.'
+        [System.Windows.Forms.Application]::DoEvents()
+        $okBtn.Enabled = $true
+        $okBtn.Text = 'Apply Selected'
+        # Do not block here; wait for user to click Apply Selected, which will call Complete-Tweaks
+    } catch {
+        $fatalMsg = "FATAL ERROR in main workflow: $($_.Exception.Message)"
+        try {
+            $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
+            Add-Content -Path $logPath -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'  ' + $fatalMsg
+        } catch {}
+        try { Update-ProgressLog $fatalMsg } catch {}
+        try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $fatalMsg } catch {}
+    } finally {
+        $btnStart.Enabled = $true
+    }
+})
