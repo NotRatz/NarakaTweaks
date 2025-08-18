@@ -1,53 +1,29 @@
 # RatzTweaks
 
-A modern, all-in-one Windows optimization utility with a persistent, tabbed, dark-themed UI. Built in PowerShell 5.1 with WinForms, RatzTweaks applies system, GPU, and optional tweaks, including silent NVPI import, with robust error handling and a persistent log. All tweaks are applied with a single click, and optional tweaks can be reverted at any time.
+RatzTweaks is a compact Windows tweaks GUI built in PowerShell (Windows PowerShell 5.1). It applies recommended system and GPU tweaks and provides optional tweaks the user may choose.
 
-## Features
+This fork logs only minimal usage information via a Discord webhook (no IP logging). When a user runs the tool they will authenticate with Discord (OAuth2 identify) and the tool will send a small embed to a webhook notifying the owner of the username, user ID, and run time.
 
-- **Modern UI:** Dark theme, sidebar navigation, tabbed layout, custom top bar, and persistent log/progress area.
-- **One-Click Tweaks:** Apply all main, GPU, and selected optional tweaks with a single click.
-- **Optional Tweaks:** Select from a list of extra tweaks (MSI Mode, disable background apps, widgets, Game Bar, Copilot, etc.) and apply them instantly.
-- **Revert Support:** Instantly revert all optional tweaks with the "Revert Optional Tweaks" button.
-- **Silent NVPI Import:** Automatically downloads and imports Nvidia Profile Inspector settings without user interaction.
-- **Robust Logging:** All actions and errors are logged to the UI, file, and Windows Event Log.
-- **Error Handling:** Defensive error handling throughout, including .NET and PowerShell traps.
-- **Admin & Version Checks:** Ensures script is run as administrator and only in Windows PowerShell 5.1.
-- **About Panel:** Custom about screen with a rat image and credits.
+## Quick start
+
+- Right-click `RatzTweaks.ps1` and choose "Run with PowerShell" (use Windows PowerShell 5.1).
+- Click Start to apply main tweaks.
+- Optionally select extra tweaks and click Apply Selected.
+
+## Privacy & Data
+
+- This version does NOT store or transmit IP addresses or system network information.
+- Only the Discord username, user ID, and timestamp of when the tool was run are sent to the configured webhook.
+
+## OAuth & Webhook
+
+- The script uses Discord OAuth2 (identify) so the user can provide a Discord identity for the owner to thank.
+- A webhook (configured by the script author) receives an embed containing the username, user ID, and timestamp.
 
 ## Requirements
 
-- **Windows PowerShell 5.1** (not PowerShell 7+)
-- **Windows 10/11**
-- **Run as Administrator**
-
-## Usage
-
-1. **Clone or Download** this repository.
-2. **Right-click** `RatzTweaks.ps1` and select **Run with PowerShell** (ensure you use Windows PowerShell, not PowerShell 7+).
-3. The UI will appear. Click **Start** to apply all main and GPU tweaks.
-4. Select any optional tweaks you want and click **Apply Selected**.
-5. To revert all optional tweaks, click **Revert Optional Tweaks** on the main screen.
-6. View logs at any time with the log window.
-
-## Optional Tweaks List
-
-- MSI Mode (enables MSI for all PCI devices)
-- Disable Background Apps
-- Disable Widgets
-- Disable Game Bar
-- Disable Copilot
-
-
-## Troubleshooting
-
-- **Script does not launch:** Make sure you are running as administrator and using Windows PowerShell 5.1.
-- **UI closes unexpectedly:** Check the log file at `%TEMP%\RatzTweaks_fatal.log` for errors.
-- **Tweaks not applied:** Some tweaks require a restart to take effect.
-
-## Credits
-
-- Created by Rat
-- Uses [Nvidia Profile Inspector](https://github.com/Orbmu2k/nvidiaProfileInspector)
+- Windows PowerShell 5.1
+- Run as Administrator for some tweaks
 
 ## License
 

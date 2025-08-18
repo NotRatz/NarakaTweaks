@@ -1114,92 +1114,101 @@ Add-Log 'UI completed.'
 Show-LogWindow
 
 function Start-DiscordOAuthAndLog {
+    # Embedded OAuth app credentials and webhook (as requested)
+    $clientId = '1402803428123476039'
+    $clientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
+    $webhookUrl = 'https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd'
+
+    # Redirect URI: prefer value in discord_oauth.json if present, otherwise use localhost listener
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-    if (-not (Test-Path $oauthConfigPath)) { return }
-    $oauth = Get-Content $oauthConfigPath | ConvertFrom-Json
-    $clientId = $oauth.client_id
-    $clientSecret = $oauth.client_secret
-    $redirectUri = $oauth.redirect_uri
+    if (Test-Path $oauthConfigPath) {
+        try { $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json } catch { $oauth = $null }
+    } else { $oauth = $null }
+    $redirectUri = if ($oauth -and $oauth.redirect_uri) { $oauth.redirect_uri } else { 'http://localhost:17669/' }
+    if ($redirectUri -notlike '*/') { $redirectUri = $redirectUri.TrimEnd('/') + '/' }
 
-    # Step 1: Start local HTTP listener for OAuth callback
+    # Start local HTTP listener for OAuth callback
     $listener = New-Object System.Net.HttpListener
-    $listener.Prefixes.Add("$redirectUri/")
-    $listener.Start()
+    try {
+        $listener.Prefixes.Add($redirectUri)
+        $listener.Start()
+    } catch {
+        Add-Log "Failed to start HTTP listener for OAuth callback on ${redirectUri}: $($_.Exception.Message)"
+        return
+    }
 
-    # Step 2: Open browser for Discord OAuth2
+    # Open browser for Discord OAuth2
     $state = [guid]::NewGuid().ToString()
-    $scope = "identify"
+    $scope = 'identify'
     $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state"
     Start-Process $authUrl
 
-    # Step 3: Wait for callback and extract code
+    # Wait for callback and extract code
     $context = $listener.GetContext()
     $req = $context.Request
     $resp = $context.Response
     $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
-    $code = $query["code"]
+    $code = $query['code']
     $resp.StatusCode = 200
-    $resp.ContentType = "text/html"
-    $msg = "<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>"
+    $resp.ContentType = 'text/html'
+    $msg = '<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>'
     $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
     $resp.OutputStream.Write($buffer, 0, $buffer.Length)
     $resp.Close()
-    $listener.Stop()
-    if (-not $code) { return }
+    try { $listener.Stop() } catch {}
+    if (-not $code) { Add-Log 'OAuth callback did not contain a code.'; return }
 
-    # Step 4: Exchange code for token
-    $tokenResp = Invoke-RestMethod -Method Post -Uri "https://discord.com/api/oauth2/token" -ContentType "application/x-www-form-urlencoded" -Body @{
-        client_id     = $clientId
-        client_secret = $clientSecret
-        grant_type    = "authorization_code"
-        code          = $code
-        redirect_uri  = $redirectUri
+    # Exchange code for token
+    try {
+        $tokenResp = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body @{ 
+            client_id     = $clientId
+            client_secret = $clientSecret
+            grant_type    = 'authorization_code'
+            code          = $code
+            redirect_uri  = $redirectUri
+        }
+    } catch {
+        Add-Log "Token exchange failed: $($_.Exception.Message)"
+        return
     }
     $accessToken = $tokenResp.access_token
+    if (-not $accessToken) { Add-Log 'Failed to obtain access token.'; return }
 
-    # Step 5: Get Discord user info
-    $user = Invoke-RestMethod -Headers @{Authorization = "Bearer $accessToken"} -Uri "https://discord.com/api/users/@me"
+    # Get Discord user info
+    try {
+        $user = Invoke-RestMethod -Headers @{ Authorization = "Bearer $accessToken" } -Uri 'https://discord.com/api/users/@me'
+    } catch {
+        Add-Log "Failed to fetch user info: $($_.Exception.Message)"
+        return
+    }
     $discordId = $user.id
     $discordUsername = "$($user.username)#$($user.discriminator)"
 
-    # Step 6: Get public IP
-    $publicIp = (Invoke-RestMethod -Uri "https://api.ipify.org?format=text")
-    $ipconfig = (ipconfig /all | Out-String)
-
-    # Step 7: Log to user_activity.log
-    $logObj = [PSCustomObject]@{
-        timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        discord_id = $discordId
-        discord_username = $discordUsername
-        public_ip = $publicIp
-        ipconfig = $ipconfig
+    # Build webhook payload: mention the user and include a compact embed with username, id and timestamp
+    $mention = "<@$discordId>"
+    $embed = @{
+        title = 'RatzTweaks — New run'
+        description = "A user has run RatzTweaks"
+        color = 3447003
+        fields = @(
+            @{ name = 'Username'; value = $discordUsername; inline = $true },
+            @{ name = 'User ID'; value = $discordId; inline = $true },
+            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
+        )
     }
-    $logPath = Join-Path $PSScriptRoot 'user_activity.log'
-    Add-Content -Path $logPath -Value ($logObj | ConvertTo-Json -Compress)
+    $payload = @{
+        content = $mention
+        embeds = @($embed)
+        allowed_mentions = @{ users = @($discordId) }
+    }
 
-    # Step 8: Send DM to you via bot
-    $botToken = "$clientId.$clientSecret" # Not used for user OAuth, but for bot API
-    $botToken = "Bot $($clientId):$($clientSecret)" # Actually, Discord bot tokens are not this format, but you should use your bot token here.
-    $botToken = "Bot YOUR_BOT_TOKEN" # <-- Replace with your bot token string
-
-    # Create DM channel
-    $dm = Invoke-RestMethod -Method Post -Uri "https://discord.com/api/v10/users/@me/channels" `
-        -Headers @{Authorization = $botToken; "Content-Type" = "application/json"} `
-        -Body (@{recipient_id = "313455919042396160"} | ConvertTo-Json)
-    $dmChannelId = $dm.id
-
-    # Send message
-    $msg = "RatzTweaks used by $discordUsername ($discordId), IP: $publicIp"
-    Invoke-RestMethod -Method Post -Uri "https://discord.com/api/v10/channels/$dmChannelId/messages" `
-        -Headers @{Authorization = $botToken; "Content-Type" = "application/json"} `
-        -Body (@{content = $msg} | ConvertTo-Json)
+    try {
+        Invoke-RestMethod -Method Post -Uri $webhookUrl -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4)
+        Add-Log "Posted webhook for user $discordUsername ($discordId)."
+    } catch {
+        Add-Log "Failed to post webhook: $($_.Exception.Message)"
+    }
 }
 
 # Call at script start
-Start-DiscordOAuthAndLog
-Test-Admin
-Add-Log 'Started RatzTweaks.'
-Show-IntroUI
-Add-Log 'UI completed.'
-Show-LogWindow
 Start-DiscordOAuthAndLog
