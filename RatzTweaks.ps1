@@ -1222,6 +1222,7 @@ function Start-WebUI {
         } else { 'Not logged in with Discord' }
         switch ($step) {
             'start' {
+                $startDisabled = $global:DiscordAuthenticated ? '' : 'disabled style="opacity:0.5;cursor:not-allowed"'
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1238,7 +1239,7 @@ function Start-WebUI {
   <div class='flex gap-3 mb-6'>
     <a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>
     <form action='/main-tweaks' method='post'>
-      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Start</button>
+      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit' $startDisabled>Start</button>
     </form>
   </div>
 </div>
@@ -1246,7 +1247,7 @@ function Start-WebUI {
 "@
             }
             'main-tweaks' {
-                $boxes = ($mainTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='main' value='$($($_['id']))' checked class='mr-1'>$(($($_['label'])))</label>" }) -join ""
+                # No checkboxes, just a spinner and message
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1257,14 +1258,12 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
-<form action='/optional-tweaks' method='post'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main & GPU Tweaks</h2>
-  $boxes
-  <label class='block mb-2'><input type='checkbox' name='gpu' value='import-nvpi' checked class='mr-1'>Import NVPI Profile</label>
-  <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to Optional Tweaks</button>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Applying Main & GPU Tweaks...</h2>
+  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
+  <p class='mb-2'>Please wait while tweaks are applied...</p>
 </div>
-</form>
+<script>setTimeout(function(){window.location='/optional-tweaks'}, 2500);</script>
 </body>
 </html>
 "@
@@ -1404,18 +1403,12 @@ function Start-WebUI {
             continue
         }
 
-        # On /main-tweaks, run main tweaks and GPU tweaks
+        # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
-            $form = & $parseForm $ctx
-            $mainVals = @(); $gpuVals = @()
-            if ($form) {
-                $m = $form.GetValues('main'); if ($m) { $mainVals = @($m) }
-                $g = $form.GetValues('gpu');  if ($g) { $gpuVals = @($g) }
-            }
-            if ($mainVals -contains 'main-tweaks') { [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks }
-            if ($mainVals -contains 'set-powerplan') { [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan }
-            if ($gpuVals -contains 'import-nvpi') { [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI }
-            $html = & $getStatusHtml 'optional-tweaks' $null $null $null
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
+            [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
         }
