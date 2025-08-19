@@ -1136,17 +1136,32 @@ function Start-WebUI {
         try { $ctx.Response.Close() } catch {}
     }
 
-    $bgUrl = 'assets/naraka-bg.png'
-    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/assets/naraka-bg.png' }
+    $bgUrl = 'background.png'
+    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
     $ratzImg = 'ratznaked.jpg'
     if (-not (Test-Path $ratzImg)) { $ratzImg = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/ratznaked.jpg' }
 
+    # Option definitions
+    $mainTweaks = @(
+        @{ id='disable-msi'; label='Enable MSI Mode for all PCI devices'; fn='Disable-MSIMode' },
+        @{ id='disable-bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
+        @{ id='disable-widgets'; label='Disable Widgets'; fn='Disable-Widgets' },
+        @{ id='disable-gamebar'; label='Disable Game Bar'; fn='Disable-Gamebar' },
+        @{ id='disable-copilot'; label='Disable Copilot'; fn='Disable-Copilot' }
+    )
+    $gpuTweaks = @(
+        @{ id='import-nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' },
+        @{ id='set-powerplan'; label='Set Power Plan'; fn='Set-PowerPlan' }
+    )
+    $optionalTweaks = @(
+        @{ id='vivetool'; label='Disable ViVeTool Features'; fn='Disable-ViVeFeatures' }
+    )
+
     $getStatusHtml = {
-        param($step)
+        param($step, $selectedMain, $selectedGPU, $selectedOpt)
         switch ($step) {
             'auth' {
                 $auth = if ($global:DiscordAuthenticated) { 'Connected to Discord' } else { 'Not connected to Discord' }
-                $btnStartDisabled = if ($global:DiscordAuthenticated) { '' } else { 'disabled' }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1154,27 +1169,16 @@ function Start-WebUI {
   <meta charset='utf-8'/>
   <title>RatzTweaks</title>
   <script src='https://cdn.tailwindcss.com'></script>
-  <link rel='stylesheet' href='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.css' />
   <style>
-    body {
-      background: url('$bgUrl') center/cover no-repeat fixed;
-      background-color: rgba(0, 0, 0, 0.85);
-      background-blend-mode: overlay;
-    }
-    #loadingOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000; }
-    .spinner { width: 3rem; height: 3rem; border: 4px solid #555; border-top-color: #ffd700; border-radius: 50%; animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    body { background: url('$bgUrl') center/cover no-repeat fixed; background-color: rgba(0,0,0,0.85); background-blend-mode: overlay; }
   </style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
-<div id='loadingOverlay'><div class='spinner'></div></div>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full' data-aos='fade-up'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-3xl font-bold text-yellow-400 mb-4'>RatzTweaks</h2>
   <p class='mb-4 text-gray-200'>Status: <span class='font-semibold'>$auth</span></p>
   <form action='/auth' method='post' class='inline'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mr-2' type='submit'>Connect Discord</button></form>
 </div>
-<script src='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.js'></script>
-<script>AOS.init();</script>
 </body></html>
 "@
             }
@@ -1197,6 +1201,7 @@ function Start-WebUI {
 "@
             }
             'main-tweaks' {
+                $boxes = ($mainTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='main' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1207,15 +1212,18 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+<form action='/gpu-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main Tweaks</h2>
-  <form action='/gpu-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to GPU Tweaks</button></form>
+  $boxes
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to GPU Tweaks</button>
 </div>
-</body>
-</html>
+</form>
+</body></html>
 "@
             }
             'gpu-tweaks' {
+                $boxes = ($gpuTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='gpu' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1226,15 +1234,18 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+<form action='/optional-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>GPU Tweaks</h2>
-  <form action='/optional-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to Optional Tweaks</button></form>
+  $boxes
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to Optional Tweaks</button>
 </div>
-</body>
-</html>
+</form>
+</body></html>
 "@
             }
             'optional-tweaks' {
+                $boxes = ($optionalTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='opt' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1245,12 +1256,14 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+<form action='/about' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Optional Tweaks</h2>
-  <form action='/about' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to About</button></form>
+  $boxes
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to About</button>
 </div>
-</body>
-</html>
+</form>
+</body></html>
 "@
             }
             'about' {
@@ -1306,13 +1319,24 @@ function Start-WebUI {
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'start-tweaks')
             }
             '/main-tweaks' {
-                Start-Job -ScriptBlock { Invoke-AllTweaks } | Out-Null
+                $form = $ctx.Request.Form
+                $selected = @()
+                if ($form) { $selected = $form.GetValues('main') }
+                foreach ($t in $mainTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'main-tweaks')
             }
             '/gpu-tweaks' {
+                $form = $ctx.Request.Form
+                $selected = @()
+                if ($form) { $selected = $form.GetValues('gpu') }
+                foreach ($t in $gpuTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'gpu-tweaks')
             }
             '/optional-tweaks' {
+                $form = $ctx.Request.Form
+                $selected = @()
+                if ($form) { $selected = $form.GetValues('opt') }
+                foreach ($t in $optionalTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'optional-tweaks')
             }
             '/about' {
