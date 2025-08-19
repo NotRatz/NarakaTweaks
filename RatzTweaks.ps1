@@ -1123,7 +1123,7 @@ function Start-WebUI {
     try { $listener.Prefixes.Add($prefix); $listener.Start() } catch { Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message); return }
 
     # open browser
-    try { Start-Process $prefix } catch {}
+    try { Start-Process $prefix } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; Write-Host "Open this URL manually: $prefix" }
 
     $send = {
         param($ctx, $statusCode, $contentType, $body)
