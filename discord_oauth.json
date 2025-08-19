@@ -1,4 +1,4 @@
 {
   "client_id": "1402803428123476039",
-  "redirect_uri": "http://localhost:17669/"
+  "redirect_uri": "http://127.0.0.1:17690/auth-callback"
 }
