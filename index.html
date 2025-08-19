@@ -45,7 +45,7 @@ body{background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
 </div>
 </main>
 <script>
-const startCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex;
+const startCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex";
 const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
 function copyAndRun(cmd){
   navigator.clipboard.writeText(cmd).then(function(){
