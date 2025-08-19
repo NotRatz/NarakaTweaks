@@ -1338,120 +1338,45 @@ try {
     }
 } catch { }
 
-# Replace the Start button click handler so OAuth is required before continuing
-$btnStart.Add_Click({
-    # Prevent double clicks
-    $btnStart.Enabled = $false
-    try {
-        if (-not (Ensure-DiscordAuthenticated)) { return }
+# Ensure Start is disabled by default to force explicit connection
+try { if ($startButton -ne $null) { $startButton.Enabled = $false } } catch { }
 
-        # Step 1: Main Tweaks
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelMain.Visible = $true
-        HighlightTab $btnMain
-        Update-ProgressLog 'Applying main tweaks...'
-        [System.Windows.Forms.Application]::DoEvents()
-        try {
-            Invoke-AllTweaks
-            Update-ProgressLog 'Main and GPU tweaks applied.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 2: GPU Tweaks (UI only, tweaks already applied in Invoke-AllTweaks)
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelGPU.Visible = $true
-        HighlightTab $btnGPU
-        Update-ProgressLog 'GPU tweaks complete.'
-        [System.Windows.Forms.Application]::DoEvents()
-
-        # Step 3: NVPI
-        Update-ProgressLog 'Importing NVPI profile...'
-        try {
-            Invoke-NVPI
-            Update-ProgressLog 'NVPI profile imported.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 4: Power Plan
-        Update-ProgressLog 'Setting power plan...'
-        try {
-            Set-PowerPlan
-            Update-ProgressLog 'Power plan set.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 5: Optional Tweaks (now integrated in panel)
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelOptional.Visible = $true
-        HighlightTab $btnOptional
-        Update-ProgressLog 'Ready for optional tweaks.'
-        [System.Windows.Forms.Application]::DoEvents()
-        $okBtn.Enabled = $true
-        $okBtn.Text = 'Apply Selected'
-        # Do not block here; wait for user to click Apply Selected, which will call Complete-Tweaks
-    } catch {
-        $fatalMsg = "FATAL ERROR in main workflow: $($_.Exception.Message)"
-        try {
-            $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
-            Add-Content -Path $logPath -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'  ' + $fatalMsg
-        } catch {}
-        try { Update-ProgressLog $fatalMsg } catch {}
-        try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $fatalMsg } catch {}
-    } finally {
-        $btnStart.Enabled = $true
-    }
-})
-
-# When the main form is shown, add an Authenticate button and disable Start until auth succeeds
+# Add a top MenuStrip with a Discord -> Connect Discord item and an explanatory label
 if ($form -ne $null) {
-    $form.Add_Shown({
-        try {
-            # Safely find the Start button (if it exists)
-            if ($startButton -ne $null) { $startButton.Enabled = $false }
+    try {
+        if (-not ($form.Controls | Where-Object { $_ -is [System.Windows.Forms.MenuStrip] })) {
+            $menu = New-Object System.Windows.Forms.MenuStrip
+            $discordMenu = New-Object System.Windows.Forms.ToolStripMenuItem('Discord')
+            $connectItem = New-Object System.Windows.Forms.ToolStripMenuItem('Connect Discord')
 
-            # Create Authenticate button placed next to Start
-            $authButton = New-Object System.Windows.Forms.Button
-            $authButton.Text = 'Authenticate'
-            $authButton.Size = New-Object System.Drawing.Size(100,23)
-
-            # Position: try to place left of startButton if available, otherwise bottom-right
-            if ($startButton -ne $null) {
-                $x = [int]($startButton.Location.X - ($authButton.Width + 8))
-                if ($x -lt 8) { $x = $startButton.Location.X + $startButton.Width + 8 }
-                $authButton.Location = New-Object System.Drawing.Point($x, $startButton.Location.Y)
-            } else {
-                $authButton.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
-                $authButton.Location = New-Object System.Drawing.Point($form.ClientSize.Width - $authButton.Width - 12, $form.ClientSize.Height - $authButton.Height - 12)
-            }
-
-            $form.Controls.Add($authButton)
-
-            $authButton.Add_Click({
+            $connectItem.Add_Click({
                 try {
-                    $authButton.Enabled = $false
-                    $authButton.Text = 'Authenticating...'
-
+                    # Disable start while connecting
+                    if ($startButton -ne $null) { $startButton.Enabled = $false }
                     if (Ensure-DiscordAuthenticated) {
                         if ($startButton -ne $null) { $startButton.Enabled = $true }
-                        [System.Windows.Forms.MessageBox]::Show('Discord authentication successful. You may now press Start.','Authenticated',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-                        $authButton.Text = 'Authenticated'
-                        $authButton.Enabled = $false
+                        [System.Windows.Forms.MessageBox]::Show('Discord connected — Start is now enabled.','Discord Connected',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
                     } else {
-                        [System.Windows.Forms.MessageBox]::Show('Authentication failed or was cancelled.','Authentication',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-                        $authButton.Text = 'Authenticate'
-                        $authButton.Enabled = $true
+                        [System.Windows.Forms.MessageBox]::Show('Discord connection failed or was cancelled.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
                     }
                 } catch {
-                    $authButton.Text = 'Authenticate'
-                    $authButton.Enabled = $true
-                    [System.Windows.Forms.MessageBox]::Show("Authentication error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+                    if ($startButton -ne $null) { $startButton.Enabled = $false }
+                    [System.Windows.Forms.MessageBox]::Show("Connection error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
                 }
             })
-        } catch {
-            # If anything goes wrong adding the UI controls, leave startup behavior unchanged
+
+            $discordMenu.DropDownItems.Add($connectItem) | Out-Null
+            $menu.Items.Add($discordMenu) | Out-Null
+            $form.MainMenuStrip = $menu
+            $form.Controls.Add($menu)
         }
-    })
+
+        # Add a small explanatory label under the menu to explain purpose
+        $infoLabel = New-Object System.Windows.Forms.Label
+        $infoLabel.Text = 'Connect to Discord so I can offer assistance if needed. Use Discord -> Connect Discord.'
+        $infoLabel.AutoSize = $true
+        $infoLabel.Location = New-Object System.Drawing.Point(12, 30)
+        $infoLabel.Font = New-Object System.Drawing.Font('Segoe UI',9)
+        $form.Controls.Add($infoLabel)
+    } catch { }
 }
