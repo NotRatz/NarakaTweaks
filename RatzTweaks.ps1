@@ -1293,9 +1293,22 @@ function Start-WebUI {
     }
 
     while ($listener.IsListening) {
-        try { $ctx = $listener.GetContext() } catch { break }
-        $path = $ctx.Request.Url.AbsolutePath.ToLowerInvariant()
-        $method = $ctx.Request.HttpMethod.ToUpperInvariant()
+        $ctx = $listener.GetContext()
+        $req = $ctx.Request
+        $path = $req.Url.AbsolutePath.ToLower()
+        $method = $req.HttpMethod.ToUpper()
+        $query = $req.Url.Query
+
+        # Handle Discord OAuth callback
+        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
+            # Process OAuth code, set $global:DiscordAuthenticated
+            # ...existing code to handle OAuth...
+            $global:DiscordAuthenticated = $true
+            # Immediately show Start Tweaks page after auth
+            $html = & $getStatusHtml 'start-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
 
         switch ($path) {
             '/' {
