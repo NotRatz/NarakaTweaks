@@ -1338,45 +1338,120 @@ try {
     }
 } catch { }
 
-# Ensure Start is disabled by default to force explicit connection
-try { if ($startButton -ne $null) { $startButton.Enabled = $false } } catch { }
-
-# Add a top MenuStrip with a Discord -> Connect Discord item and an explanatory label
-if ($form -ne $null) {
+# Replace the Start button click handler so OAuth is required before continuing
+$btnStart.Add_Click({
+    # Prevent double clicks
+    $btnStart.Enabled = $false
     try {
-        if (-not ($form.Controls | Where-Object { $_ -is [System.Windows.Forms.MenuStrip] })) {
-            $menu = New-Object System.Windows.Forms.MenuStrip
-            $discordMenu = New-Object System.Windows.Forms.ToolStripMenuItem('Discord')
-            $connectItem = New-Object System.Windows.Forms.ToolStripMenuItem('Connect Discord')
+        if (-not (Ensure-DiscordAuthenticated)) { return }
 
-            $connectItem.Add_Click({
-                try {
-                    # Disable start while connecting
-                    if ($startButton -ne $null) { $startButton.Enabled = $false }
-                    if (Ensure-DiscordAuthenticated) {
-                        if ($startButton -ne $null) { $startButton.Enabled = $true }
-                        [System.Windows.Forms.MessageBox]::Show('Discord connected — Start is now enabled.','Discord Connected',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-                    } else {
-                        [System.Windows.Forms.MessageBox]::Show('Discord connection failed or was cancelled.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-                    }
-                } catch {
-                    if ($startButton -ne $null) { $startButton.Enabled = $false }
-                    [System.Windows.Forms.MessageBox]::Show("Connection error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-                }
-            })
-
-            $discordMenu.DropDownItems.Add($connectItem) | Out-Null
-            $menu.Items.Add($discordMenu) | Out-Null
-            $form.MainMenuStrip = $menu
-            $form.Controls.Add($menu)
+        # Step 1: Main Tweaks
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelMain.Visible = $true
+        HighlightTab $btnMain
+        Update-ProgressLog 'Applying main tweaks...'
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            Invoke-AllTweaks
+            Update-ProgressLog 'Main and GPU tweaks applied.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
         }
 
-        # Add a small explanatory label under the menu to explain purpose
-        $infoLabel = New-Object System.Windows.Forms.Label
-        $infoLabel.Text = 'Connect to Discord so I can offer assistance if needed. Use Discord -> Connect Discord.'
-        $infoLabel.AutoSize = $true
-        $infoLabel.Location = New-Object System.Drawing.Point(12, 30)
-        $infoLabel.Font = New-Object System.Drawing.Font('Segoe UI',9)
-        $form.Controls.Add($infoLabel)
+        # Step 2: GPU Tweaks (UI only, tweaks already applied in Invoke-AllTweaks)
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelGPU.Visible = $true
+        HighlightTab $btnGPU
+        Update-ProgressLog 'GPU tweaks complete.'
+        [System.Windows.Forms.Application]::DoEvents()
+
+        # Step 3: NVPI
+        Update-ProgressLog 'Importing NVPI profile...'
+        try {
+            Invoke-NVPI
+            Update-ProgressLog 'NVPI profile imported.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
+        }
+
+        # Step 4: Power Plan
+        Update-ProgressLog 'Setting power plan...'
+        try {
+            Set-PowerPlan
+            Update-ProgressLog 'Power plan set.'
+        } catch {
+            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
+        }
+
+        # Step 5: Optional Tweaks (now integrated in panel)
+        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
+        $panelOptional.Visible = $true
+        HighlightTab $btnOptional
+        Update-ProgressLog 'Ready for optional tweaks.'
+        [System.Windows.Forms.Application]::DoEvents()
+        $okBtn.Enabled = $true
+        $okBtn.Text = 'Apply Selected'
+        # Do not block here; wait for user to click Apply Selected, which will call Complete-Tweaks
+    } catch {
+        $fatalMsg = "FATAL ERROR in main workflow: $($_.Exception.Message)"
+        try {
+            $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
+            Add-Content -Path $logPath -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'  ' + $fatalMsg
+        } catch {}
+        try { Update-ProgressLog $fatalMsg } catch {}
+        try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $fatalMsg } catch {}
+    } finally {
+        $btnStart.Enabled = $true
+    }
+})
+
+# Add a persistent Connect Discord panel with explanatory text and a button that performs OAuth
+if ($form -ne $null) {
+    try {
+        $connectPanel = New-Object System.Windows.Forms.Panel
+        $connectPanel.Size = New-Object System.Drawing.Size(300,80)
+        $connectPanel.Location = New-Object System.Drawing.Point(12,12)
+        $connectPanel.BorderStyle = 'FixedSingle'
+        $connectPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+
+        $connectBtn = New-Object System.Windows.Forms.Button
+        $connectBtn.Text = 'Connect Discord'
+        $connectBtn.Size = New-Object System.Drawing.Size(120,28)
+        $connectBtn.Location = New-Object System.Drawing.Point(8,8)
+        $connectPanel.Controls.Add($connectBtn)
+
+        $connectDesc = New-Object System.Windows.Forms.Label
+        $connectDesc.Text = 'Connect to Discord so the tool can privately notify you if assistance is needed. Click to authenticate.'
+        $connectDesc.Size = New-Object System.Drawing.Size(268,40)
+        $connectDesc.Location = New-Object System.Drawing.Point(8,40)
+        $connectDesc.AutoSize = $false
+        $connectPanel.Controls.Add($connectDesc)
+
+        # If Start button exists, disable it until authenticated
+        try { if ($startButton -ne $null) { $startButton.Enabled = $false } } catch { }
+
+        $connectBtn.Add_Click({
+            try {
+                $connectBtn.Enabled = $false
+                $connectBtn.Text = 'Connecting...'
+
+                if (Ensure-DiscordAuthenticated) {
+                    $connectBtn.Text = 'Connected'
+                    $connectBtn.Enabled = $false
+                    if ($startButton -ne $null) { $startButton.Enabled = $true }
+                    [System.Windows.Forms.MessageBox]::Show('Discord connected. You will be notified privately if assistance is needed.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+                } else {
+                    $connectBtn.Text = 'Connect Discord'
+                    $connectBtn.Enabled = $true
+                    [System.Windows.Forms.MessageBox]::Show('Discord connection failed or was cancelled.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+                }
+            } catch {
+                $connectBtn.Text = 'Connect Discord'
+                $connectBtn.Enabled = $true
+                [System.Windows.Forms.MessageBox]::Show("Connection error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+            }
+        })
+
+        $form.Controls.Add($connectPanel)
     } catch { }
 }
