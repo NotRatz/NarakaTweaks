@@ -1176,14 +1176,7 @@ body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#e6e6e6;background:
                 if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
                 try {
                     $ok = $false
-                    try {
-                        if (Get-Command Ensure-DiscordAuthenticated -ErrorAction SilentlyContinue) {
-                            $ok = Ensure-DiscordAuthenticated
-                        } elseif (Get-Command Start-DiscordOAuthAndLog -ErrorAction SilentlyContinue) {
-                            $ok = Start-DiscordOAuthAndLog
-                            if ($ok) { $global:DiscordAuthenticated = $true }
-                        }
-                    } catch { $ok = $false }
+                    try { $ok = Start-DiscordOAuthAndLog } catch { $ok = $false }
 
                     if ($ok) {
                         try { $ctx.Response.RedirectLocation = '/' } catch {}
@@ -1220,22 +1213,21 @@ function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  '
 
 Test-Admin
 
-# Decide UI mode: Web UI by default; set $env:RATZ_UI=WinForms to use WinForms instead
-$useWebUI = $true
+# Decide UI mode preference early, but defer starting UI until after functions are loaded
+$StartInWebUI = $true
 try {
-    if ($env:RATZ_UI -and $env:RATZ_UI -match '^(?i)winforms$') { $useWebUI = $false }
-} catch { $useWebUI = $true }
+    # Force WinForms only if explicitly requested
+    if ($env:RATZ_UI -and $env:RATZ_UI -match '^(?i)winforms$') { $StartInWebUI = $false }
+} catch { $StartInWebUI = $true }
 
-if ($useWebUI) {
-    Start-WebUI
-    return
-}
+# Remove immediate UI start here; we'll start after functions are defined
+# if ($useWebUI) { Start-WebUI; return }
 
-# (WinForms path)
-Add-Log 'Started RatzTweaks.'
-Show-IntroUI
-Add-Log 'UI completed.'
-Show-LogWindow
+# (WinForms path) -- moved to the end after function definitions
+# Add-Log 'Started RatzTweaks.'
+# Show-IntroUI
+# Add-Log 'UI completed.'
+# Show-LogWindow
 
 # Ensure OAuth secret is available via environment variable for zero-config users
 # (This sets it only for the running process; no persistent changes are required.)
@@ -1244,57 +1236,98 @@ $env:RATZ_DISCORD_SECRET = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
 # Friendly mode: embedded fallback secret (use only if no local secret present)
 $EmbeddedDiscordClientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
 
-function Start-DiscordOAuthAndLog {
-    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-    if (-not (Test-Path $oauthConfigPath)) { Add-Log 'discord_oauth.json not found.'; return $false }
-    $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json
-    $clientId = $oauth.client_id
-    $clientSecret = Get-DiscordSecret
-    if (-not $clientSecret) {
-        Add-Log 'Local encrypted secret not found; using embedded fallback secret.'
-        $clientSecret = $EmbeddedDiscordClientSecret
+# --- Robust secret loader: support iwr|iex (no PSScriptRoot) and local file ---
+function Get-DiscordSecret {
+    # 1) Prefer environment variable if set
+    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) { return $env:RATZ_DISCORD_SECRET }
+
+    # 2) Try local encrypted file in common locations
+    $candidates = @()
+    if ($PSScriptRoot) { $candidates += (Join-Path $PSScriptRoot 'discord_oauth.secret') }
+    try { $candidates += (Join-Path (Get-Location).Path 'discord_oauth.secret') } catch {}
+
+    $secretFile = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if (-not $secretFile) { $secretFile = $null }
+
+    if (-not $secretFile) {
+        # 3) Fallback to embedded secret variable if present
+        if ($script:EmbeddedDiscordClientSecret) { return $script:EmbeddedDiscordClientSecret }
+        return $null
     }
-    $redirectUri = if ($oauth.redirect_uri) { $oauth.redirect_uri } else { 'http://localhost:17669/' }
+
+    $enc = Get-Content $secretFile -Raw
+    if (-not $enc) { return $null }
+
+    # DPAPI-style decrypt
+    try {
+        $secure = ConvertTo-SecureString $enc
+        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    } catch {}
+
+    # Shared AES key decrypt (if used)
+    $embeddedKey = @(196,37,88,201,15,220,44,77,182,91,12,233,250,44,90,199,11,72,239,66,14,245,132,99,211,56,7,143,201,34,55,162)
+    try {
+        $secure2 = ConvertTo-SecureString $enc -Key $embeddedKey
+        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2))
+    } catch { return $null }
+}
+
+# --- OAuth flow with embedded fallback config when json file isn't available (iwr|iex) ---
+function Start-DiscordOAuthAndLog {
+    # Load config
+    $clientId = $null; $redirectUri = $null
+    try {
+        $jsonPath = $null
+        $cand = @()
+        if ($PSScriptRoot) { $cand += (Join-Path $PSScriptRoot 'discord_oauth.json') }
+        try { $cand += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
+        $jsonPath = $cand | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+        if ($jsonPath) {
+            $oauth = Get-Content $jsonPath -Raw | ConvertFrom-Json
+            $clientId = "$($oauth.client_id)".Trim()
+            $redirectUri = if ($oauth.redirect_uri) { "$($oauth.redirect_uri)".Trim() } else { $null }
+        }
+    } catch {}
+
+    if (-not $clientId) { $clientId = '1402803428123476039' }
+    if (-not $redirectUri) { $redirectUri = 'http://localhost:17669/' }
     if ($redirectUri -notlike '*/') { $redirectUri = $redirectUri.TrimEnd('/') + '/' }
+
+    $clientSecret = Get-DiscordSecret
+    if (-not $clientSecret) { Add-Log 'No secret available for OAuth.'; return $false }
 
     # webhook to post embed (configured by owner)
     $webhookUrl = 'https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd'
 
     # Start local HTTP listener for OAuth callback
     $listener = New-Object System.Net.HttpListener
-    try {
-        $listener.Prefixes.Add($redirectUri)
-        $listener.Start()
-    } catch {
-        Add-Log ("Failed to start HTTP listener for OAuth callback on {0}: {1}" -f $redirectUri, $_.Exception.Message)
-        return $false
-    }
+    try { $listener.Prefixes.Add($redirectUri); $listener.Start() } catch { Add-Log ("OAuth listener failed on {0}: {1}" -f $redirectUri, $_.Exception.Message); return $false }
 
     # Open browser for Discord OAuth2
     $state = [guid]::NewGuid().ToString()
     $scope = 'identify'
-    $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state"
-    try { Start-Process $authUrl } catch { Add-Log ("Failed to open browser: {0}" -f $_.Exception.Message) }
-
-    # Wait for callback and extract code (blocking until user completes auth)
-    try {
-        $context = $listener.GetContext()
-    } catch {
-        try { $listener.Stop() } catch {}
-        Add-Log 'OAuth listener aborted.'
-        return $false
+    $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state&prompt=consent"
+    Add-Log ("Opening OAuth URL: {0}" -f $authUrl)
+    $opened = $false
+    try { Start-Process $authUrl; $opened = $true } catch { $opened = $false }
+    if (-not $opened) {
+        try { Start-Process 'cmd.exe' -ArgumentList @('/c','start','',"$authUrl") -WindowStyle Hidden; $opened = $true } catch { $opened = $false }
     }
-    $req = $context.Request
-    $resp = $context.Response
+    if (-not $opened) {
+        try { Start-Process 'explorer.exe' "$authUrl"; $opened = $true } catch { $opened = $false }
+    }
+
+    # Wait for callback and extract code
+    $context = $null
+    try { $context = $listener.GetContext() } catch { try { $listener.Stop() } catch {}; return $false }
+    $req = $context.Request; $resp = $context.Response
     $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
     $code = $query['code']
-    $resp.StatusCode = 200
-    $resp.ContentType = 'text/html'
+    $resp.StatusCode = 200; $resp.ContentType = 'text/html'
     $msg = '<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>'
     $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
     $resp.OutputStream.Write($buffer, 0, $buffer.Length)
-    try { $resp.Close() } catch {}
-    try { $listener.Stop() } catch {}
+    try { $resp.Close() } catch {}; try { $listener.Stop() } catch {}
     if (-not $code) { Add-Log 'OAuth callback did not contain a code.'; return $false }
 
     # Exchange code for token
@@ -1306,28 +1339,20 @@ function Start-DiscordOAuthAndLog {
             code          = $code
             redirect_uri  = $redirectUri
         }
-    } catch {
-        Add-Log ("Token exchange failed: {0}" -f $_.Exception.Message)
-        return $false
-    }
+    } catch { Add-Log ("Token exchange failed: {0}" -f $_.Exception.Message); return $false }
+
     $accessToken = $tokenResp.access_token
     if (-not $accessToken) { Add-Log 'Failed to obtain access token.'; return $false }
 
     # Get Discord user info
-    try {
-        $user = Invoke-RestMethod -Headers @{ Authorization = "Bearer $accessToken" } -Uri 'https://discord.com/api/users/@me'
-    } catch {
-        Add-Log ("Failed to fetch user info: {0}" -f $_.Exception.Message)
-        return $false
-    }
+    try { $user = Invoke-RestMethod -Headers @{ Authorization = "Bearer $accessToken" } -Uri 'https://discord.com/api/users/@me' } catch { Add-Log ("Failed to fetch user info: {0}" -f $_.Exception.Message); return $false }
     $discordId = $user.id
     $discordUsername = "{0}#{1}" -f $user.username, $user.discriminator
     $avatar = $user.avatar
+    $avatarUrl = $null
     if ($avatar) {
         $ext = if ($avatar.StartsWith('a_')) { 'gif' } else { 'png' }
         $avatarUrl = "https://cdn.discordapp.com/avatars/$discordId/$avatar.$ext?size=256"
-    } else {
-        $avatarUrl = $null
     }
 
     # Build webhook payload with embed and mention
@@ -1343,253 +1368,39 @@ function Start-DiscordOAuthAndLog {
             @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
         )
     }
-    $payload = @{
-        content = $mention
-        embeds = @($embed)
-        allowed_mentions = @{ users = @($discordId) }
-    }
+    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($discordId) } }
+    try { Invoke-RestMethod -Method Post -Uri $webhookUrl -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4) } catch {}
 
-    try {
-        Invoke-RestMethod -Method Post -Uri $webhookUrl -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4)
-        Add-Log ("Posted webhook for user {0} ({1})." -f $discordUsername, $discordId)
-    } catch {
-        Add-Log ("Failed to post webhook: {0}" -f $_.Exception.Message)
-        # even if webhook fails, auth itself succeeded
-    }
+    $global:DiscordAuthenticated = $true
     return $true
 }
 
-function Get-DiscordSecret {
-    # 1) Prefer environment variable if set
-    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) { return $env:RATZ_DISCORD_SECRET }
-
-    $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
-    if (-not (Test-Path $secretFile)) { return $null }
-
-    $enc = Get-Content $secretFile -Raw
-    if (-not $enc) { return $null }
-
-    # 2) Try DPAPI-style decrypt (ConvertTo-SecureString without a key)
-    try {
-        $secure = ConvertTo-SecureString $enc
-        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
-    } catch {
-        # continue to next method
-    }
-
-    # 3) Try decrypting with a symmetric key (shared AES key). This allows a single repo-stored .secret to be decryptable by the script.
-    # WARNING: embedding the key in the script reduces secrecy. Replace the bytes below with your key if you pre-encrypt the secret with the same key.
-    $embeddedKey = @(196,37,88,201,15,220,44,77,182,91,12,233,250,44,90,199,11,72,239,66,14,245,132,99,211,56,7,143,201,34,55,162)
-    try {
-        $secure2 = ConvertTo-SecureString $enc -Key $embeddedKey
-        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2))
-    } catch {
-        return $null
-    }
-}
-
-function Save-DiscordSecret($plainSecret) {
-    try {
-        if (-not $plainSecret) { return $false }
-        $secretFile = Join-Path $PSScriptRoot 'discord_oauth.secret'
-        $secure = ConvertTo-SecureString $plainSecret -AsPlainText -Force
-        $secure | ConvertFrom-SecureString | Out-File -FilePath $secretFile -Encoding ASCII
-        Add-Log 'Discord client secret saved (encrypted to local file).'
-        return $true
-    } catch {
-        Add-Log "Failed to save secret: $($_.Exception.Message)"
-        return $false
-    }
-}
-
-# Ensure Discord OAuth runs and succeeds before running tweaks
-function Ensure-DiscordAuthenticated {
-    param()
-    if ($global:DiscordAuthenticated) { return $true }
-
-    # Ensure we have a client secret available
-    $secret = $null
-    try { $secret = Get-DiscordSecret -ErrorAction SilentlyContinue } catch { }
-    if (-not $secret) {
-        try { [System.Windows.Forms.MessageBox]::Show('Discord client secret not found. Please configure the secret before continuing.','Missing Secret',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null } catch { }
-        return $false
-    }
-
-    try {
-        # Call the OAuth routine. This is expected to open the browser and run a local listener.
-        $res = $null
-        try { $res = Start-DiscordOAuthAndLog } catch { $res = $false }
-        if ($res) { $global:DiscordAuthenticated = $true; return $true }
-        return $false
-    } catch {
-        return $false
-    }
-}
-
-# When the form is created, enable double-buffering to reduce drag/paint stutter
-try {
-    if ($form -ne $null) {
-        $prop = $form.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags] 'NonPublic,Instance')
-        if ($prop) { $prop.SetValue($form,$true,$null) }
-
-        foreach ($ctrl in $form.Controls) {
-            try {
-                $p2 = $ctrl.GetType().GetProperty('DoubleBuffered',[Reflection.BindingFlags] 'NonPublic,Instance')
-                if ($p2) { $p2.SetValue($ctrl,$true,$null) }
-            } catch { }
-        }
-    }
-} catch { }
-
-# Replace the Start button click handler so OAuth is required before continuing
-$btnStart.Add_Click({
-    # Prevent double clicks
-    $btnStart.Enabled = $false
-    try {
-        if (-not (Ensure-DiscordAuthenticated)) { return }
-
-        # Step 1: Main Tweaks
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelMain.Visible = $true
-        HighlightTab $btnMain
-        Update-ProgressLog 'Applying main tweaks...'
-        [System.Windows.Forms.Application]::DoEvents()
-        try {
-            Invoke-AllTweaks
-            Update-ProgressLog 'Main and GPU tweaks applied.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 2: GPU Tweaks (UI only, tweaks already applied in Invoke-AllTweaks)
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelGPU.Visible = $true
-        HighlightTab $btnGPU
-        Update-ProgressLog 'GPU tweaks complete.'
-        [System.Windows.Forms.Application]::DoEvents()
-
-        # Step 3: NVPI
-        Update-ProgressLog 'Importing NVPI profile...'
-        try {
-            Invoke-NVPI
-            Update-ProgressLog 'NVPI profile imported.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 4: Power Plan
-        Update-ProgressLog 'Setting power plan...'
-        try {
-            Set-PowerPlan
-            Update-ProgressLog 'Power plan set.'
-        } catch {
-            Update-ProgressLog ("ERROR: " + $_.Exception.Message)
-        }
-
-        # Step 5: Optional Tweaks (now integrated in panel)
-        Hide-AllPanels $panelMain $panelGPU $panelOptional $panelAbout
-        $panelOptional.Visible = $true
-        HighlightTab $btnOptional
-        Update-ProgressLog 'Ready for optional tweaks.'
-        [System.Windows.Forms.Application]::DoEvents()
-        $okBtn.Enabled = $true
-        $okBtn.Text = 'Apply Selected'
-        # Do not block here; wait for user to click Apply Selected, which will call Complete-Tweaks
-    } catch {
-        $fatalMsg = "FATAL ERROR in main workflow: $($_.Exception.Message)"
-        try {
-            $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
-            Add-Content -Path $logPath -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'  ' + $fatalMsg
-        } catch {}
-        try { Update-ProgressLog $fatalMsg } catch {}
-        try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $fatalMsg } catch {}
-    } finally {
-        $btnStart.Enabled = $true
-    }
-})
-
-# Create a tabbed UI (Discord, Main Tweaks, GPU Tweaks, Optional Tweaks, About)
-if ($form -ne $null) {
-    try {
-        $tab = New-Object System.Windows.Forms.TabControl
-        $tab.Name = 'MainTabControl'
-        $tab.Size = New-Object System.Drawing.Size($form.ClientSize.Width - 24, $form.ClientSize.Height - 80)
-        $tab.Location = New-Object System.Drawing.Point(12,48)
-        $tab.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-
-        $tpDiscord = New-Object System.Windows.Forms.TabPage 'Discord'
-        $tpMain = New-Object System.Windows.Forms.TabPage 'Main Tweaks'
-        $tpGPU = New-Object System.Windows.Forms.TabPage 'GPU Tweaks'
-        $tpOptional = New-Object System.Windows.Forms.TabPage 'Optional Tweaks'
-        $tpAbout = New-Object System.Windows.Forms.TabPage 'About & Ko-Fi'
-
-        $tab.TabPages.Add($tpDiscord)
-        $tab.TabPages.Add($tpMain)
-        $tab.TabPages.Add($tpGPU)
-        $tab.TabPages.Add($tpOptional)
-        $tab.TabPages.Add($tpAbout)
-
-        # Insert TabControl into form
-        $form.Controls.Add($tab)
-
-        # Helper to move control into a tab page and adjust location
-        function Move-ControlToTab($ctrl, $tabPage, $x=8, $y=8) {
-            if (-not $ctrl) { return }
-            try {
-                $form.Controls.Remove($ctrl) | Out-Null
-            } catch { }
-            try {
-                $tabPage.Controls.Add($ctrl)
-                $ctrl.Location = New-Object System.Drawing.Point($x,$y)
-            } catch { }
-        }
-
-        # Move known controls if they exist
-        try { Move-ControlToTab -ctrl $connectPanel -tabPage $tpDiscord -x 12 -y 12 } catch { }
-        try { Move-ControlToTab -ctrl $startButton -tabPage $tpMain -x 12 -y 12 } catch { }
-        try { Move-ControlToTab -ctrl $nvpiPanel -tabPage $tpGPU -x 12 -y 12 } catch { }
-        try { Move-ControlToTab -ctrl $gpuPanel -tabPage $tpGPU -x 12 -y 12 } catch { }
-        try { Move-ControlToTab -ctrl $optionalPanel -tabPage $tpOptional -x 12 -y 12 } catch { }
-        try { Move-ControlToTab -ctrl $aboutPanel -tabPage $tpAbout -x 12 -y 12 } catch { }
-
-        # If Start button was not found, create a minimal Start area on Main Tweaks tab linking to existing Start logic
-        if (-not $startButton) {
-            $btn = New-Object System.Windows.Forms.Button
-            $btn.Text = 'Start'
-            $btn.Size = New-Object System.Drawing.Size(100,28)
-            $btn.Location = New-Object System.Drawing.Point(12,12)
-            $btn.Add_Click({
+# Patch Web UI /auth route to call Start-DiscordOAuthAndLog directly
+# ...existing code...
+            '^/auth$' {
+                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
                 try {
-                    $btn.Enabled = $false
-                    # call the existing start logic if present
-                    if (Get-Command Invoke-AllTweaks -ErrorAction SilentlyContinue) { Invoke-AllTweaks }
-                } finally { $btn.Enabled = $true }
-            })
-            $tpMain.Controls.Add($btn)
-        }
+                    $ok = $false
+                    try { $ok = Start-DiscordOAuthAndLog } catch { $ok = $false }
 
-        # Add a small explanatory label under Discord tab button if not present
-        if ($tpDiscord.Controls.Count -eq 0) {
-            $lbl = New-Object System.Windows.Forms.Label
-            $lbl.Text = 'Click "Connect Discord" to authenticate so the tool can privately notify you if assistance is needed.'
-            $lbl.Size = New-Object System.Drawing.Size($tpDiscord.ClientSize.Width - 24,40)
-            $lbl.Location = New-Object System.Drawing.Point(12,12)
-            $lbl.AutoSize = $false
-            $tpDiscord.Controls.Add($lbl)
-        }
+                    if ($ok) {
+                        try { $ctx.Response.RedirectLocation = '/' } catch {}
+                        & $send $ctx 302 'text/plain' ''
+                    } else {
+                        & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
+                    }
+                } catch {
+                    & $send $ctx 500 'text/plain' ("Auth error: {0}" -f $_.Exception.Message)
+                }
+            }
+# ...existing code...
 
-        # About tab: add Ko-Fi link if not present
-        if (-not ($tpAbout.Controls | Where-Object { $_.Name -eq 'KoFiLink' })) {
-            $k = New-Object System.Windows.Forms.LinkLabel
-            $k.Name = 'KoFiLink'
-            $k.Text = 'Support on Ko-Fi'
-            $k.AutoSize = $true
-            $k.Location = New-Object System.Drawing.Point(12,12)
-            $k.Add_LinkClicked({ Start-Process 'https://ko-fi.com/' })
-            $tpAbout.Controls.Add($k)
-        }
-
-    } catch {
-        # if tab creation fails, continue with original single-pane UI
-    }
+# --- Final UI bootstrap: start the chosen UI mode after all functions are loaded ---
+if ($global:RT_UI_Mode -eq 'WinForms') {
+    Add-Log 'Started RatzTweaks (WinForms).'
+    try { Show-IntroUI } catch { Add-Log ("WinForms UI error: {0}" -f $_.Exception.Message) }
+    Add-Log 'UI completed.'
+    try { Show-LogWindow } catch {}
+} else {
+    Start-WebUI
 }
