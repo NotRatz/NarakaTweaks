@@ -1344,60 +1344,8 @@ function Start-WebUI {
         $method = $req.HttpMethod.ToUpper()
         $query = $req.Url.Query
 
-        # Handle Discord OAuth callback early so a redirect to '/' with ?code= is processed before the root page handler
-        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
-            try {
-                $code = $req.QueryString['code']
-                if ($code -and $clientId -and $redirectUri) {
-                    $secret = & $getDiscordSecret
-                    if ($secret) {
-                        $tokenBody = @{ client_id=$clientId; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
-                        try { $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody } catch {}
-                        if ($tok.access_token) {
-                            try { $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" } } catch {}
-                            if ($me) {
-                                $global:DiscordUserId = "$(($me.id))"
-                                if ($me.discriminator -and $me.discriminator -ne '0') {
-                                    $global:DiscordUserName = "$(($me.username))#$(($me.discriminator))"
-                            } else {
-                                $global:DiscordUserName = if ($me.global_name) { "$(($me.global_name))" } else { "$(($me.username))" }
-                            }
-                            # Send webhook notification if configured
-                            $wh = & $getWebhookUrl
-                            if ($wh) {
-                                $avatarUrl = $null
-                                if ($me.avatar) {
-                                    $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
-                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
-                                }
-                                $mention = "<@${(($me.id))}>"
-                                $embed = @{
-                                    title = 'RatzTweaks — New run'
-                                    description = 'A user authenticated with Discord'
-                                    color = 3447003
-                                    thumbnail = @{ url = $avatarUrl }
-                                    fields = @(
-                                        @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
-                                        @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
-                                        @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
-                                    )
-                                }
-                                $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
-                                try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6) } catch {}
-                            }
-                        }
-                    }
-                }
-            } catch {}
-            $global:DiscordAuthenticated = $true
-            $html = & $getStatusHtml 'start' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            continue
-        }
-
-        # Serve the start page for root GET requests (avoid leaving the browser waiting),
-        # but skip if this is an OAuth redirect carrying ?code= in the query
-        if ((($path -eq '/') -or ($path -eq '')) -and $method -eq 'GET' -and -not ($query -match 'code=')) {
+        # Serve the start page for root GET requests (avoid leaving the browser waiting)
+        if ((($path -eq '/') -or ($path -eq '')) -and $method -eq 'GET') {
             $html = & $getStatusHtml 'start' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
@@ -1458,34 +1406,35 @@ function Start-WebUI {
                         if ($tok.access_token) {
                             try { $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" } } catch {}
                             if ($me) {
-                                $global:DiscordUserId = "$(($me.id))"
+                                $global:DiscordUserId = "$($me.id)"
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
-                                    $global:DiscordUserName = "$(($me.username))#$(($me.discriminator))"
-                            } else {
-                                $global:DiscordUserName = if ($me.global_name) { "$(($me.global_name))" } else { "$(($me.username))" }
-                            }
-                            # Send webhook notification if configured
-                            $wh = & $getWebhookUrl
-                            if ($wh) {
-                                $avatarUrl = $null
-                                if ($me.avatar) {
-                                    $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
-                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
+                                    $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
+                                } else {
+                                    $global:DiscordUserName = if ($me.global_name) { "$($me.global_name)" } else { "$($me.username)" }
                                 }
-                                $mention = "<@${(($me.id))}>"
-                                $embed = @{
-                                    title = 'RatzTweaks — New run'
-                                    description = 'A user authenticated with Discord'
-                                    color = 3447003
-                                    thumbnail = @{ url = $avatarUrl }
-                                    fields = @(
-                                        @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
-                                        @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
-                                        @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
-                                    )
+                                # Send webhook notification if configured
+                                $wh = & $getWebhookUrl
+                                if ($wh) {
+                                    $avatarUrl = $null
+                                    if ($me.avatar) {
+                                        $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
+                                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
+                                    }
+                                    $mention = "<@${($me.id)}>"
+                                    $embed = @{
+                                        title = 'RatzTweaks — New run'
+                                        description = 'A user authenticated with Discord'
+                                        color = 3447003
+                                        thumbnail = @{ url = $avatarUrl }
+                                        fields = @(
+                                            @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
+                                            @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
+                                            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
+                                        )
+                                    }
+                                    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
+                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6) } catch {}
                                 }
-                                $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
-                                try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6) } catch {}
                             }
                         }
                     }
