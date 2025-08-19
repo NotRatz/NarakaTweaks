@@ -1114,41 +1114,114 @@ function Show-RestartPrompt {
 }
 
 
+# --- Lightweight Web UI to replace WinForms when needed ---
+function Start-WebUI {
+    param()
+    Add-Log 'Starting Web UI on http://127.0.0.1:17690/'
+    $listener = [System.Net.HttpListener]::new()
+    $prefix = 'http://127.0.0.1:17690/'
+    try { $listener.Prefixes.Add($prefix); $listener.Start() } catch { Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message); return }
+
+    # open browser
+    try { Start-Process $prefix } catch {}
+
+    $send = {
+        param($ctx, $statusCode, $contentType, $body)
+        try {
+            $ctx.Response.StatusCode = $statusCode
+            $ctx.Response.ContentType = $contentType
+            if ($body -is [string]) { $bytes = [System.Text.Encoding]::UTF8.GetBytes($body) } else { $bytes = $body }
+            $ctx.Response.OutputStream.Write($bytes,0,$bytes.Length)
+        } catch {}
+        try { $ctx.Response.Close() } catch {}
+    }
+
+    $getStatusHtml = {
+        param()
+        $auth = if ($global:DiscordAuthenticated) { 'Connected to Discord' } else { 'Not connected to Discord' }
+        $btnStartDisabled = if ($global:DiscordAuthenticated) { '' } else { 'disabled' }
+        @"
+<!doctype html>
+<html><head><meta charset="utf-8"/><title>RatzTweaks</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#e6e6e6;background:#1e1e1e}
+.btn{padding:10px 16px;margin-right:10px;border:0;border-radius:4px;cursor:pointer}
+.primary{background:#0078d4;color:#fff}
+.secondary{background:#333;color:#fff}
+.card{background:#2b2b2b;border:1px solid #3a3a3a;border-radius:6px;padding:16px;max-width:720px}
+.note{color:#bbb;margin-top:8px}
+</style></head>
+<body>
+<div class="card">
+  <h2>RatzTweaks</h2>
+  <p>Status: <strong>$auth</strong></p>
+  <form action="/auth" method="post" style="display:inline"><button class="btn primary" type="submit">Connect Discord</button></form>
+  <form action="/start" method="post" style="display:inline"><button class="btn secondary" type="submit" $btnStartDisabled>Start Tweaks</button></form>
+  <div class="note">Connect to Discord so the tool can privately notify you if assistance is needed.</div>
+</div>
+</body></html>
+"@
+    }
+
+    while ($listener.IsListening) {
+        try { $ctx = $listener.GetContext() } catch { break }
+        $path = $ctx.Request.Url.AbsolutePath.ToLowerInvariant()
+        $method = $ctx.Request.HttpMethod.ToUpperInvariant()
+
+        switch -Regex ($path) {
+            '^/$' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml)
+            }
+            '^/auth$' {
+                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
+                try {
+                    if (Ensure-DiscordAuthenticated) {
+                        & $send $ctx 302 'text/plain' ''
+                        try { $ctx.Response.RedirectLocation = '/' } catch {}
+                    } else {
+                        & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
+                    }
+                } catch {
+                    & $send $ctx 500 'text/plain' ("Auth error: {0}" -f $_.Exception.Message)
+                }
+            }
+            '^/start$' {
+                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
+                if (-not $global:DiscordAuthenticated) { & $send $ctx 403 'text/plain' 'Authenticate with Discord first.'; break }
+                try {
+                    Invoke-AllTweaks
+                    & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Tweaks started. You can close this window.</h3></body></html>'
+                } catch {
+                    & $send $ctx 500 'text/plain' ("Start error: {0}" -f $_.Exception.Message)
+                }
+            }
+            default {
+                & $send $ctx 404 'text/plain' 'Not Found'
+            }
+        }
+    }
+
+    try { $listener.Stop() } catch {}
+}
+
 # Main script logic (must be after all function definitions)
 $global:RatzLog = @()
 function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $msg }
 
 Test-Admin
 
-# Disable specific Windows features using ViVeTool
-function Disable-ViVeFeatures {
-    try {
-        # Resolve ViVeTool.exe from likely locations without assuming $PSScriptRoot is set
-        $candidates = @()
-        if ($PSScriptRoot) { $candidates += (Join-Path $PSScriptRoot 'UTILITY\ViVeTool.exe') }
-        $candidates += (Join-Path (Get-Location).Path 'UTILITY\ViVeTool.exe')
+# Decide UI mode: Web UI by default; set $env:RATZ_UI=WinForms to use WinForms instead
+$useWebUI = $true
+try {
+    if ($env:RATZ_UI -and $env:RATZ_UI -match '^(?i)winforms$') { $useWebUI = $false }
+} catch { $useWebUI = $true }
 
-        $viveToolPath = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-        if (-not $viveToolPath) {
-            Add-Log ("ViVeTool.exe not found. Tried: " + ($candidates -join '; '))
-            return
-        }
-
-        $featureIds = @('39145991','39146010','39281392','41655236','42105254')
-        foreach ($id in $featureIds) {
-            try {
-                Add-Log ("ViVeTool: disabling id {0}" -f $id)
-                & $viveToolPath '/disable' ("/id:$id") 2>&1 | ForEach-Object { Add-Log ("ViVeTool: {0}" -f $_) }
-            } catch {
-                Add-Log ("ViVeTool error for id {0}: {1}" -f $id, $_.Exception.Message)
-            }
-        }
-        Add-Log 'ViVeTool features disable attempt complete.'
-    } catch {
-        Add-Log ("ERROR in Disable-ViVeFeatures: {0}" -f $_.Exception.Message)
-    }
+if ($useWebUI) {
+    Start-WebUI
+    return
 }
 
+# (WinForms path)
 Add-Log 'Started RatzTweaks.'
 Show-IntroUI
 Add-Log 'UI completed.'
@@ -1163,7 +1236,7 @@ $EmbeddedDiscordClientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
 
 function Start-DiscordOAuthAndLog {
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-    if (-not (Test-Path $oauthConfigPath)) { Add-Log 'discord_oauth.json not found.'; return }
+    if (-not (Test-Path $oauthConfigPath)) { Add-Log 'discord_oauth.json not found.'; return $false }
     $oauth = Get-Content $oauthConfigPath -Raw | ConvertFrom-Json
     $clientId = $oauth.client_id
     $clientSecret = Get-DiscordSecret
@@ -1183,18 +1256,24 @@ function Start-DiscordOAuthAndLog {
         $listener.Prefixes.Add($redirectUri)
         $listener.Start()
     } catch {
-        Add-Log "Failed to start HTTP listener for OAuth callback on ${redirectUri}: $($_.Exception.Message)"
-        return
+        Add-Log ("Failed to start HTTP listener for OAuth callback on {0}: {1}" -f $redirectUri, $_.Exception.Message)
+        return $false
     }
 
     # Open browser for Discord OAuth2
     $state = [guid]::NewGuid().ToString()
     $scope = 'identify'
     $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state"
-    Start-Process $authUrl
+    try { Start-Process $authUrl } catch { Add-Log ("Failed to open browser: {0}" -f $_.Exception.Message) }
 
     # Wait for callback and extract code (blocking until user completes auth)
-    $context = $listener.GetContext()
+    try {
+        $context = $listener.GetContext()
+    } catch {
+        try { $listener.Stop() } catch {}
+        Add-Log 'OAuth listener aborted.'
+        return $false
+    }
     $req = $context.Request
     $resp = $context.Response
     $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
@@ -1204,13 +1283,13 @@ function Start-DiscordOAuthAndLog {
     $msg = '<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>'
     $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
     $resp.OutputStream.Write($buffer, 0, $buffer.Length)
-    $resp.Close()
+    try { $resp.Close() } catch {}
     try { $listener.Stop() } catch {}
-    if (-not $code) { Add-Log 'OAuth callback did not contain a code.'; return }
+    if (-not $code) { Add-Log 'OAuth callback did not contain a code.'; return $false }
 
     # Exchange code for token
     try {
-        $tokenResp = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body @{ 
+        $tokenResp = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body @{
             client_id     = $clientId
             client_secret = $clientSecret
             grant_type    = 'authorization_code'
@@ -1218,32 +1297,31 @@ function Start-DiscordOAuthAndLog {
             redirect_uri  = $redirectUri
         }
     } catch {
-        Add-Log "Token exchange failed: $($_.Exception.Message)"
-        return
+        Add-Log ("Token exchange failed: {0}" -f $_.Exception.Message)
+        return $false
     }
     $accessToken = $tokenResp.access_token
-    if (-not $accessToken) { Add-Log 'Failed to obtain access token.'; return }
+    if (-not $accessToken) { Add-Log 'Failed to obtain access token.'; return $false }
 
     # Get Discord user info
     try {
         $user = Invoke-RestMethod -Headers @{ Authorization = "Bearer $accessToken" } -Uri 'https://discord.com/api/users/@me'
     } catch {
-        Add-Log "Failed to fetch user info: $($_.Exception.Message)"
-        return
+        Add-Log ("Failed to fetch user info: {0}" -f $_.Exception.Message)
+        return $false
     }
     $discordId = $user.id
-    $discordUsername = "$($user.username)#$($user.discriminator)"
+    $discordUsername = "{0}#{1}" -f $user.username, $user.discriminator
     $avatar = $user.avatar
     if ($avatar) {
-        $ext = 'png'
-        if ($avatar.StartsWith('a_')) { $ext = 'gif' }
+        $ext = if ($avatar.StartsWith('a_')) { 'gif' } else { 'png' }
         $avatarUrl = "https://cdn.discordapp.com/avatars/$discordId/$avatar.$ext?size=256"
     } else {
         $avatarUrl = $null
     }
 
     # Build webhook payload with embed and mention
-    $mention = "<@$discordId>"
+    $mention = "<@${discordId}>"
     $embed = @{
         title = 'RatzTweaks — New run'
         description = 'A user has run RatzTweaks'
@@ -1263,10 +1341,12 @@ function Start-DiscordOAuthAndLog {
 
     try {
         Invoke-RestMethod -Method Post -Uri $webhookUrl -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4)
-        Add-Log "Posted webhook for user $discordUsername ($discordId)."
+        Add-Log ("Posted webhook for user {0} ({1})." -f $discordUsername, $discordId)
     } catch {
-        Add-Log "Failed to post webhook: $($_.Exception.Message)"
+        Add-Log ("Failed to post webhook: {0}" -f $_.Exception.Message)
+        # even if webhook fails, auth itself succeeded
     }
+    return $true
 }
 
 function Get-DiscordSecret {
