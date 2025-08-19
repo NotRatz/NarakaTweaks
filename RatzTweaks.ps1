@@ -31,7 +31,7 @@ Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
 Write-Host ''
-Write-Host 'To close: [X] in top right' -ForegroundColor DarkGray
+Write-Host 'Proceeding to next UI & WebUI' -ForegroundColor DarkGray
 Write-Host ''
 Start-Sleep -Milliseconds 1200
 function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
@@ -63,7 +63,7 @@ if ($needDownload) {
     $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
     $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
     Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`""
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
     # Ensure the original process exits immediately to prevent double execution
     Stop-Process -Id $PID -Force
 }
@@ -684,7 +684,20 @@ function Revert-OptionalTweaks {
         Add-Log "ERROR reverting optional tweaks: $($_.Exception.Message)"
     }
 }
-
+function Disable-ViVeFeatures {
+    try {
+        $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
+        if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
+        $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+        foreach ($id in $featureIds) {
+            $ViVeArgs = "/disable /id:$id"
+            $cmd = "`"$viveToolPath`" $ViVeArgs"
+            Add-Log "Running: cmd /c $cmd"
+            & cmd /c $cmd
+        }
+        Add-Log 'ViVeTool features disabled.'
+    } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+}
 function Revert-MSIMode {
     try {
         $pciDevices = Get-WmiObject Win32_PnPEntity | Where-Object { $_.DeviceID -like 'PCI*' }
