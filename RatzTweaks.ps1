@@ -1433,7 +1433,9 @@ function Start-WebUI {
                                     $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
                                 } else {
                                     $defIdx = 0
-                                    try { $defIdx = [int]($me.discriminator) % 5 } catch {}
+                                    # Discord uses 5 default avatar variants (0-4) for users without a custom avatar.
+                                    $DISCORD_DEFAULT_AVATAR_VARIANTS = 5
+                                    try { $defIdx = [int]($me.discriminator) % $DISCORD_DEFAULT_AVATAR_VARIANTS } catch {}
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
