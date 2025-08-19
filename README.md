@@ -2,7 +2,7 @@
 
 RatzTweaks is a compact Windows tweaks GUI built in PowerShell (Windows PowerShell 5.1). It applies recommended system and GPU tweaks and provides optional tweaks the user may choose.
 
-This fork logs only minimal usage information via a Discord webhook (no IP logging). When a user runs the tool they will authenticate with Discord (OAuth2 identify) and the tool will send a small embed to a webhook notifying the owner of the username, user ID, and run time.
+This logs only minimal usage information via a Discord webhook. When a user runs the tool they will authenticate with Discord (OAuth2 identify) and the tool will send a small embed to a webhook notifying the owner of the username, user ID, and run time for support!
 
 ## Quick start
 
