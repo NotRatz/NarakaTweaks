@@ -1109,6 +1109,8 @@ function Show-RestartPrompt {
 function Start-WebUI {
     param()
     [Console]::WriteLine('Start-WebUI: initializing...')
+    # Ensure modern TLS for Discord API on Windows PowerShell 5.1
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
     $listener = [System.Net.HttpListener]::new()
     [Console]::WriteLine('Start-WebUI: HttpListener object created')
     $prefix = 'http://127.0.0.1:17690/'
@@ -1244,13 +1246,17 @@ function Start-WebUI {
             'start' {
                 $startDisabledAttr = ''
                 if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
-                $authSection = if ($global:DiscordAuthenticated) {
-                    $name = $global:DiscordUserName
-                    $avatar = $global:DiscordAvatarUrl
-                    $displayName = if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { $name }
-                    "<div class='flex items-center mb-4 text-gray-300'><img src='${avatar}' alt='Avatar' class='w-12 h-12 rounded-full mr-3'/><span>$displayName</span></div>"
+                $name = $global:DiscordUserName
+                $avatar = $global:DiscordAvatarUrl
+                $displayName = if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { "Logged in with Discord as $name" }
+                if ($global:DiscordAuthenticated) {
+                    if (-not [string]::IsNullOrEmpty($avatar)) {
+                        $authSection = "<div class='flex items-center mb-4 text-gray-300'><img src='${avatar}' alt='Avatar' class='w-12 h-12 rounded-full mr-3'/><span>$displayName</span></div>"
+                    } else {
+                        $authSection = "<p class='text-gray-300 mb-4'>$displayName</p>"
+                    }
                 } else {
-                    "<p class='text-gray-300 mb-4'>Not logged in with Discord</p>"
+                    $authSection = "<p class='text-gray-300 mb-4'>Not logged in with Discord</p>"
                 }
                 $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
                 @"
@@ -1411,15 +1417,28 @@ function Start-WebUI {
 
         # After Discord auth, redirect to /start, optionally exchange the token and fetch user
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
+            $authed = $false
             try {
                 $code = $req.QueryString['code']
+                if ($code) { [Console]::WriteLine('OAuth: received code parameter') } else { [Console]::WriteLine('OAuth: missing code parameter') }
                 if ($code -and $clientId -and $redirectUri) {
                     $secret = & $getDiscordSecret
                     if ($secret) {
                         $tokenBody = @{ client_id=$clientId; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
-                        try { $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody } catch {}
+                        try {
+                            $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody
+                            [Console]::WriteLine('OAuth: token exchange completed')
+                        } catch {
+                            [Console]::WriteLine("OAuth: token exchange failed: $($_.Exception.Message)")
+                        }
                         if ($tok.access_token) {
-                            try { $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" } } catch {}
+                            $global:DiscordAccessToken = $tok.access_token
+                            try {
+                                $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" }
+                                [Console]::WriteLine('OAuth: fetched /users/@me')
+                            } catch {
+                                [Console]::WriteLine("OAuth: fetching /users/@me failed: $($_.Exception.Message)")
+                            }
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
@@ -1427,21 +1446,23 @@ function Start-WebUI {
                                 } else {
                                     $global:DiscordUserName = if ($me.global_name) { "$($me.global_name)" } else { "$($me.username)" }
                                 }
+                                # Build avatar URL (custom or default variant)
                                 $avatarUrl = $null
                                 if ($me.avatar) {
                                     $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
                                     $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
                                 } else {
                                     $defIdx = 0
-                                    # Discord uses 5 default avatar variants (0-4) for users without a custom avatar.
                                     $DISCORD_DEFAULT_AVATAR_VARIANTS = 5
                                     try { $defIdx = [int]($me.discriminator) % $DISCORD_DEFAULT_AVATAR_VARIANTS } catch {}
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
+
                                 # Send webhook notification if configured
                                 $wh = & $getWebhookUrl
                                 if ($wh) {
+                                    [Console]::WriteLine('Webhook: sending run notification')
                                     $mention = "<@${($me.id)}>"
                                     $embed = @{
                                         title = 'RatzTweaks — New run'
@@ -1455,14 +1476,27 @@ function Start-WebUI {
                                         )
                                     }
                                     $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
-                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6) } catch {}
+                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6); [Console]::WriteLine('Webhook: sent') } catch { [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)") }
+                                } else {
+                                    [Console]::WriteLine('Webhook: no webhook configured')
                                 }
+                                $authed = $true
+                            } else {
+                                [Console]::WriteLine('OAuth: no user info returned')
                             }
+                        } else {
+                            [Console]::WriteLine('OAuth: token exchange returned no access_token')
                         }
+                    } else {
+                        [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)')
                     }
+                } else {
+                    [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token')
                 }
-            } catch {}
-            $global:DiscordAuthenticated = $true
+            } catch {
+                [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)")
+            }
+            $global:DiscordAuthenticated = $authed
             $html = & $getStatusHtml 'start' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
