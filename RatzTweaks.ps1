@@ -1122,18 +1122,26 @@ Test-Admin
 
 # Disable specific Windows features using ViVeTool
 function Disable-ViVeFeatures {
-    try {
-        $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
-        if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
-        $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
-        foreach ($id in $featureIds) {
-            $args = "/disable /id:$id"
-            $cmd = "`"$viveToolPath`" $args"
-            Add-Log "Running: cmd /c $cmd"
-            & cmd /c $cmd
+    param()
+
+    # Resolve ViVeTool path
+    $vivetoolPath = Join-Path $PSScriptRoot 'UTILITY\ViVeTool.exe'
+    if (-not (Test-Path $vivetoolPath)) {
+        Add-Log "ViVeTool not found at $vivetoolPath - skipping ViVe features"
+        return
+    }
+
+    $ids = @('39145991','39146010','39281392','41655236','42105254')
+    foreach ($id in $ids) {
+        try {
+            # Call with call operator to avoid Start-Process quoting issues
+            $args = '/disable', "/id:$id"
+            Add-Log "Running ViVeTool: $vivetoolPath $($args -join ' ')"
+            & $vivetoolPath $args 2>&1 | ForEach-Object { Add-Log "ViVeTool: $_" }
+        } catch {
+            Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)"
         }
-        Add-Log 'ViVeTool features disabled.'
-    } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+    }
 }
 Disable-ViVeFeatures
 Add-Log 'Started RatzTweaks.'
