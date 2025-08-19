@@ -1272,7 +1272,7 @@ function Start-WebUI {
             'optional-tweaks' {
                 $boxes = ($optionalTweaks | ForEach-Object {
                     $id = $_.id; $label = $_.label
-                    "<label class='block mb-2'><input type='checkbox' name='opt' value='${id}' checked class='mr-1'>${label}</label>"
+                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt' value='${id}' checked class='mr-1'>${label}</label>"
                 }) -join ""
                 @"
 <!doctype html>
@@ -1285,8 +1285,8 @@ function Start-WebUI {
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 <form action='/about' method='post'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Optional Tweaks</h2>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
+  <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
   $boxes
   <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
 </div>
@@ -1412,9 +1412,9 @@ function Start-WebUI {
                 $m = $form.GetValues('main'); if ($m) { $mainVals = @($m) }
                 $g = $form.GetValues('gpu');  if ($g) { $gpuVals = @($g) }
             }
-            if ($mainVals -contains 'main-tweaks') { Invoke-AllTweaks }
-            if ($mainVals -contains 'set-powerplan') { Set-PowerPlan }
-            if ($gpuVals -contains 'import-nvpi') { Invoke-NVPI }
+            if ($mainVals -contains 'main-tweaks') { [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks }
+            if ($mainVals -contains 'set-powerplan') { [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan }
+            if ($gpuVals -contains 'import-nvpi') { [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI }
             $html = & $getStatusHtml 'optional-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
@@ -1426,13 +1426,30 @@ function Start-WebUI {
             $optVals = @()
             if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
             $global:selectedTweaks = $optVals
+            # Map selected ids to functions
+            $optToFn = @{
+                'MSI Mode' = 'Disable-MSIMode'
+                'Disable Background Apps' = 'Disable-BackgroundApps'
+                'Disable Widgets' = 'Disable-Widgets'
+                'Disable Gamebar' = 'Disable-Gamebar'
+                'Disable Copilot' = 'Disable-Copilot'
+                'ViVeToolFeatures' = 'Disable-ViVeFeatures'
+            }
             foreach ($id in $optVals) {
-                $fn = ($optionalTweaks | Where-Object { $_.id -eq $id })[0].fn
-                if ($fn) { & $fn }
+                $fn = $optToFn[$id]
+                if ($fn -and (Get-Command $fn -ErrorAction SilentlyContinue)) {
+                    [Console]::WriteLine("Route:/about -> $fn")
+                    & $fn
+                }
+            }
+            # Also call wrapper if you want to run them asynchronously (legacy behavior)
+            if (Get-Command Invoke-SelectedOptionalTweaks -ErrorAction SilentlyContinue) {
+                [Console]::WriteLine('Route:/about -> Invoke-SelectedOptionalTweaks')
+                Invoke-SelectedOptionalTweaks
             }
             $html = & $getStatusHtml 'about' $null $null $optVals
             & $send $ctx 200 'text/html' $html
-            # Show Windows notification and redirect
+            # Toast + Ko-fi and exit (as before)
             [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
             $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
             $toastXml = $template
