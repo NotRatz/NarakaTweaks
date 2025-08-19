@@ -1359,6 +1359,26 @@ function Start-WebUI {
             continue
         }
 
+        # Serve and execute main tweaks on GET as well (robust against refresh/direct nav)
+        if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
+            [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-AllTweaks'); Invoke-AllTweaks
+            [Console]::WriteLine('Route:/main-tweaks (GET) -> Set-PowerPlan'); Set-PowerPlan
+            [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-NVPI'); Invoke-NVPI
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+        
+        # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
+        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
+            [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+
         # After Discord auth, redirect to /start, optionally exchange the token and fetch user
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
             try {
