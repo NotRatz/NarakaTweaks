@@ -56,7 +56,6 @@ if ($needDownload) {
     # Do not perform auto-download in this environment; continue running local script for debugging
     $needDownload = $false
 }
-# ...existing code...
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
 RatzTweaks requires Windows PowerShell 5.1 (not PowerShell 7+).
@@ -1105,23 +1104,22 @@ function Show-RestartPrompt {
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
     param()
+    Write-Host "Start-WebUI: initializing..."
     Add-Log 'Starting Web UI on http://127.0.0.1:17690/'
     $listener = [System.Net.HttpListener]::new()
     $prefix = 'http://127.0.0.1:17690/'
     try {
         $listener.Prefixes.Add($prefix)
         $listener.Start()
+        Write-Host "Start-WebUI: listener started on $prefix"
     } catch {
-        $err = $_.Exception.Message
-        Add-Log ("Web UI listener failed: {0}" -f $err)
-        [Console]::WriteLine("Web UI listener failed: $err")
-        [Console]::WriteLine("The script will remain open for debugging. Check permissions or port usage and open the URL manually: $prefix")
-        # Keep process alive for debugging instead of returning
-        while ($true) { Start-Sleep -Seconds 5 }
+        Write-Host "Start-WebUI: Failed to start HttpListener: $($_.Exception.Message)" -ForegroundColor Red
+        Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message)
+        return
     }
 
     # open browser
-    try { Start-Process $prefix } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; Write-Host "Open this URL manually: $prefix" }
+    try { Start-Process $prefix; Write-Host "Start-WebUI: Browser launched." } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; Write-Host "Start-WebUI: Open this URL manually: $prefix" }
 
     $send = {
         param($ctx, $statusCode, $contentType, $body)
@@ -1130,8 +1128,8 @@ function Start-WebUI {
             $ctx.Response.ContentType = $contentType
             if ($body -is [string]) { $bytes = [System.Text.Encoding]::UTF8.GetBytes($body) } else { $bytes = $body }
             $ctx.Response.OutputStream.Write($bytes,0,$bytes.Length)
-        } catch {}
-        try { $ctx.Response.Close() } catch {}
+        } catch { Write-Host "Start-WebUI: Error writing response: $($_.Exception.Message)" }
+        try { $ctx.Response.Close() } catch { Write-Host "Start-WebUI: Error closing response: $($_.Exception.Message)" }
     }
 
     $bgUrl = 'background.png'
@@ -1251,7 +1249,13 @@ function Start-WebUI {
     }
 
     while ($listener.IsListening) {
-        $ctx = $listener.GetContext()
+        Write-Host "Start-WebUI: waiting for incoming HTTP requests..."
+        try {
+            $ctx = $listener.GetContext()
+        } catch {
+            Write-Host "Start-WebUI: GetContext failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            break
+        }
         $req = $ctx.Request
         $path = $req.Url.AbsolutePath.ToLower()
         $method = $req.HttpMethod.ToUpper()
@@ -1305,6 +1309,7 @@ function Start-WebUI {
     $listener.Stop()
     $listener.Close()
     Add-Log 'Web UI stopped.'
+    Write-Host "Start-WebUI: listener stopped."
 }
 $StartInWebUI = $true
 # --- Entry Point ---
