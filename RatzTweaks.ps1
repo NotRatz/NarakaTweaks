@@ -1159,7 +1159,7 @@ function Start-WebUI {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
         switch ($step) {
             'main-tweaks' {
-                $boxes = ($mainTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='main' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
+                # Main tweaks are not user selectable, just show info
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1173,7 +1173,7 @@ function Start-WebUI {
 <form action='/gpu-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main Tweaks</h2>
-  $boxes
+  <p class='mb-4 text-gray-200'>Main system and registry tweaks will be applied automatically.</p>
   <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to GPU Tweaks</button>
 </div>
 </form>
@@ -1181,7 +1181,7 @@ function Start-WebUI {
 "@
             }
             'gpu-tweaks' {
-                $boxes = ($gpuTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='gpu' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
+                # GPU tweaks are not user selectable, just show info
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1195,7 +1195,7 @@ function Start-WebUI {
 <form action='/optional-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>GPU Tweaks</h2>
-  $boxes
+  <p class='mb-4 text-gray-200'>NVPI Profile will be imported automatically.</p>
   <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to Optional Tweaks</button>
 </div>
 </form>
@@ -1221,7 +1221,11 @@ function Start-WebUI {
   <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to About</button>
 </div>
 </form>
-</body></html>
+<form action='/revert-optional' method='post' class='mt-4'>
+  <button class='btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded' type='submit'>Revert Optional Tweaks</button>
+</form>
+</body>
+</html>
 "@
             }
             'about' {
@@ -1257,279 +1261,33 @@ function Start-WebUI {
         $method = $req.HttpMethod.ToUpper()
         $query = $req.Url.Query
 
-        # Handle Discord OAuth callback
-        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
-            # Process OAuth code, set $global:DiscordAuthenticated
-            # ...existing code to handle OAuth...
-            $global:DiscordAuthenticated = $true
-            # Immediately show Start Tweaks page after auth
-            $html = & $getStatusHtml 'start-tweaks' $null $null $null
+        # On /gpu-tweaks, apply main tweaks and GPU tweaks automatically
+        if ($path -eq '/gpu-tweaks' -and $method -eq 'POST') {
+            Invoke-AllTweaks
+            Invoke-NVPI
+        }
+        # On /about, apply selected optional tweaks
+        if ($path -eq '/about' -and $method -eq 'POST') {
+            $opt = $req.QueryString['opt']
+            $selectedOpt = @()
+            if ($opt) { $selectedOpt += $opt }
+            $global:selectedTweaks = $selectedOpt
+            Invoke-SelectedOptionalTweaks
+            $html = & $getStatusHtml 'about' $null $null $selectedOpt
+            & $send $ctx 200 'text/html' $html
+            Start-Sleep -Seconds 2
+            [System.Diagnostics.Process]::GetCurrentProcess().CloseMainWindow()
+            [System.Diagnostics.Process]::GetCurrentProcess().Kill()
+            continue
+        }
+        # On /revert-optional, revert optional tweaks
+        if ($path -eq '/revert-optional' -and $method -eq 'POST') {
+            Revert-OptionalTweaks
+            $html = & $getStatusHtml 'optional-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
         }
-
-        switch ($path) {
-            '/' {
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'auth')
-            }
-            '/auth' {
-                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
-                try {
-                    $ok = Start-DiscordOAuthAndLog
-                    if ($ok) {
-                        try { $ctx.Response.RedirectLocation = '/start-tweaks' } catch {}
-                        & $send $ctx 302 'text/plain' ''
-                    } else {
-                        & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
-                    }
-                } catch {
-                    & $send $ctx 500 'text/plain' ("Auth error: {0}" -f $_.Exception.Message)
-                }
-            }
-            '/start-tweaks' {
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'start-tweaks')
-            }
-            '/main-tweaks' {
-                $form = $ctx.Request.Form
-                $selected = @()
-                if ($form) { $selected = $form.GetValues('main') }
-                foreach ($t in $mainTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'main-tweaks')
-            }
-            '/gpu-tweaks' {
-                $form = $ctx.Request.Form
-                $selected = @()
-                if ($form) { $selected = $form.GetValues('gpu') }
-                foreach ($t in $gpuTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'gpu-tweaks')
-            }
-            '/optional-tweaks' {
-                $form = $ctx.Request.Form
-                $selected = @()
-                if ($form) { $selected = $form.GetValues('opt') }
-                foreach ($t in $optionalTweaks) { if ($selected -contains $t.id) { & $($t.fn) } }
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'optional-tweaks')
-            }
-            '/about' {
-                # Collect selected tweaks from POST data and run them
-                if ($path -eq '/about' -and $method -eq 'POST') {
-                    # Get selected tweaks from previous steps
-                    $main = $req.QueryString['main']
-                    $gpu = $req.QueryString['gpu']
-                    $opt = $req.QueryString['opt']
-                    $selectedMain = @(); $selectedGPU = @(); $selectedOpt = @()
-                    if ($main) { $selectedMain += $main }
-                    if ($gpu) { $selectedGPU += $gpu }
-                    if ($opt) { $selectedOpt += $opt }
-                    # Run selected main tweaks
-                    foreach ($id in $selectedMain) {
-                        $fn = ($mainTweaks | Where-Object { $_.id -eq $id })[0].fn
-                        if ($fn) { & $fn }
-                    }
-                    # Run selected GPU tweaks
-                    foreach ($id in $selectedGPU) {
-                        $fn = ($gpuTweaks | Where-Object { $_.id -eq $id })[0].fn
-                        if ($fn) { & $fn }
-                    }
-                    # Run selected optional tweaks
-                    foreach ($id in $selectedOpt) {
-                        $fn = ($optionalTweaks | Where-Object { $_.id -eq $id })[0].fn
-                        if ($fn) { & $fn }
-                    }
-                    # Show About page
-                    $html = & $getStatusHtml 'about' $selectedMain $selectedGPU $selectedOpt
-                    & $send $ctx 200 'text/html' $html
-                    # Close PowerShell after sending response
-                    Start-Sleep -Seconds 2
-                    [System.Diagnostics.Process]::GetCurrentProcess().CloseMainWindow()
-                    [System.Diagnostics.Process]::GetCurrentProcess().Kill()
-                    continue
-                }
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'about')
-            }
-            default {
-                & $send $ctx 404 'text/plain' 'Not Found'
-            }
-        }
+        # ...existing code...
     }
-
-    try { $listener.Stop() } catch {}
-}
-# Main script logic (must be after all function definitions)
-$global:RatzLog = @()
-function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $msg }
-
-Test-Admin
-
-# Decide UI mode preference early, but defer starting UI until after functions are loaded
-$StartInWebUI = $true
-try {
-    # Force WinForms only if explicitly requested
-    if ($env:RATZ_UI -and $env:RATZ_UI -match '^(?i)winforms$') { $StartInWebUI = $false }
-} catch { $StartInWebUI = $true }
-
-# Remove immediate UI start here; we'll start after functions are defined
-# if ($useWebUI) { Start-WebUI; return }
-
-# (WinForms path) -- moved to the end after function definitions
-# Add-Log 'Started RatzTweaks.'
-# Show-IntroUI
-# Add-Log 'UI completed.'
-# Show-LogWindow
-
-# Ensure OAuth secret is available via environment variable for zero-config users
-# (This sets it only for the running process; no persistent changes are required.)
-$env:RATZ_DISCORD_SECRET = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
-
-# Friendly mode: embedded fallback secret (use only if no local secret present)
-$EmbeddedDiscordClientSecret = 'SlIzRC3xGeKt5_8REU_lxqsoXMHuVkiQ'
-
-# --- Robust secret loader: support iwr|iex (no PSScriptRoot) and local file ---
-function Get-DiscordSecret {
-    # 1) Prefer environment variable if set
-    if ($env:RATZ_DISCORD_SECRET -and $env:RATZ_DISCORD_SECRET.Trim().Length -gt 0) { return $env:RATZ_DISCORD_SECRET }
-
-    # 2) Try local encrypted file in common locations
-    $candidates = @()
-    if ($PSScriptRoot) { $candidates += (Join-Path $PSScriptRoot 'discord_oauth.secret') }
-    try { $candidates += (Join-Path (Get-Location).Path 'discord_oauth.secret') } catch {}
-
-    $secretFile = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-    if (-not $secretFile) { $secretFile = $null }
-
-    if (-not $secretFile) {
-        # 3) Fallback to embedded secret variable if present
-        if ($script:EmbeddedDiscordClientSecret) { return $script:EmbeddedDiscordClientSecret }
-        return $null
-    }
-
-    $enc = Get-Content $secretFile -Raw
-    if (-not $enc) { return $null }
-
-    # DPAPI-style decrypt
-    try {
-        $secure = ConvertTo-SecureString $enc
-        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
-    } catch {}
-
-    # Shared AES key decrypt (if used)
-    $embeddedKey = @(196,37,88,201,15,220,44,77,182,91,12,233,250,44,90,199,11,72,239,66,14,245,132,99,211,56,7,143,201,34,55,162)
-    try {
-        $secure2 = ConvertTo-SecureString $enc -Key $embeddedKey
-        return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure2))
-    } catch { return $null }
-}
-
-# --- OAuth flow with embedded fallback config when json file isn't available (iwr|iex) ---
-function Start-DiscordOAuthAndLog {
-    # Load config
-    $clientId = $null; $redirectUri = $null
-    try {
-        $jsonPath = $null
-        $cand = @()
-        if ($PSScriptRoot) { $cand += (Join-Path $PSScriptRoot 'discord_oauth.json') }
-        try { $cand += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
-        $jsonPath = $cand | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-        if ($jsonPath) {
-            $oauth = Get-Content $jsonPath -Raw | ConvertFrom-Json
-            $clientId = "$($oauth.client_id)".Trim()
-            $redirectUri = if ($oauth.redirect_uri) { "$($oauth.redirect_uri)".Trim() } else { $null }
-        }
-    } catch {}
-
-    if (-not $clientId) { $clientId = '1402803428123476039' }
-    if (-not $redirectUri) { $redirectUri = 'http://localhost:17669/' }
-    if ($redirectUri -notlike '*/') { $redirectUri = $redirectUri.TrimEnd('/') + '/' }
-
-    $clientSecret = Get-DiscordSecret
-    if (-not $clientSecret) { Add-Log 'No secret available for OAuth.'; return $false }
-
-    # webhook to post embed (configured by owner)
-    $webhookUrl = 'https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd'
-
-    # Start local HTTP listener for OAuth callback
-    $listener = New-Object System.Net.HttpListener
-    try { $listener.Prefixes.Add($redirectUri); $listener.Start() } catch { Add-Log ("OAuth listener failed on {0}: {1}" -f $redirectUri, $_.Exception.Message); return $false }
-
-    # Open browser for Discord OAuth2
-    $state = [guid]::NewGuid().ToString()
-    $scope = 'identify'
-    $authUrl = "https://discord.com/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state&prompt=consent"
-    Add-Log ("Opening OAuth URL: {0}" -f $authUrl)
-    $opened = $false
-    try { Start-Process $authUrl; $opened = $true } catch { $opened = $false }
-    if (-not $opened) {
-        try { Start-Process 'cmd.exe' -ArgumentList @('/c','start','',"$authUrl") -WindowStyle Hidden; $opened = $true } catch { $opened = $false }
-    }
-    if (-not $opened) {
-        try { Start-Process 'explorer.exe' "$authUrl"; $opened = $true } catch { $opened = $false }
-    }
-
-    # Wait for callback and extract code
-    $context = $null
-    try { $context = $listener.GetContext() } catch { try { $listener.Stop() } catch {}; return $false }
-    $req = $context.Request; $resp = $context.Response
-    $query = [System.Web.HttpUtility]::ParseQueryString($req.Url.Query)
-    $code = $query['code']
-    $resp.StatusCode = 200; $resp.ContentType = 'text/html'
-    $msg = '<html><body><h2>Discord authentication complete. You may close this window.</h2></body></html>'
-    $buffer = [System.Text.Encoding]::UTF8.GetBytes($msg)
-    $resp.OutputStream.Write($buffer, 0, $buffer.Length)
-    try { $resp.Close() } catch {}; try { $listener.Stop() } catch {}
-    if (-not $code) { Add-Log 'OAuth callback did not contain a code.'; return $false }
-
-    # Exchange code for token
-    try {
-        $tokenResp = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body @{
-            client_id     = $clientId
-            client_secret = $clientSecret
-            grant_type    = 'authorization_code'
-            code          = $code
-            redirect_uri  = $redirectUri
-        }
-    } catch { Add-Log ("Token exchange failed: {0}" -f $_.Exception.Message); return $false }
-
-    $accessToken = $tokenResp.access_token
-    if (-not $accessToken) { Add-Log 'Failed to obtain access token.'; return $false }
-
-    # Get Discord user info
-    try { $user = Invoke-RestMethod -Headers @{ Authorization = "Bearer $accessToken" } -Uri 'https://discord.com/api/users/@me' } catch { Add-Log ("Failed to fetch user info: {0}" -f $_.Exception.Message); return $false }
-    $discordId = $user.id
-    $discordUsername = "{0}#{1}" -f $user.username, $user.discriminator
-    $avatar = $user.avatar
-    $avatarUrl = $null
-    if ($avatar) {
-        $ext = if ($avatar.StartsWith('a_')) { 'gif' } else { 'png' }
-        $avatarUrl = "https://cdn.discordapp.com/avatars/$discordId/$avatar.$ext?size=256"
-    }
-
-    # Build webhook payload with embed and mention
-    $mention = "<@${discordId}>"
-    $embed = @{
-        title = 'RatzTweaks — New run'
-        description = 'A user has run RatzTweaks'
-        color = 3447003
-        thumbnail = @{ url = $avatarUrl }
-        fields = @(
-            @{ name = 'Username'; value = $discordUsername; inline = $true },
-            @{ name = 'User ID'; value = $discordId; inline = $true },
-            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
-        )
-    }
-    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($discordId) } }
-    try { Invoke-RestMethod -Method Post -Uri $webhookUrl -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4) } catch {}
-
-    $global:DiscordAuthenticated = $true
-    return $true
-}
-
-# Patch Web UI /auth route to call Start-DiscordOAuthAndLog directly
-# --- Final UI bootstrap: start the chosen UI mode after all functions are loaded ---
-if ($global:RT_UI_Mode -eq 'WinForms') {
-    Add-Log 'Started RatzTweaks (WinForms).'
-    try { Show-IntroUI } catch { Add-Log ("WinForms UI error: {0}" -f $_.Exception.Message) }
-    Add-Log 'UI completed.'
-    try { Show-LogWindow } catch {}
-} else {
-    Start-WebUI
+# ...existing code...
 }
