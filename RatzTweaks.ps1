@@ -1223,7 +1223,7 @@ function Start-WebUI {
         switch ($step) {
             'start' {
                 $startDisabledAttr = ''
-                if (-not $global:DiscordAuthenticated) { $startDisabledAttr = '' }
+                if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
                 @"
 <!doctype html>
 <html lang='en'>
