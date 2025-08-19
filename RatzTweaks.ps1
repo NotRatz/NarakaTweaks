@@ -51,15 +51,21 @@ $needDownload = $false
 if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
     $needDownload = $true
 }
-# Debug: report resolved paths and file existence to console (bypass suppressed Write-Host)
-[Console]::WriteLine("Debug: PSScriptRoot = $PSScriptRoot")
-[Console]::WriteLine("Debug: UTILITY exists = " + (Test-Path (Join-Path $PSScriptRoot 'UTILITY')))
-[Console]::WriteLine("Debug: RatzSettings.nip exists = " + (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')))
-[Console]::WriteLine("Debug: ratznaked.jpg exists = " + (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg')))
 if ($needDownload) {
-    [Console]::WriteLine("Auto-download trigger fired, but skipping auto-download to avoid relaunching and closing the current process. If you intended to download, run the installer variant or ensure files are present.")
-    # Do not perform auto-download in this environment; continue running local script for debugging
-    $needDownload = $false
+    $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
+    $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
+    $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
+    Write-Host 'Downloading full NarakaTweaks package...'
+    Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+    Remove-Item $zipPath -Force
+    $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
+    $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
+    Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`"" -WindowStyle Hidden
+    # Ensure the original process exits immediately to prevent double execution
+    Stop-Process -Id $PID -Force
 }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
@@ -70,20 +76,6 @@ Please right-click and run this script with Windows PowerShell (powershell.exe).
     Write-Host $msg -ForegroundColor Red
     [System.Windows.Forms.MessageBox]::Show($msg, 'RatzTweaks - Incompatible PowerShell', 'OK', [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
-}
-
-# Global trap for PowerShell terminating errors
-trap {
-    $err = $_.Exception
-    Write-Host "GLOBAL TRAP: $($err.Message)" -ForegroundColor Red
-    Write-Host "Type: $($err.GetType().FullName)"
-    Write-Host "StackTrace:`n$($err.StackTrace)"
-    if ($err.InnerException) { Write-Host "Inner Exception: $($err.InnerException.Message)" }
-    Write-Host "Script path: $($MyInvocation.MyCommand.Path)"
-    Write-Host "PSCommandPath: $PSCommandPath"
-    Write-Host "Please copy the above output and share it for debugging. Press Enter to continue..."
-    Read-Host
-    break
 }
 # Show-LogWindow: Displays the log in a scrollable window
 function Show-LogWindow {
@@ -1214,7 +1206,11 @@ function Start-WebUI {
 
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
-        $authText = if ($global:DiscordAuthenticated) { "Logged in with Discord$([string]::IsNullOrEmpty($global:DiscordUserName) Where-Object '' : " as $($global:DiscordUserName)")" } else { 'Not logged in with Discord' }
+        $authText = if ($global:DiscordAuthenticated) {
+            "Logged in with Discord" + ($(if (-not [string]::IsNullOrEmpty($global:DiscordUserName)) { " as $($global:DiscordUserName)" } else { "" }))
+        } else {
+            'Not logged in with Discord'
+        }
         switch ($step) {
             'start' {
                 @"
