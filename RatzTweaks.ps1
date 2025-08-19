@@ -1312,5 +1312,5 @@ $StartInWebUI = $true
 # --- Entry Point ---
 if ($StartInWebUI) {
     Start-WebUI
-    return
+    # Do not return or kill process, keep PowerShell open for debugging
 }
