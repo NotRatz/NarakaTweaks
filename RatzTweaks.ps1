@@ -1240,14 +1240,19 @@ function Start-WebUI {
 
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
-        $authText = if ($global:DiscordAuthenticated) {
-            $name = $global:DiscordUserName
-            if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { "Logged in with Discord as $name" }
-        } else { 'Not logged in with Discord' }
         switch ($step) {
             'start' {
                 $startDisabledAttr = ''
                 if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
+                $authSection = if ($global:DiscordAuthenticated) {
+                    $name = $global:DiscordUserName
+                    $avatar = $global:DiscordAvatarUrl
+                    $displayName = if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { $name }
+                    "<div class='flex items-center mb-4 text-gray-300'><img src='${avatar}' alt='Avatar' class='w-12 h-12 rounded-full mr-3'/><span>$displayName</span></div>"
+                } else {
+                    "<p class='text-gray-300 mb-4'>Not logged in with Discord</p>"
+                }
+                $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1260,9 +1265,9 @@ function Start-WebUI {
 <body class='min-h-screen flex items-center justify-center'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
-  <p class='text-gray-300 mb-4'>$authText</p>
+  $authSection
   <div class='flex gap-3 mb-6'>
-    <a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>
+    $loginLink
     <form action='/main-tweaks' method='post'>
       <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
     </form>
@@ -1422,14 +1427,21 @@ function Start-WebUI {
                                 } else {
                                     $global:DiscordUserName = if ($me.global_name) { "$($me.global_name)" } else { "$($me.username)" }
                                 }
+                                $avatarUrl = $null
+                                if ($me.avatar) {
+                                    $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
+                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
+                                } else {
+                                    $defIdx = 0
+                                    # Discord uses 5 default avatar variants (0-4) for users without a custom avatar.
+                                    $DISCORD_DEFAULT_AVATAR_VARIANTS = 5
+                                    try { $defIdx = [int]($me.discriminator) % $DISCORD_DEFAULT_AVATAR_VARIANTS } catch {}
+                                    $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
+                                }
+                                $global:DiscordAvatarUrl = $avatarUrl
                                 # Send webhook notification if configured
                                 $wh = & $getWebhookUrl
                                 if ($wh) {
-                                    $avatarUrl = $null
-                                    if ($me.avatar) {
-                                        $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
-                                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
-                                    }
                                     $mention = "<@${($me.id)}>"
                                     $embed = @{
                                         title = 'RatzTweaks — New run'
