@@ -45,11 +45,11 @@ body{background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
 </div>
 </main>
 <script>
-const startCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex";
-const revertCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
+const startCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex;
+const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
 function copyAndRun(cmd){
   navigator.clipboard.writeText(cmd).then(function(){
-    alert('PowerShell command copied to clipboard:\n' + cmd + '\n\nPress Win+R, type "powershell", press Ctrl+Shift+Enter, click Yes if prompted, then paste the command.');
+    alert('String Coppied: \n' + cmd + '\n\nPress Win+R then paste the command to begin!');
   });
   try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
 }
