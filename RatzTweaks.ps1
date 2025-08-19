@@ -1122,28 +1122,33 @@ Test-Admin
 
 # Disable specific Windows features using ViVeTool
 function Disable-ViVeFeatures {
-    param()
+    try {
+        # Resolve ViVeTool.exe from likely locations without assuming $PSScriptRoot is set
+        $candidates = @()
+        if ($PSScriptRoot) { $candidates += (Join-Path $PSScriptRoot 'UTILITY\ViVeTool.exe') }
+        $candidates += (Join-Path (Get-Location).Path 'UTILITY\ViVeTool.exe')
 
-    # Resolve ViVeTool path
-    $vivetoolPath = Join-Path $PSScriptRoot 'UTILITY\ViVeTool.exe'
-    if (-not (Test-Path $vivetoolPath)) {
-        Add-Log "ViVeTool not found at $vivetoolPath - skipping ViVe features"
-        return
-    }
-
-    $ids = @('39145991','39146010','39281392','41655236','42105254')
-    foreach ($id in $ids) {
-        try {
-            # Call with call operator to avoid Start-Process quoting issues
-            $args = '/disable', "/id:$id"
-            Add-Log "Running ViVeTool: $vivetoolPath $($args -join ' ')"
-            & $vivetoolPath $args 2>&1 | ForEach-Object { Add-Log "ViVeTool: $_" }
-        } catch {
-            Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)"
+        $viveToolPath = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+        if (-not $viveToolPath) {
+            Add-Log ("ViVeTool.exe not found. Tried: " + ($candidates -join '; '))
+            return
         }
+
+        $featureIds = @('39145991','39146010','39281392','41655236','42105254')
+        foreach ($id in $featureIds) {
+            try {
+                Add-Log ("ViVeTool: disabling id {0}" -f $id)
+                & $viveToolPath '/disable' ("/id:$id") 2>&1 | ForEach-Object { Add-Log ("ViVeTool: {0}" -f $_) }
+            } catch {
+                Add-Log ("ViVeTool error for id {0}: {1}" -f $id, $_.Exception.Message)
+            }
+        }
+        Add-Log 'ViVeTool features disable attempt complete.'
+    } catch {
+        Add-Log ("ERROR in Disable-ViVeFeatures: {0}" -f $_.Exception.Message)
     }
 }
-Disable-ViVeFeatures
+
 Add-Log 'Started RatzTweaks.'
 Show-IntroUI
 Add-Log 'UI completed.'
