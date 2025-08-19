@@ -46,6 +46,12 @@ if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 
+# Simple logging helper for both UI and WebUI
+function Add-Log {
+    param([string]$Message)
+    try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $Message } catch {}
+}
+
 # --- Auto-download all required files if missing (for irm ... | iex users) ---
 $needDownload = $false
 if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
@@ -74,7 +80,6 @@ WinForms UI and threading are not supported in pwsh.exe.
 Please right-click and run this script with Windows PowerShell (powershell.exe).
 "@
     Write-Host $msg -ForegroundColor Red
-    [System.Windows.Forms.MessageBox]::Show($msg, 'RatzTweaks - Incompatible PowerShell', 'OK', [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
 }
 # Show-LogWindow: Displays the log in a scrollable window
@@ -820,19 +825,6 @@ function Invoke-AllTweaks {
         }
     }
 
-    # --- Always run all utility tweaks (formerly optional, now always run, no user input) ---
-
-    try {
-        Disable-MSIMode
-        Disable-BackgroundApps
-        Disable-Widgets
-        Disable-Gamebar
-        Disable-Copilot
-        # No logging to PowerShell window
-    } catch {
-        # Suppress error output
-    }
-
     # Set timer resolution using embedded C# service (no external EXE needed)
     try {
         Write-Host "Installing: Set Timer Resolution Service ..."
@@ -1218,7 +1210,17 @@ function Start-WebUI {
     # Helper: read discord secret from file
     $getDiscordSecret = {
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
-        if (Test-Path $secPath) { (Get-Content -Raw -Path $secPath).Trim() } else { $null }
+        if (Test-Path $secPath) {
+            $raw = (Get-Content -Raw -Path $secPath).Trim()
+            try {
+                $secure = ConvertTo-SecureString $raw
+                $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+                try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+                finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            } catch {
+                $raw
+            }
+        } else { $null }
     }
 
     # Helper: read webhook url (from json or .secret file)
