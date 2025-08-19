@@ -1272,6 +1272,18 @@ function Start-WebUI {
         $method = $req.HttpMethod.ToUpper()
         $query = $req.Url.Query
 
+        # Serve the start page for root GET requests (avoid leaving the browser waiting)
+        if ((($path -eq '/') -or ($path -eq '')) -and $method -eq 'GET') {
+            $html = & $getStatusHtml 'start' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+        # Respond to favicon requests quickly
+        if ($path -eq '/favicon.ico') {
+            & $send $ctx 204 'text/plain' ''
+            continue
+        }
+
         # After Discord auth, redirect to /start
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
             $global:DiscordAuthenticated = $true
