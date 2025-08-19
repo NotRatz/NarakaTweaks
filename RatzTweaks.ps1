@@ -1,4 +1,4 @@
-# --- PowerShell version check and environment guard ---
+# RatzTweaks.ps1
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
@@ -1318,7 +1318,7 @@ function Start-DiscordOAuthAndLog {
     # Open browser for Discord OAuth2
     $state = [guid]::NewGuid().ToString()
     $scope = 'identify'
-    $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state&prompt=consent"
+    $authUrl = "https://discord.com/oauth2/authorize?client_id=$clientId&redirect_uri=$([uri]::EscapeDataString($redirectUri))&response_type=code&scope=$scope&state=$state&prompt=consent"
     Add-Log ("Opening OAuth URL: {0}" -f $authUrl)
     $opened = $false
     try { Start-Process $authUrl; $opened = $true } catch { $opened = $false }
