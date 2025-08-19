@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RatzTweaks</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      backgroundImage: {
+        'ratz-bg': "url('background.png')"
+      }
+    }
+  }
+}
+</script>
+<style>
+body{background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
+</style>
+</head>
+<body class="bg-ratz-bg bg-cover bg-center bg-fixed text-white text-center font-sans">
+<main class="max-w-2xl mx-auto p-10 bg-black/50">
+<h1 class="text-3xl font-bold mt-0">RatzTweaks</h1>
+<section class="mt-8">
+<h2 class="text-2xl font-semibold">Main Tweaks</h2>
+<p>Applies core system optimizations for stability and lower latency, including reduced telemetry and high-performance DWM adjustments.</p>
+</section>
+<section class="mt-8">
+<h2 class="text-2xl font-semibold">GPU Tweaks</h2>
+<p>Automatically detects AMD/NVidia GPU and applies configs for each! Other GPUs are currently not supported. Imports Ratz's personally configured NVIDIA profile config &amp; applies latency reduction registry tweaks. Upon updating NVIDIA GPU drivers, rerun the tool to reapply the settings. This tool is the only way to guarantee you get Ratz's best NVIDIA profile settings.</p>
+</section>
+<section class="mt-8">
+<h2 class="text-2xl font-semibold">Optional Tweaks</h2>
+<p>Extra adjustments like MSI mode and disabling background apps, widgets, Game Bar, or Copilot—apply only what you need and revert anytime. (Ratz recommends all of them!)</p>
+</section>
+<div class="buttons my-10">
+<button class="start px-6 py-3 mx-2 text-lg rounded bg-green-700 hover:bg-green-600" onclick="startTweaks()">Start</button>
+<button class="revert px-6 py-3 mx-2 text-lg rounded bg-red-700 hover:bg-red-600" onclick="revertTweaks()">Revert</button>
+</div>
+<div class="socials">
+<a href="https://twitch.tv/notratz" target="_blank" rel="noopener" class="mx-2 hover:underline">Twitch</a>
+<a href="https://www.youtube.com/@notratz" target="_blank" rel="noopener" class="mx-2 hover:underline">YouTube</a>
+<a href="https://discord.gg/team-Strive" target="_blank" rel="noopener" class="mx-2 hover:underline">Discord</a>
+</div>
+</main>
+<script>
+const startCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex";
+const revertCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
+function copyAndRun(cmd){
+  navigator.clipboard.writeText(cmd).then(function(){
+    alert('PowerShell command copied to clipboard:\n' + cmd + '\n\nPress Win+R, type "powershell", press Ctrl+Shift+Enter, click Yes if prompted, then paste the command.');
+  });
+  try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
+}
+function startTweaks(){ copyAndRun(startCmd); }
+function revertTweaks(){ copyAndRun(revertCmd); }
+</script>
+</body>
+</html>
