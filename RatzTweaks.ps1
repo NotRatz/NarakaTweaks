@@ -31,7 +31,7 @@ Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
 Write-Host ''
-Write-Host 'Proceeding to next UI & WebUI' -ForegroundColor DarkGray
+Write-Host 'To close: [X] in top right' -ForegroundColor DarkGray
 Write-Host ''
 Start-Sleep -Milliseconds 1200
 function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
@@ -45,12 +45,6 @@ $ErrorActionPreference = 'SilentlyContinue'
 if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 if (-not $global:RatzLog) { $global:RatzLog = @() }
-
-# Simple logging helper for both UI and WebUI
-function Add-Log {
-    param([string]$Message)
-    try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $Message } catch {}
-}
 
 # --- Auto-download all required files if missing (for irm ... | iex users) ---
 $needDownload = $false
@@ -69,7 +63,7 @@ if ($needDownload) {
     $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
     $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
     Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`""
     # Ensure the original process exits immediately to prevent double execution
     Stop-Process -Id $PID -Force
 }
@@ -80,6 +74,7 @@ WinForms UI and threading are not supported in pwsh.exe.
 Please right-click and run this script with Windows PowerShell (powershell.exe).
 "@
     Write-Host $msg -ForegroundColor Red
+    [System.Windows.Forms.MessageBox]::Show($msg, 'RatzTweaks - Incompatible PowerShell', 'OK', [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
     exit 1
 }
 # Show-LogWindow: Displays the log in a scrollable window
@@ -689,20 +684,7 @@ function Revert-OptionalTweaks {
         Add-Log "ERROR reverting optional tweaks: $($_.Exception.Message)"
     }
 }
-function Disable-ViVeFeatures {
-    try {
-        $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
-        if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
-        $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
-        foreach ($id in $featureIds) {
-            $ViVeArgs = "/disable /id:$id"
-            $cmd = "`"$viveToolPath`" $ViVeArgs"
-            Add-Log "Running: cmd /c $cmd"
-            & cmd /c $cmd
-        }
-        Add-Log 'ViVeTool features disabled.'
-    } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
-}
+
 function Revert-MSIMode {
     try {
         $pciDevices = Get-WmiObject Win32_PnPEntity | Where-Object { $_.DeviceID -like 'PCI*' }
@@ -823,6 +805,19 @@ function Invoke-AllTweaks {
         } catch {
             # Suppress error output, optionally log to file if needed
         }
+    }
+
+    # --- Always run all utility tweaks (formerly optional, now always run, no user input) ---
+
+    try {
+        Disable-MSIMode
+        Disable-BackgroundApps
+        Disable-Widgets
+        Disable-Gamebar
+        Disable-Copilot
+        # No logging to PowerShell window
+    } catch {
+        # Suppress error output
     }
 
     # Set timer resolution using embedded C# service (no external EXE needed)
@@ -1207,16 +1202,10 @@ function Start-WebUI {
         } catch { return $null }
     }
 
-    # Helper: read discord client secret from env var or file (plain text)
+    # Helper: read discord secret from file
     $getDiscordSecret = {
-        if ($env:DISCORD_CLIENT_SECRET) {
-            return ("$($env:DISCORD_CLIENT_SECRET)".Trim())
-        }
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
-        if (Test-Path $secPath) {
-            return (Get-Content -Raw -Path $secPath).Trim()
-        }
-        $null
+        if (Test-Path $secPath) { (Get-Content -Raw -Path $secPath).Trim() } else { $null }
     }
 
     # Helper: read webhook url (from json or .secret file)
@@ -1460,7 +1449,9 @@ function Start-WebUI {
                                 # Build avatar URL (custom or default variant)
                                 $avatarUrl = $null
                                 if ($me.avatar) {
-                                    $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
+                                    $avatarIsAnimated = $false
+                                    try { if ("$($me.avatar)".StartsWith('a_')) { $avatarIsAnimated = $true } } catch {}
+                                    $avatarExt = if ($avatarIsAnimated) { 'gif' } else { 'png' }
                                     $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
                                 } else {
                                     $defIdx = 0
