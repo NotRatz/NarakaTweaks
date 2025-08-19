@@ -1104,23 +1104,31 @@ function Show-RestartPrompt {
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
     param()
-    # Use Console.WriteLine (not Write-Host) so output appears even when Write-Host was overridden
-    [Console]::WriteLine("Start-WebUI: initializing...")
-    Add-Log 'Starting Web UI on http://127.0.0.1:17690/'
+    [Console]::WriteLine('Start-WebUI: initializing...')
     $listener = [System.Net.HttpListener]::new()
+    [Console]::WriteLine('Start-WebUI: HttpListener object created')
     $prefix = 'http://127.0.0.1:17690/'
+    [Console]::WriteLine('Start-WebUI: checking for existing listeners on port 17690')
+    try {
+        $listeners = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+        $inUse = $listeners | Where-Object { $_.Port -eq 17690 }
+        if ($inUse) { [Console]::WriteLine('Start-WebUI: Port 17690 already in use by another process') } else { [Console]::WriteLine('Start-WebUI: Port 17690 is free') }
+    } catch { [Console]::WriteLine("Start-WebUI: Could not enumerate listeners: $($_.Exception.Message)") }
+
+    [Console]::WriteLine('Start-WebUI: before adding prefix')
     try {
         $listener.Prefixes.Add($prefix)
+        [Console]::WriteLine('Start-WebUI: prefix added')
+    } catch { [Console]::WriteLine("Start-WebUI: Failed to add prefix: $($_.Exception.Message)"); return }
+
+    [Console]::WriteLine('Start-WebUI: before starting listener')
+    try {
         $listener.Start()
         [Console]::WriteLine("Start-WebUI: listener started on $prefix")
-    } catch {
-        [Console]::WriteLine("Start-WebUI: Failed to start HttpListener: $($_.Exception.Message)")
-        Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message)
-        return
-    }
+    } catch { [Console]::WriteLine("Start-WebUI: Failed to start HttpListener: $($_.Exception.Message)"); Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message); return }
 
     # open browser
-    try { Start-Process $prefix; [Console]::WriteLine("Start-WebUI: Browser launched.") } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; [Console]::WriteLine("Start-WebUI: Open this URL manually: $prefix") }
+    try { Start-Process $prefix; [Console]::WriteLine('Start-WebUI: Browser launched.') } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; [Console]::WriteLine("Start-WebUI: Open this URL manually: $prefix") }
 
     $send = {
         param($ctx, $statusCode, $contentType, $body)
@@ -1250,13 +1258,10 @@ function Start-WebUI {
     }
 
     while ($listener.IsListening) {
-        [Console]::WriteLine("Start-WebUI: waiting for incoming HTTP requests...")
+        [Console]::WriteLine('Start-WebUI: waiting for incoming HTTP requests...')
         try {
             $ctx = $listener.GetContext()
-        } catch {
-            [Console]::WriteLine("Start-WebUI: GetContext failed: $($_.Exception.Message)")
-            break
-        }
+        } catch { [Console]::WriteLine("Start-WebUI: GetContext failed: $($_.Exception.Message)"); break }
         $req = $ctx.Request
         $path = $req.Url.AbsolutePath.ToLower()
         $method = $req.HttpMethod.ToUpper()
@@ -1310,13 +1315,11 @@ function Start-WebUI {
     $listener.Stop()
     $listener.Close()
     Add-Log 'Web UI stopped.'
-    [Console]::WriteLine("Start-WebUI: listener stopped.")
+    [Console]::WriteLine('Start-WebUI: listener stopped.')
 }
 $StartInWebUI = $true
 # --- Entry Point ---
-[Console]::WriteLine("Entry: StartInWebUI = " + ($StartInWebUI -eq $true))
 if ($StartInWebUI) {
-    [Console]::WriteLine('Entry: launching Start-WebUI...')
     Start-WebUI
-    # Do not return; keep process open for debugging
+    # Do not return or kill process, keep PowerShell open for debugging
 }
