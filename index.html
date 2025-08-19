@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>RatzTweaks</title>
+<style>
+body{background:url('background.png') center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;color:white;font-family:Arial,sans-serif;margin:0;text-align:center;}
+main{max-width:800px;margin:0 auto;padding:40px;background:rgba(0,0,0,0.5);}
+h1{margin-top:0;}
+.buttons{margin:40px 0;}
+.buttons button{padding:15px 30px;margin:0 10px;font-size:1.1em;border:none;border-radius:4px;cursor:pointer;}
+.buttons button.start{background:#2e8b57;color:#fff;}
+.buttons button.revert{background:#8b2e2e;color:#fff;}
+.socials a{color:#fff;margin:0 10px;text-decoration:none;}
+</style>
+</head>
+<body>
+<main>
+<h1>RatzTweaks</h1>
+<section>
+<h2>Main Tweaks</h2>
+<p>Applies core system optimizations for stability and lower latency, including reduced telemetry and a high-performance power plan.</p>
+</section>
+<section>
+<h2>GPU Tweaks</h2>
+<p>Imports curated NVIDIA profile settings to improve frame pacing and responsiveness.</p>
+</section>
+<section>
+<h2>Optional Tweaks</h2>
+<p>Extra adjustments like MSI mode and disabling background apps, widgets, Game Bar, or Copilot—apply only what you need and revert anytime.</p>
+</section>
+<div class="buttons">
+<button class="start" onclick="startTweaks()">Start</button>
+<button class="revert" onclick="revertTweaks()">Revert</button>
+</div>
+<div class="socials">
+<a href="https://twitch.tv/notratz" target="_blank" rel="noopener">Twitch</a>
+<a href="https://www.youtube.com/@notratz" target="_blank" rel="noopener">YouTube</a>
+<a href="https://discord.gg/team-Strive" target="_blank" rel="noopener">Discord</a>
+</div>
+</main>
+<script>
+const startCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex";
+const revertCmd = "irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
+function copyAndRun(cmd){
+  navigator.clipboard.writeText(cmd).then(function(){
+    alert('PowerShell command copied to clipboard:\n' + cmd + '\n\nPaste into an elevated PowerShell window to run.');
+  });
+  try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
+}
+function startTweaks(){ copyAndRun(startCmd); }
+function revertTweaks(){ copyAndRun(revertCmd); }
+</script>
+</body>
+</html>
