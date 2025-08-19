@@ -1139,10 +1139,25 @@ function Start-WebUI {
     [Console]::WriteLine('Start-WebUI: before adding prefix')
     try {
         $listener.Prefixes.Add($prefix)
-        if ($oauthPrefix -and $oauthPrefix -ne $prefix) {
-            try { $listener.Prefixes.Add($oauthPrefix); [Console]::WriteLine("Start-WebUI: extra OAuth prefix added: $oauthPrefix") } catch { [Console]::WriteLine("Start-WebUI: could not add extra OAuth prefix: $($_.Exception.Message)") }
+        [Console]::WriteLine("Start-WebUI: prefix added: $prefix")
+        # Also add localhost variant for robustness
+        $tryAddPrefix = {
+            param($p)
+            try { $listener.Prefixes.Add($p); [Console]::WriteLine("Start-WebUI: prefix added: $p") } catch { [Console]::WriteLine("Start-WebUI: could not add prefix $p" + ":" + "$($_.Exception.Message)") }
         }
-        [Console]::WriteLine('Start-WebUI: prefix added')
+        & $tryAddPrefix 'http://localhost:17690/'
+        if ($oauthPrefix -and $oauthPrefix -ne $prefix) {
+            & $tryAddPrefix $oauthPrefix
+            # Add swapped host variant for oauth (localhost <-> 127.0.0.1)
+            try { $u = [Uri]$oauthPrefix } catch { $u = $null }
+            if ($u) {
+                $swapHost = if ($u.Host -eq 'localhost') { '127.0.0.1' } elseif ($u.Host -eq '127.0.0.1') { 'localhost' } else { $null }
+                if ($swapHost) {
+                    $swapped = ($u.Scheme + '://' + $swapHost + ':' + $u.Port + '/')
+                    & $tryAddPrefix $swapped
+                }
+            }
+        }
     } catch { [Console]::WriteLine("Start-WebUI: Failed to add prefix: $($_.Exception.Message)"); return }
 
     [Console]::WriteLine('Start-WebUI: before starting listener')
