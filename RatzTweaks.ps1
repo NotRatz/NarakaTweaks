@@ -1175,9 +1175,19 @@ body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#e6e6e6;background:
             '^/auth$' {
                 if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
                 try {
-                    if (Ensure-DiscordAuthenticated) {
-                        & $send $ctx 302 'text/plain' ''
+                    $ok = $false
+                    try {
+                        if (Get-Command Ensure-DiscordAuthenticated -ErrorAction SilentlyContinue) {
+                            $ok = Ensure-DiscordAuthenticated
+                        } elseif (Get-Command Start-DiscordOAuthAndLog -ErrorAction SilentlyContinue) {
+                            $ok = Start-DiscordOAuthAndLog
+                            if ($ok) { $global:DiscordAuthenticated = $true }
+                        }
+                    } catch { $ok = $false }
+
+                    if ($ok) {
                         try { $ctx.Response.RedirectLocation = '/' } catch {}
+                        & $send $ctx 302 'text/plain' ''
                     } else {
                         & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
                     }
