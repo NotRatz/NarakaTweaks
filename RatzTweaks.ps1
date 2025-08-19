@@ -41,6 +41,11 @@ $ProgressPreference = 'SilentlyContinue'
 $WarningPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'SilentlyContinue'
 
+# Ensure log path and PSCommandPath are defined even when run via iwr | iex
+if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
+$logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
+if (-not $global:RatzLog) { $global:RatzLog = @() }
+
 # --- Auto-download all required files if missing (for irm ... | iex users) ---
 $needDownload = $false
 if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
@@ -1319,7 +1324,13 @@ function Start-WebUI {
 }
 $StartInWebUI = $true
 # --- Entry Point ---
+# Diagnostic: show entry point state before launching UI
+[Console]::WriteLine("Entry point: StartInWebUI = $([boolean]::Parse(($StartInWebUI -eq $true).ToString()))")
+if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
+[Console]::WriteLine("PSCommandPath = $PSCommandPath")
 if ($StartInWebUI) {
+    [Console]::WriteLine('Entry point: invoking Start-WebUI...')
     Start-WebUI
-    # Do not return or kill process, keep PowerShell open for debugging
+    [Console]::WriteLine('Entry point: returned from Start-WebUI')
+    # Do not exit automatically; keep console open for debugging
 }
