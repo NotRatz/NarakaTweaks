@@ -1151,7 +1151,9 @@ function Start-WebUI {
             # Add swapped host variant for oauth (localhost <-> 127.0.0.1)
             try { $u = [Uri]$oauthPrefix } catch { $u = $null }
             if ($u) {
-                $swapHost = if ($u.Host -eq 'localhost') { '127.0.0.1' } elseif ($u.Host -eq '127.0.0.1') { 'localhost' } else { $null }
+                $swapHost = $null
+                if ($u.Host -eq 'localhost') { $swapHost = '127.0.0.1' }
+                elseif ($u.Host -eq '127.0.0.1') { $swapHost = 'localhost' }
                 if ($swapHost) {
                     $swapped = ($u.Scheme + '://' + $swapHost + ':' + $u.Port + '/')
                     & $tryAddPrefix $swapped
@@ -1238,7 +1240,7 @@ function Start-WebUI {
         switch ($step) {
             'start' {
                 $startDisabledAttr = ''
-                if (-not $global:DiscordAuthenticated) { $startDisabledAttr = '' }
+                if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1344,8 +1346,9 @@ function Start-WebUI {
         $method = $req.HttpMethod.ToUpper()
         $query = $req.Url.Query
 
-        # Serve the start page for root GET requests (avoid leaving the browser waiting)
-        if ((($path -eq '/') -or ($path -eq '')) -and $method -eq 'GET') {
+        # Serve the start page for root GET requests (avoid leaving the browser waiting),
+        # but skip if this is an OAuth redirect carrying ?code= in the query
+        if ((($path -eq '/') -or ($path -eq '')) -and $method -eq 'GET' -and -not ($query -match 'code=')) {
             $html = & $getStatusHtml 'start' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
@@ -1492,7 +1495,7 @@ function Start-WebUI {
     $listener.Close()
     Add-Log 'Web UI stopped.'
     [Console]::WriteLine('Start-WebUI: listener stopped.')
-}
+} # <-- Add this closing brace to properly terminate Start-WebUI function
 $StartInWebUI = $true
 # --- Entry Point ---
 # Diagnostic: show entry point state before launching UI
