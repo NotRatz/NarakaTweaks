@@ -1143,63 +1143,21 @@ function Start-WebUI {
 
     # Option definitions
     $mainTweaks = @(
-        @{ id='disable-msi'; label='Enable MSI Mode for all PCI devices'; fn='Disable-MSIMode' },
-        @{ id='disable-bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
-        @{ id='disable-widgets'; label='Disable Widgets'; fn='Disable-Widgets' },
-        @{ id='disable-gamebar'; label='Disable Game Bar'; fn='Disable-Gamebar' },
-        @{ id='disable-copilot'; label='Disable Copilot'; fn='Disable-Copilot' }
+        @{ id='msi'; label='MSI Mode for all PCI-E Devices (Makes GPU more Responsive)'; fn='Disable-MSIMode' },
+        @{ id='bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
+        @{ id='gamebar'; label='Disable Gamebar'; fn='Disable-Gamebar' },
+        @{ id='copilot'; label='Disable Copilot'; fn='Disable-Copilot' }
     )
     $gpuTweaks = @(
-        @{ id='import-nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' },
-        @{ id='set-powerplan'; label='Set Power Plan'; fn='Set-PowerPlan' }
+        @{ id='nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' }
     )
     $optionalTweaks = @(
-        @{ id='vivetool'; label='Disable ViVeTool Features'; fn='Disable-ViVeFeatures' }
+        @{ id='vivetool'; label='ViVeTool Windows Features Removal'; fn='Disable-ViVeFeatures' }
     )
 
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
         switch ($step) {
-            'auth' {
-                $auth = if ($global:DiscordAuthenticated) { 'Connected to Discord' } else { 'Not connected to Discord' }
-                @"
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'/>
-  <title>RatzTweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
-  <style>
-    body { background: url('$bgUrl') center/cover no-repeat fixed; background-color: rgba(0,0,0,0.85); background-blend-mode: overlay; }
-  </style>
-</head>
-<body class='min-h-screen flex items-center justify-center'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-3xl font-bold text-yellow-400 mb-4'>RatzTweaks</h2>
-  <p class='mb-4 text-gray-200'>Status: <span class='font-semibold'>$auth</span></p>
-  <form action='/auth' method='post' class='inline'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mr-2' type='submit'>Connect Discord</button></form>
-</div>
-</body></html>
-"@
-            }
-            'start-tweaks' {
-                @"
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'/>
-  <title>RatzTweaks - Start Tweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
-  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
-</head>
-<body class='min-h-screen flex items-center justify-center'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
-  <form action='/main-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Start Main Tweaks</button></form>
-</div>
-</body></html>
-"@
-            }
             'main-tweaks' {
                 $boxes = ($mainTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='main' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
                 @"
@@ -1272,15 +1230,15 @@ function Start-WebUI {
 <html lang='en'>
 <head>
   <meta charset='utf-8'/>
-  <title>About & Ko-Fi</title>
+  <title>About</title>
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>About & Ko-Fi</h2>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>About</h2>
   <img src='$ratzImg' alt='Naked Ratz' class='rounded-lg mb-4' style='max-width:100%;height:auto;'>
-  <p class='mb-4 text-gray-200'>Support on <a href='https://ko-fi.com/' class='text-yellow-400 underline'>Ko-Fi</a></p>
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' onclick="window.open('https://ko-fi.com/notratz','_blank');window.close();">Close</button>
 </div>
 </body>
 </html>
@@ -1353,6 +1311,40 @@ function Start-WebUI {
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'optional-tweaks')
             }
             '/about' {
+                # Collect selected tweaks from POST data and run them
+                if ($path -eq '/about' -and $method -eq 'POST') {
+                    # Get selected tweaks from previous steps
+                    $main = $req.QueryString['main']
+                    $gpu = $req.QueryString['gpu']
+                    $opt = $req.QueryString['opt']
+                    $selectedMain = @(); $selectedGPU = @(); $selectedOpt = @()
+                    if ($main) { $selectedMain += $main }
+                    if ($gpu) { $selectedGPU += $gpu }
+                    if ($opt) { $selectedOpt += $opt }
+                    # Run selected main tweaks
+                    foreach ($id in $selectedMain) {
+                        $fn = ($mainTweaks | Where-Object { $_.id -eq $id })[0].fn
+                        if ($fn) { & $fn }
+                    }
+                    # Run selected GPU tweaks
+                    foreach ($id in $selectedGPU) {
+                        $fn = ($gpuTweaks | Where-Object { $_.id -eq $id })[0].fn
+                        if ($fn) { & $fn }
+                    }
+                    # Run selected optional tweaks
+                    foreach ($id in $selectedOpt) {
+                        $fn = ($optionalTweaks | Where-Object { $_.id -eq $id })[0].fn
+                        if ($fn) { & $fn }
+                    }
+                    # Show About page
+                    $html = & $getStatusHtml 'about' $selectedMain $selectedGPU $selectedOpt
+                    & $send $ctx 200 'text/html' $html
+                    # Close PowerShell after sending response
+                    Start-Sleep -Seconds 2
+                    [System.Diagnostics.Process]::GetCurrentProcess().CloseMainWindow()
+                    [System.Diagnostics.Process]::GetCurrentProcess().Kill()
+                    continue
+                }
                 & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'about')
             }
             default {
