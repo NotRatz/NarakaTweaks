@@ -70,23 +70,16 @@ Please right-click and run this script with Windows PowerShell (powershell.exe).
 
 # Global trap for PowerShell terminating errors
 trap {
-    $fatalMsg = "GLOBAL TRAP: $($_.Exception.Message)"
-    try {
-        $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
-        Add-Content -Path $logPath -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'  ' + $fatalMsg
-    } catch {}
-    try { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $fatalMsg } catch {}
-    try {
-        if ($script:txtProgress) { $script:txtProgress.Lines += $fatalMsg }
-    } catch {}
-    try {
-        if (-not (Get-EventLog -LogName Application -Source 'RatzTweaks' -ErrorAction SilentlyContinue)) {
-            New-EventLog -LogName Application -Source 'RatzTweaks' -ErrorAction SilentlyContinue
-        }
-        Write-EventLog -LogName Application -Source 'RatzTweaks' -EntryType Error -EventId 1000 -Message $fatalMsg -ErrorAction SilentlyContinue
-    } catch {}
-    try { Write-Host $fatalMsg } catch {}
-    continue
+    $err = $_.Exception
+    Write-Host "GLOBAL TRAP: $($err.Message)" -ForegroundColor Red
+    Write-Host "Type: $($err.GetType().FullName)"
+    Write-Host "StackTrace:`n$($err.StackTrace)"
+    if ($err.InnerException) { Write-Host "Inner Exception: $($err.InnerException.Message)" }
+    Write-Host "Script path: $($MyInvocation.MyCommand.Path)"
+    Write-Host "PSCommandPath: $PSCommandPath"
+    Write-Host "Please copy the above output and share it for debugging. Press Enter to continue..."
+    Read-Host
+    break
 }
 # Show-LogWindow: Displays the log in a scrollable window
 function Show-LogWindow {
@@ -888,11 +881,6 @@ function Invoke-AllTweaks {
         foreach ($cmd in $amdCmds) { Invoke-Expression $cmd }
     }
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000\\UMD" /v "Main3D" /t REG_DWORD /d "31" /f',
-            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000\\UMD" /v "FlipQueueSize" /t  REG_DWORD /d "31" /f',
-            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps" /t REG_DWORD /d "0" /f',
-            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps_NA" /t REG_DWORD /d "0" /f',
-            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSnapshot" /t REG_DWORD /d "0" /f',
-            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSubscription" /t REG_DWORD /d "0" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000\\UMD" /v "FlipQueueSize" /t  REG_DWORD /d "31" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps" /t REG_DWORD /d "0" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps_NA" /t REG_DWORD /d "0" /f',
