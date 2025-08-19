@@ -63,7 +63,7 @@ if ($needDownload) {
     $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
     $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
     Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`"" -WindowStyle Hidden
+    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`""
     # Ensure the original process exits immediately to prevent double execution
     Stop-Process -Id $PID -Force
 }
