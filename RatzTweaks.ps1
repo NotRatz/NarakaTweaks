@@ -1207,20 +1207,16 @@ function Start-WebUI {
         } catch { return $null }
     }
 
-    # Helper: read discord secret from file
+    # Helper: read discord client secret from env var or file (plain text)
     $getDiscordSecret = {
+        if ($env:DISCORD_CLIENT_SECRET) {
+            return ("$($env:DISCORD_CLIENT_SECRET)".Trim())
+        }
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
         if (Test-Path $secPath) {
-            $raw = (Get-Content -Raw -Path $secPath).Trim()
-            try {
-                $secure = ConvertTo-SecureString $raw
-                $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-                try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
-                finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-            } catch {
-                $raw
-            }
-        } else { $null }
+            return (Get-Content -Raw -Path $secPath).Trim()
+        }
+        $null
     }
 
     # Helper: read webhook url (from json or .secret file)
