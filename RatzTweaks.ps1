@@ -1136,11 +1136,18 @@ function Start-WebUI {
         try { $ctx.Response.Close() } catch {}
     }
 
+    $bgUrl = 'assets/naraka-bg.png'
+    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/assets/naraka-bg.png' }
+    $ratzImg = 'ratznaked.jpg'
+    if (-not (Test-Path $ratzImg)) { $ratzImg = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/ratznaked.jpg' }
+
     $getStatusHtml = {
-        param()
-        $auth = if ($global:DiscordAuthenticated) { 'Connected to Discord' } else { 'Not connected to Discord' }
-        $btnStartDisabled = if ($global:DiscordAuthenticated) { '' } else { 'disabled' }
-        @"
+        param($step)
+        switch ($step) {
+            'auth' {
+                $auth = if ($global:DiscordAuthenticated) { 'Connected to Discord' } else { 'Not connected to Discord' }
+                $btnStartDisabled = if ($global:DiscordAuthenticated) { '' } else { 'disabled' }
+                @"
 <!doctype html>
 <html lang='en'>
 <head>
@@ -1150,7 +1157,7 @@ function Start-WebUI {
   <link rel='stylesheet' href='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.css' />
   <style>
     body {
-      background: url('assets/naraka-bg.png') center/cover no-repeat fixed;
+      background: url('$bgUrl') center/cover no-repeat fixed;
       background-color: rgba(0, 0, 0, 0.85);
       background-blend-mode: overlay;
     }
@@ -1165,14 +1172,111 @@ function Start-WebUI {
   <h2 class='text-3xl font-bold text-yellow-400 mb-4'>RatzTweaks</h2>
   <p class='mb-4 text-gray-200'>Status: <span class='font-semibold'>$auth</span></p>
   <form action='/auth' method='post' class='inline'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mr-2' type='submit'>Connect Discord</button></form>
-  <form action='/start' method='post' class='inline'><button class='btn secondary bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded' type='submit' $btnStartDisabled>Start Tweaks</button></form>
-  <div class='note text-gray-400 mt-4'>Connect to Discord so the tool can privately notify you if assistance is needed.</div>
 </div>
 <script src='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.js'></script>
 <script>AOS.init();</script>
 </body></html>
 "@
-  
+            }
+            'start-tweaks' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>RatzTweaks - Start Tweaks</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
+  <form action='/main-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Start Main Tweaks</button></form>
+</div>
+</body></html>
+"@
+            }
+            'main-tweaks' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Main Tweaks</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main Tweaks</h2>
+  <form action='/gpu-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to GPU Tweaks</button></form>
+</div>
+</body>
+</html>
+"@
+            }
+            'gpu-tweaks' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>GPU Tweaks</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>GPU Tweaks</h2>
+  <form action='/optional-tweaks' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to Optional Tweaks</button></form>
+</div>
+</body>
+</html>
+"@
+            }
+            'optional-tweaks' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Optional Tweaks</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Optional Tweaks</h2>
+  <form action='/about' method='post'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Continue to About</button></form>
+</div>
+</body>
+</html>
+"@
+            }
+            'about' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>About & Ko-Fi</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>About & Ko-Fi</h2>
+  <img src='$ratzImg' alt='Naked Ratz' class='rounded-lg mb-4' style='max-width:100%;height:auto;'>
+  <p class='mb-4 text-gray-200'>Support on <a href='https://ko-fi.com/' class='text-yellow-400 underline'>Ko-Fi</a></p>
+</div>
+</body>
+</html>
+"@
+            }
+            default {
+                "<html><body><h3>Unknown step.</h3></body></html>"
+            }
+        }
     }
 
     while ($listener.IsListening) {
@@ -1180,18 +1284,16 @@ function Start-WebUI {
         $path = $ctx.Request.Url.AbsolutePath.ToLowerInvariant()
         $method = $ctx.Request.HttpMethod.ToUpperInvariant()
 
-        switch -Regex ($path) {
-            '^/$' {
-                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml)
+        switch ($path) {
+            '/' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'auth')
             }
-            '^/auth$' {
+            '/auth' {
                 if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
                 try {
-                    $ok = $false
-                    try { $ok = Start-DiscordOAuthAndLog } catch { $ok = $false }
-
+                    $ok = Start-DiscordOAuthAndLog
                     if ($ok) {
-                        try { $ctx.Response.RedirectLocation = '/' } catch {}
+                        try { $ctx.Response.RedirectLocation = '/start-tweaks' } catch {}
                         & $send $ctx 302 'text/plain' ''
                     } else {
                         & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
@@ -1200,15 +1302,21 @@ function Start-WebUI {
                     & $send $ctx 500 'text/plain' ("Auth error: {0}" -f $_.Exception.Message)
                 }
             }
-            '^/start$' {
-                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
-                if (-not $global:DiscordAuthenticated) { & $send $ctx 403 'text/plain' 'Authenticate with Discord first.'; break }
-                try {
-                    Invoke-AllTweaks
-                    & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Tweaks started. You can close this window.</h3></body></html>'
-                } catch {
-                    & $send $ctx 500 'text/plain' ("Start error: {0}" -f $_.Exception.Message)
-                }
+            '/start-tweaks' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'start-tweaks')
+            }
+            '/main-tweaks' {
+                Start-Job -ScriptBlock { Invoke-AllTweaks } | Out-Null
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'main-tweaks')
+            }
+            '/gpu-tweaks' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'gpu-tweaks')
+            }
+            '/optional-tweaks' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'optional-tweaks')
+            }
+            '/about' {
+                & $send $ctx 200 'text/html; charset=utf-8' (& $getStatusHtml 'about')
             }
             default {
                 & $send $ctx 404 'text/plain' 'Not Found'
@@ -1218,7 +1326,6 @@ function Start-WebUI {
 
     try { $listener.Stop() } catch {}
 }
-
 # Main script logic (must be after all function definitions)
 $global:RatzLog = @()
 function Add-Log($msg) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $msg }
