@@ -1222,7 +1222,8 @@ function Start-WebUI {
         } else { 'Not logged in with Discord' }
         switch ($step) {
             'start' {
-                $startDisabled = $global:DiscordAuthenticated ? '' : 'disabled style="opacity:0.5;cursor:not-allowed"'
+                $startDisabledAttr = ''
+                if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1239,7 +1240,7 @@ function Start-WebUI {
   <div class='flex gap-3 mb-6'>
     <a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>
     <form action='/main-tweaks' method='post'>
-      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit' $startDisabled>Start</button>
+      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
     </form>
   </div>
 </div>
