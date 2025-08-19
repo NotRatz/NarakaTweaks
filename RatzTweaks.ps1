@@ -1182,9 +1182,19 @@ function Start-WebUI {
         if (Test-Path $secPath) { (Get-Content -Raw -Path $secPath).Trim() } else { $null }
     }
 
+    # Helper: read webhook url (from json or .secret file)
+    $getWebhookUrl = {
+        try {
+            if ($cfg -and $cfg.webhook_url) { return ("$($cfg.webhook_url)".Trim()) }
+        } catch {}
+        $whPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
+        if (Test-Path $whPath) { return (Get-Content -Raw -Path $whPath).Trim() }
+        return $null
+    }
+
     $bgUrl = 'background.png'
-    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
     $ratzImg = 'ratznaked.jpg'
+    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
     if (-not (Test-Path $ratzImg)) { $ratzImg = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/ratznaked.jpg' }
 
     # Option definitions
@@ -1207,10 +1217,9 @@ function Start-WebUI {
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
         $authText = if ($global:DiscordAuthenticated) {
-            "Logged in with Discord" + ($(if (-not [string]::IsNullOrEmpty($global:DiscordUserName)) { " as $($global:DiscordUserName)" } else { "" }))
-        } else {
-            'Not logged in with Discord'
-        }
+            $name = $global:DiscordUserName
+            if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { "Logged in with Discord as $name" }
+        } else { 'Not logged in with Discord' }
         switch ($step) {
             'start' {
                 @"
@@ -1256,11 +1265,15 @@ function Start-WebUI {
   <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to Optional Tweaks</button>
 </div>
 </form>
-</body></html>
+</body>
+</html>
 "@
             }
             'optional-tweaks' {
-                $boxes = ($optionalTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='opt' value='$($($_['id']))' checked class='mr-1'>$(($($_['label'])))</label>" }) -join ""
+                $boxes = ($optionalTweaks | ForEach-Object {
+                    $id = $_.id; $label = $_.label
+                    "<label class='block mb-2'><input type='checkbox' name='opt' value='${id}' checked class='mr-1'>${label}</label>"
+                }) -join ""
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1278,7 +1291,8 @@ function Start-WebUI {
   <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
 </div>
 </form>
-</body></html>
+</body>
+</html>
 "@
             }
             'about' {
@@ -1349,7 +1363,37 @@ function Start-WebUI {
                         try { $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody } catch {}
                         if ($tok.access_token) {
                             try { $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" } } catch {}
-                            if ($me.username) { $global:DiscordUserName = "$($me.username)#$($me.discriminator)" }
+                            if ($me) {
+                                $global:DiscordUserId = "$($me.id)"
+                                if ($me.discriminator -and $me.discriminator -ne '0') {
+                                    $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
+                                } else {
+                                    $global:DiscordUserName = if ($me.global_name) { "$($me.global_name)" } else { "$($me.username)" }
+                                }
+                                # Send webhook notification if configured
+                                $wh = & $getWebhookUrl
+                                if ($wh) {
+                                    $avatarUrl = $null
+                                    if ($me.avatar) {
+                                        $ext = if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' }
+                                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$ext?size=256"
+                                    }
+                                    $mention = "<@${($me.id)}>"
+                                    $embed = @{
+                                        title = 'RatzTweaks — New run'
+                                        description = 'A user authenticated with Discord'
+                                        color = 3447003
+                                        thumbnail = @{ url = $avatarUrl }
+                                        fields = @(
+                                            @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
+                                            @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
+                                            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
+                                        )
+                                    }
+                                    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
+                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6) } catch {}
+                                }
+                            }
                         }
                     }
                 }
