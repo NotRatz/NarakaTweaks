@@ -46,22 +46,17 @@ $needDownload = $false
 if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
     $needDownload = $true
 }
+# Debug: report resolved paths and file existence to console (bypass suppressed Write-Host)
+[Console]::WriteLine("Debug: PSScriptRoot = $PSScriptRoot")
+[Console]::WriteLine("Debug: UTILITY exists = " + (Test-Path (Join-Path $PSScriptRoot 'UTILITY')))
+[Console]::WriteLine("Debug: RatzSettings.nip exists = " + (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')))
+[Console]::WriteLine("Debug: ratznaked.jpg exists = " + (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg')))
 if ($needDownload) {
-    $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
-    $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
-    $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
-    Write-Host 'Downloading full NarakaTweaks package...'
-    Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
-    Remove-Item $zipPath -Force
-    $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
-    $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
-    Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`"" -WindowStyle Hidden
-    # Ensure the original process exits immediately to prevent double execution
-    Stop-Process -Id $PID -Force
+    [Console]::WriteLine("Auto-download trigger fired, but skipping auto-download to avoid relaunching and closing the current process. If you intended to download, run the installer variant or ensure files are present.")
+    # Do not perform auto-download in this environment; continue running local script for debugging
+    $needDownload = $false
 }
+# ...existing code...
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
 RatzTweaks requires Windows PowerShell 5.1 (not PowerShell 7+).
@@ -898,6 +893,11 @@ function Invoke-AllTweaks {
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps_NA" /t REG_DWORD /d "0" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSnapshot" /t REG_DWORD /d "0" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSubscription" /t REG_DWORD /d "0" /f',
+            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000\\UMD" /v "FlipQueueSize" /t  REG_DWORD /d "31" /f',
+            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps" /t REG_DWORD /d "0" /f',
+            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "EnableUlps_NA" /t REG_DWORD /d "0" /f',
+            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSnapshot" /t REG_DWORD /d "0" /f',
+            'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSubscription" /t REG_DWORD /d "0" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowRSOverlay" /t REG_SZ /d "false" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AllowSkins" /t REG_SZ  /d "false" /f',
             'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000" /v "AutoColorDepthReduction_NA" /t REG_DWORD /d "0" /f',
@@ -1120,7 +1120,17 @@ function Start-WebUI {
     Add-Log 'Starting Web UI on http://127.0.0.1:17690/'
     $listener = [System.Net.HttpListener]::new()
     $prefix = 'http://127.0.0.1:17690/'
-    try { $listener.Prefixes.Add($prefix); $listener.Start() } catch { Add-Log ("Web UI listener failed: {0}" -f $_.Exception.Message); return }
+    try {
+        $listener.Prefixes.Add($prefix)
+        $listener.Start()
+    } catch {
+        $err = $_.Exception.Message
+        Add-Log ("Web UI listener failed: {0}" -f $err)
+        [Console]::WriteLine("Web UI listener failed: $err")
+        [Console]::WriteLine("The script will remain open for debugging. Check permissions or port usage and open the URL manually: $prefix")
+        # Keep process alive for debugging instead of returning
+        while ($true) { Start-Sleep -Seconds 5 }
+    }
 
     # open browser
     try { Start-Process $prefix } catch { Add-Log "Failed to open browser: $($_.Exception.Message)"; Write-Host "Open this URL manually: $prefix" }
