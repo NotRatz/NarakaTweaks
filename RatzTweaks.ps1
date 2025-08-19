@@ -1308,7 +1308,7 @@ function Start-WebUI {
     $listener.Close()
     Add-Log 'Web UI stopped.'
 }
-
+$StartInWebUI = $true
 # --- Entry Point ---
 if ($StartInWebUI) {
     Start-WebUI
