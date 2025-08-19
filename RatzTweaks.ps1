@@ -1291,3 +1291,12 @@ function Start-WebUI {
     }
 # ...existing code...
 }
+
+# --- Entry Point ---
+if ($StartInWebUI) {
+    Start-WebUI
+    return
+}
+
+# Show intro UI by default
+Show-IntroUI
