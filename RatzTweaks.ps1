@@ -1142,25 +1142,37 @@ function Start-WebUI {
         $btnStartDisabled = if ($global:DiscordAuthenticated) { '' } else { 'disabled' }
         @"
 <!doctype html>
-<html><head><meta charset="utf-8"/><title>RatzTweaks</title>
-<style>
-body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#e6e6e6;background:#1e1e1e}
-.btn{padding:10px 16px;margin-right:10px;border:0;border-radius:4px;cursor:pointer}
-.primary{background:#0078d4;color:#fff}
-.secondary{background:#333;color:#fff}
-.card{background:#2b2b2b;border:1px solid #3a3a3a;border-radius:6px;padding:16px;max-width:720px}
-.note{color:#bbb;margin-top:8px}
-</style></head>
-<body>
-<div class="card">
-  <h2>RatzTweaks</h2>
-  <p>Status: <strong>$auth</strong></p>
-  <form action="/auth" method="post" style="display:inline"><button class="btn primary" type="submit">Connect Discord</button></form>
-  <form action="/start" method="post" style="display:inline"><button class="btn secondary" type="submit" $btnStartDisabled>Start Tweaks</button></form>
-  <div class="note">Connect to Discord so the tool can privately notify you if assistance is needed.</div>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>RatzTweaks</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <link rel='stylesheet' href='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.css' />
+  <style>
+    body {
+      background: url('assets/naraka-bg.png') center/cover no-repeat fixed;
+      background-color: rgba(0, 0, 0, 0.85);
+      background-blend-mode: overlay;
+    }
+    #loadingOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .spinner { width: 3rem; height: 3rem; border: 4px solid #555; border-top-color: #ffd700; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div id='loadingOverlay'><div class='spinner'></div></div>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full' data-aos='fade-up'>
+  <h2 class='text-3xl font-bold text-yellow-400 mb-4'>RatzTweaks</h2>
+  <p class='mb-4 text-gray-200'>Status: <span class='font-semibold'>$auth</span></p>
+  <form action='/auth' method='post' class='inline'><button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mr-2' type='submit'>Connect Discord</button></form>
+  <form action='/start' method='post' class='inline'><button class='btn secondary bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded' type='submit' $btnStartDisabled>Start Tweaks</button></form>
+  <div class='note text-gray-400 mt-4'>Connect to Discord so the tool can privately notify you if assistance is needed.</div>
 </div>
+<script src='https://unpkg.com/aos@3.0.0-beta.6/dist/aos.js'></script>
+<script>AOS.init();</script>
 </body></html>
 "@
+  
     }
 
     while ($listener.IsListening) {
@@ -1376,25 +1388,6 @@ function Start-DiscordOAuthAndLog {
 }
 
 # Patch Web UI /auth route to call Start-DiscordOAuthAndLog directly
-# ...existing code...
-            '^/auth$' {
-                if ($method -ne 'POST') { & $send $ctx 405 'text/plain' 'Method Not Allowed'; break }
-                try {
-                    $ok = $false
-                    try { $ok = Start-DiscordOAuthAndLog } catch { $ok = $false }
-
-                    if ($ok) {
-                        try { $ctx.Response.RedirectLocation = '/' } catch {}
-                        & $send $ctx 302 'text/plain' ''
-                    } else {
-                        & $send $ctx 200 'text/html; charset=utf-8' '<html><body><h3>Authentication cancelled or failed. <a href="/">Back</a></h3></body></html>'
-                    }
-                } catch {
-                    & $send $ctx 500 'text/plain' ("Auth error: {0}" -f $_.Exception.Message)
-                }
-            }
-# ...existing code...
-
 # --- Final UI bootstrap: start the chosen UI mode after all functions are loaded ---
 if ($global:RT_UI_Mode -eq 'WinForms') {
     Add-Log 'Started RatzTweaks (WinForms).'
