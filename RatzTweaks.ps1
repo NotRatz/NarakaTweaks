@@ -970,7 +970,14 @@ function Invoke-NVPI {
     param()
     # Start NVPI work in a background job so the UI thread is never blocked
     try {
-        $nvpiUrl = 'https://github.com/xHybred/NvidiaProfileInspectorRevamped/releases/download/v5.2/NVPI-Revamped.zip'
+        # Unblock NVIDIA DRS cache to avoid profile import issues
+        $drsPath = Join-Path $env:ProgramData 'NVIDIA Corporation\Drs'
+        if (Test-Path $drsPath) {
+            try {
+                Get-ChildItem -Path $drsPath -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+            } catch {}
+        }
+        $nvpiUrl = 'https://github.com/Orbmu2k/nvidiaProfileInspector/releases/download/2.4.0.27/nvidiaProfileInspector.zip'
         $nipPath = Join-Path $PSScriptRoot 'RatzSettings.nip'
         $logPath = Join-Path $env:TEMP 'NVPI_job.log'
         $jobScript = {
