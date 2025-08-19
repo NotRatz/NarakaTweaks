@@ -1352,6 +1352,13 @@ function Start-WebUI {
             continue
         }
 
+        # Serve the Optional Tweaks page on GET
+        if ($path -eq '/optional-tweaks' -and $method -eq 'GET') {
+            $html = & $getStatusHtml 'optional-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+
         # After Discord auth, redirect to /start, optionally exchange the token and fetch user
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
             try {
@@ -1375,8 +1382,8 @@ function Start-WebUI {
                                 if ($wh) {
                                     $avatarUrl = $null
                                     if ($me.avatar) {
-                                        $ext = if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' }
-                                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$ext?size=256"
+                                        $avatarExt = (if ("$($me.avatar)".StartsWith('a_')) { 'gif' } else { 'png' })
+                                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
                                     }
                                     $mention = "<@${($me.id)}>"
                                     $embed = @{
@@ -1404,23 +1411,13 @@ function Start-WebUI {
             continue
         }
 
-        # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
-        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
-            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
-            [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan
-            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
-            $html = & $getStatusHtml 'main-tweaks' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            continue
-        }
-
         # On /about, run selected optional tweaks
         if ($path -eq '/about' -and $method -eq 'POST') {
             $form = & $parseForm $ctx
             $optVals = @()
             if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
             $global:selectedTweaks = $optVals
-            # Map selected ids to functions
+            # Map selected ids to functions and execute
             $optToFn = @{
                 'MSI Mode' = 'Disable-MSIMode'
                 'Disable Background Apps' = 'Disable-BackgroundApps'
@@ -1436,14 +1433,9 @@ function Start-WebUI {
                     & $fn
                 }
             }
-            # Also call wrapper if you want to run them asynchronously (legacy behavior)
-            if (Get-Command Invoke-SelectedOptionalTweaks -ErrorAction SilentlyContinue) {
-                [Console]::WriteLine('Route:/about -> Invoke-SelectedOptionalTweaks')
-                Invoke-SelectedOptionalTweaks
-            }
             $html = & $getStatusHtml 'about' $null $null $optVals
             & $send $ctx 200 'text/html' $html
-            # Toast + Ko-fi and exit (as before)
+            # Toast + Ko-fi and exit
             [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
             $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
             $toastXml = $template
