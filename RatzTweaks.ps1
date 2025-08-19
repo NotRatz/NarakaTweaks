@@ -23,11 +23,11 @@ $resolvedRoot = Resolve-ProjectRoot -startPath $PSScriptRoot
 if ($resolvedRoot -and (Test-Path (Join-Path $resolvedRoot 'UTILITY'))) { $PSScriptRoot = $resolvedRoot }
 # --- Show name in big text in PowerShell window, then suppress all further output ---
 Write-Host ''
-Write-Host 'RRRRR    AAA   TTTTT' -ForegroundColor Cyan
-Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
-Write-Host 'RRRRR   AAAAA    T  ' -ForegroundColor Cyan
-Write-Host 'RR RR   A   A    T  ' -ForegroundColor Cyan
-Write-Host 'RR  RR  A   A    T  ' -ForegroundColor Cyan
+Write-Host 'RRRRR    AAAAA   TTTTTTT' -ForegroundColor Cyan
+Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RRRRR   AAAAAAA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RR RR   AA   AA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
 Write-Host ''
