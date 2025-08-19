@@ -1143,59 +1143,61 @@ function Start-WebUI {
 
     # Option definitions
     $mainTweaks = @(
-        @{ id='msi'; label='MSI Mode for all PCI-E Devices (Makes GPU more Responsive)'; fn='Disable-MSIMode' },
-        @{ id='bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
-        @{ id='gamebar'; label='Disable Gamebar'; fn='Disable-Gamebar' },
-        @{ id='copilot'; label='Disable Copilot'; fn='Disable-Copilot' }
+        @{ id='main-tweaks'; label='Main Tweaks'; fn='Invoke-AllTweaks' },
+        @{ id='set-powerplan'; label='Set Power Plan'; fn='Set-PowerPlan' }
     )
     $gpuTweaks = @(
-        @{ id='nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' }
+        @{ id='import-nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' }
     )
     $optionalTweaks = @(
-        @{ id='vivetool'; label='ViVeTool Windows Features Removal'; fn='Disable-ViVeFeatures' }
+        @{ id='disable-msi'; label='Enable MSI Mode for all PCI devices'; fn='Disable-MSIMode' },
+        @{ id='disable-bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
+        @{ id='disable-widgets'; label='Disable Widgets'; fn='Disable-Widgets' },
+        @{ id='disable-gamebar'; label='Disable Game Bar'; fn='Disable-Gamebar' },
+        @{ id='disable-copilot'; label='Disable Copilot'; fn='Disable-Copilot' },
+        @{ id='vivetool'; label='Disable ViVeTool Features'; fn='Disable-ViVeFeatures' }
     )
 
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
         switch ($step) {
-            'main-tweaks' {
-                # Main tweaks are not user selectable, just show info
+            'start' {
                 @"
 <!doctype html>
 <html lang='en'>
 <head>
   <meta charset='utf-8'/>
-  <title>Main Tweaks</title>
+  <title>RatzTweaks - Start</title>
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
-<form action='/gpu-tweaks' method='post'>
+<form action='/main-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main Tweaks</h2>
-  <p class='mb-4 text-gray-200'>Main system and registry tweaks will be applied automatically.</p>
-  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to GPU Tweaks</button>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Start</button>
 </div>
 </form>
 </body></html>
 "@
             }
-            'gpu-tweaks' {
-                # GPU tweaks are not user selectable, just show info
+            'main-tweaks' {
+                $boxes = ($mainTweaks | ForEach-Object { "<label class='block mb-2'><input type='checkbox' name='main' value='$_[id]' checked class='mr-2'>$_[label]</label>" }) -join ""
                 @"
 <!doctype html>
 <html lang='en'>
 <head>
   <meta charset='utf-8'/>
-  <title>GPU Tweaks</title>
+  <title>Main & GPU Tweaks</title>
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 <form action='/optional-tweaks' method='post'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>GPU Tweaks</h2>
-  <p class='mb-4 text-gray-200'>NVPI Profile will be imported automatically.</p>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Main & GPU Tweaks</h2>
+  $boxes
+  <label class='block mb-2'><input type='checkbox' name='gpu' value='import-nvpi' checked class='mr-2'>Import NVPI Profile</label>
   <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to Optional Tweaks</button>
 </div>
 </form>
@@ -1218,14 +1220,10 @@ function Start-WebUI {
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Optional Tweaks</h2>
   $boxes
-  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Continue to About</button>
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
 </div>
 </form>
-<form action='/revert-optional' method='post' class='mt-4'>
-  <button class='btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded' type='submit'>Revert Optional Tweaks</button>
-</form>
-</body>
-</html>
+</body></html>
 "@
             }
             'about' {
@@ -1240,9 +1238,9 @@ function Start-WebUI {
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>About</h2>
-  <img src='$ratzImg' alt='Naked Ratz' class='rounded-lg mb-4' style='max-width:100%;height:auto;'>
-  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' onclick="window.open('https://ko-fi.com/notratz','_blank');window.close();">Close</button>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
+  <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
+  <button class='btn primary bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' onclick="window.open('https://ko-fi.com/notratz','_blank');window.close();">Complete All Tweaks & Set-Up</button>
 </div>
 </body>
 </html>
@@ -1261,42 +1259,52 @@ function Start-WebUI {
         $method = $req.HttpMethod.ToUpper()
         $query = $req.Url.Query
 
-        # On /gpu-tweaks, apply main tweaks and GPU tweaks automatically
-        if ($path -eq '/gpu-tweaks' -and $method -eq 'POST') {
-            Invoke-AllTweaks
-            Invoke-NVPI
+        # After Discord auth, redirect to /start
+        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
+            $global:DiscordAuthenticated = $true
+            $html = & $getStatusHtml 'start' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
         }
-        # On /about, apply selected optional tweaks
+        # On /main-tweaks, run main tweaks and GPU tweaks
+        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            $main = $req.QueryString['main']
+            $gpu = $req.QueryString['gpu']
+            if ($main -eq 'main-tweaks') { Invoke-AllTweaks }
+            if ($main -eq 'set-powerplan') { Set-PowerPlan }
+            if ($gpu -eq 'import-nvpi') { Invoke-NVPI }
+            $html = & $getStatusHtml 'optional-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+        # On /about, run selected optional tweaks
         if ($path -eq '/about' -and $method -eq 'POST') {
             $opt = $req.QueryString['opt']
             $selectedOpt = @()
             if ($opt) { $selectedOpt += $opt }
             $global:selectedTweaks = $selectedOpt
-            Invoke-SelectedOptionalTweaks
+            foreach ($id in $selectedOpt) {
+                $fn = ($optionalTweaks | Where-Object { $_.id -eq $id })[0].fn
+                if ($fn) { & $fn }
+            }
             $html = & $getStatusHtml 'about' $null $null $selectedOpt
             & $send $ctx 200 'text/html' $html
+            # Show Windows notification and redirect
+            [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+            $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+            $toastXml = $template
+            $toastXml.GetElementsByTagName('text')[0].AppendChild($toastXml.CreateTextNode('RatzTweaks: Restart your PC to finish setup!')) | Out-Null
+            $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
+            $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('RatzTweaks')
+            $notifier.Show($toast)
             Start-Sleep -Seconds 2
+            Start-Process 'https://ko-fi.com/notratz'
             [System.Diagnostics.Process]::GetCurrentProcess().CloseMainWindow()
             [System.Diagnostics.Process]::GetCurrentProcess().Kill()
             continue
-        }
-        # On /revert-optional, revert optional tweaks
-        if ($path -eq '/revert-optional' -and $method -eq 'POST') {
-            Revert-OptionalTweaks
-            $html = & $getStatusHtml 'optional-tweaks' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            continue
-        }
-        # ...existing code...
+        }    
     }
-# ...existing code...
+    $listener.Stop()
+    $listener.Close()
+    Add-Log 'Web UI stopped.'
 }
-
-# --- Entry Point ---
-if ($StartInWebUI) {
-    Start-WebUI
-    return
-}
-
-# Show intro UI by default
-Show-IntroUI
