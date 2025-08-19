@@ -1405,53 +1405,88 @@ $btnStart.Add_Click({
     }
 })
 
-# Add a persistent Connect Discord panel with explanatory text and a button that performs OAuth
+# Create a tabbed UI (Discord, Main Tweaks, GPU Tweaks, Optional Tweaks, About)
 if ($form -ne $null) {
     try {
-        $connectPanel = New-Object System.Windows.Forms.Panel
-        $connectPanel.Size = New-Object System.Drawing.Size(300,80)
-        $connectPanel.Location = New-Object System.Drawing.Point(12,12)
-        $connectPanel.BorderStyle = 'FixedSingle'
-        $connectPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+        $tab = New-Object System.Windows.Forms.TabControl
+        $tab.Name = 'MainTabControl'
+        $tab.Size = New-Object System.Drawing.Size($form.ClientSize.Width - 24, $form.ClientSize.Height - 80)
+        $tab.Location = New-Object System.Drawing.Point(12,48)
+        $tab.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 
-        $connectBtn = New-Object System.Windows.Forms.Button
-        $connectBtn.Text = 'Connect Discord'
-        $connectBtn.Size = New-Object System.Drawing.Size(120,28)
-        $connectBtn.Location = New-Object System.Drawing.Point(8,8)
-        $connectPanel.Controls.Add($connectBtn)
+        $tpDiscord = New-Object System.Windows.Forms.TabPage 'Discord'
+        $tpMain = New-Object System.Windows.Forms.TabPage 'Main Tweaks'
+        $tpGPU = New-Object System.Windows.Forms.TabPage 'GPU Tweaks'
+        $tpOptional = New-Object System.Windows.Forms.TabPage 'Optional Tweaks'
+        $tpAbout = New-Object System.Windows.Forms.TabPage 'About & Ko-Fi'
 
-        $connectDesc = New-Object System.Windows.Forms.Label
-        $connectDesc.Text = 'Connect to Discord so the tool can privately notify you if assistance is needed. Click to authenticate.'
-        $connectDesc.Size = New-Object System.Drawing.Size(268,40)
-        $connectDesc.Location = New-Object System.Drawing.Point(8,40)
-        $connectDesc.AutoSize = $false
-        $connectPanel.Controls.Add($connectDesc)
+        $tab.TabPages.Add($tpDiscord)
+        $tab.TabPages.Add($tpMain)
+        $tab.TabPages.Add($tpGPU)
+        $tab.TabPages.Add($tpOptional)
+        $tab.TabPages.Add($tpAbout)
 
-        # If Start button exists, disable it until authenticated
-        try { if ($startButton -ne $null) { $startButton.Enabled = $false } } catch { }
+        # Insert TabControl into form
+        $form.Controls.Add($tab)
 
-        $connectBtn.Add_Click({
+        # Helper to move control into a tab page and adjust location
+        function Move-ControlToTab($ctrl, $tabPage, $x=8, $y=8) {
+            if (-not $ctrl) { return }
             try {
-                $connectBtn.Enabled = $false
-                $connectBtn.Text = 'Connecting...'
+                $form.Controls.Remove($ctrl) | Out-Null
+            } catch { }
+            try {
+                $tabPage.Controls.Add($ctrl)
+                $ctrl.Location = New-Object System.Drawing.Point($x,$y)
+            } catch { }
+        }
 
-                if (Ensure-DiscordAuthenticated) {
-                    $connectBtn.Text = 'Connected'
-                    $connectBtn.Enabled = $false
-                    if ($startButton -ne $null) { $startButton.Enabled = $true }
-                    [System.Windows.Forms.MessageBox]::Show('Discord connected. You will be notified privately if assistance is needed.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-                } else {
-                    $connectBtn.Text = 'Connect Discord'
-                    $connectBtn.Enabled = $true
-                    [System.Windows.Forms.MessageBox]::Show('Discord connection failed or was cancelled.','Discord',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
-                }
-            } catch {
-                $connectBtn.Text = 'Connect Discord'
-                $connectBtn.Enabled = $true
-                [System.Windows.Forms.MessageBox]::Show("Connection error: $($_.Exception.Message)",'Error',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
-            }
-        })
+        # Move known controls if they exist
+        try { Move-ControlToTab -ctrl $connectPanel -tabPage $tpDiscord -x 12 -y 12 } catch { }
+        try { Move-ControlToTab -ctrl $startButton -tabPage $tpMain -x 12 -y 12 } catch { }
+        try { Move-ControlToTab -ctrl $nvpiPanel -tabPage $tpGPU -x 12 -y 12 } catch { }
+        try { Move-ControlToTab -ctrl $gpuPanel -tabPage $tpGPU -x 12 -y 12 } catch { }
+        try { Move-ControlToTab -ctrl $optionalPanel -tabPage $tpOptional -x 12 -y 12 } catch { }
+        try { Move-ControlToTab -ctrl $aboutPanel -tabPage $tpAbout -x 12 -y 12 } catch { }
 
-        $form.Controls.Add($connectPanel)
-    } catch { }
+        # If Start button was not found, create a minimal Start area on Main Tweaks tab linking to existing Start logic
+        if (-not $startButton) {
+            $btn = New-Object System.Windows.Forms.Button
+            $btn.Text = 'Start'
+            $btn.Size = New-Object System.Drawing.Size(100,28)
+            $btn.Location = New-Object System.Drawing.Point(12,12)
+            $btn.Add_Click({
+                try {
+                    $btn.Enabled = $false
+                    # call the existing start logic if present
+                    if (Get-Command Invoke-AllTweaks -ErrorAction SilentlyContinue) { Invoke-AllTweaks }
+                } finally { $btn.Enabled = $true }
+            })
+            $tpMain.Controls.Add($btn)
+        }
+
+        # Add a small explanatory label under Discord tab button if not present
+        if ($tpDiscord.Controls.Count -eq 0) {
+            $lbl = New-Object System.Windows.Forms.Label
+            $lbl.Text = 'Click "Connect Discord" to authenticate so the tool can privately notify you if assistance is needed.'
+            $lbl.Size = New-Object System.Drawing.Size($tpDiscord.ClientSize.Width - 24,40)
+            $lbl.Location = New-Object System.Drawing.Point(12,12)
+            $lbl.AutoSize = $false
+            $tpDiscord.Controls.Add($lbl)
+        }
+
+        # About tab: add Ko-Fi link if not present
+        if (-not ($tpAbout.Controls | Where-Object { $_.Name -eq 'KoFiLink' })) {
+            $k = New-Object System.Windows.Forms.LinkLabel
+            $k.Name = 'KoFiLink'
+            $k.Text = 'Support on Ko-Fi'
+            $k.AutoSize = $true
+            $k.Location = New-Object System.Drawing.Point(12,12)
+            $k.Add_LinkClicked({ Start-Process 'https://ko-fi.com/' })
+            $tpAbout.Controls.Add($k)
+        }
+
+    } catch {
+        # if tab creation fails, continue with original single-pane UI
+    }
 }
