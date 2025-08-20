@@ -1231,35 +1231,12 @@ function Start-WebUI {
         return $null
     }
 
-    # Helper: update and persist per-user run counts
-    function Update-RunCount {
-        param([string]$UserId)
-        $path = Join-Path $PSScriptRoot 'run_counts.json'
-        if (-not (Test-Path $path)) {
-            '{}' | Set-Content -Path $path -Encoding UTF8
-            try { attrib +h $path 2>$null | Out-Null } catch {}
-            try { icacls $path /inheritance:r /grant:r Administrators:F /grant:r SYSTEM:F 2>$null | Out-Null } catch {}
-        }
-        try {
-            $json = Get-Content -Raw -Path $path
-            $counts = if ($json) { $json | ConvertFrom-Json } else { @{} }
-        } catch { $counts = @{} }
-        if (-not $counts) { $counts = @{} }
-        if ($UserId) {
-            if ($counts[$UserId]) { $counts[$UserId]++ } else { $counts[$UserId] = 1 }
-            $counts | ConvertTo-Json -Compress | Set-Content -Path $path -Encoding UTF8
-            return $counts[$UserId]
-        }
-        return $null
-    }
-
     # Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
         param(
             [string]$UserId,
             [string]$UserName,
-            [string]$AvatarUrl,
-            [int]$RunCount
+            [string]$AvatarUrl
         )
         $wh = & $getWebhookUrl
         if (-not $wh) {
@@ -1275,9 +1252,8 @@ function Start-WebUI {
         if ($UserName) { $descLines += "**User:** $UserName" }
         if ($mention)  { $descLines += "**Mention:** $mention" }
         if ($UserId)   { $descLines += "**ID:** $UserId" }
-        if ($AvatarUrl) { $descLines += "**Avatar URL:** $AvatarUrl" }
-        if ($RunCount) { $descLines += "**Runs:** $RunCount" }
         $descLines += "**Time:** $timestamp"
+
         $embed = @{
             title       = 'RatzTweaks — New run'
             description = ($descLines -join "`n")
@@ -1560,9 +1536,8 @@ function Start-WebUI {
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
-                                # Update run count and send webhook notification
-                                $runCount = Update-RunCount -UserId $global:DiscordUserId
-                                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount
+                                # Send webhook notification
+                                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl
                                 $authed = $true
                             } else {
                                 [Console]::WriteLine('OAuth: no user info returned')
