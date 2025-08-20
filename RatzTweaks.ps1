@@ -1223,20 +1223,33 @@ function Start-WebUI {
 
     # Helper: read webhook url (from json or .secret file)
     $getWebhookUrl = {
+        $raw = $null
+        # Prefer explicit webhook_url in discord_oauth.json
         try {
             if ($cfg -and $cfg.webhook_url) {
-                $candidate = ("$($cfg.webhook_url)").Trim().Trim('"', "'")
-                if (-not [string]::IsNullOrWhiteSpace($candidate) -and [System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
+                $raw = [string]$cfg.webhook_url
             }
         } catch {}
-        $whPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
-        if (Test-Path $whPath) {
-            try {
-                $candidate = (Get-Content -Raw -Path $whPath).Trim().Trim('"', "'")
-                # Ignore placeholders
-                if ($candidate -match 'discord-webhook-link' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
-                if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
-            } catch {}
+        if (-not $raw) {
+            $whPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
+            if (Test-Path $whPath) {
+                try {
+                    # Use first non-empty line only to avoid stray text
+                    $lines = Get-Content -Path $whPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                    if ($lines -and $lines.Count -gt 0) { $raw = $lines[0] }
+                } catch {}
+            }
+        }
+        if ($raw) {
+            $candidate = ($raw.Trim() -replace '[\"'']','')  # strip quotes
+            # Extract first URL-looking token
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] }
+            # Drop trailing punctuation
+            $candidate = $candidate.TrimEnd('.,;)]}')
+            # Ignore placeholders and ensure it's a Discord webhook
+            if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
+            if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
+            if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
         }
         return $null
     }
@@ -1593,14 +1606,21 @@ function Start-WebUI {
                                 if ($me.avatar) {
                                     $avatarIsAnimated = $false
                                     try { if ("$($me.avatar)".StartsWith('a_')) { $avatarIsAnimated = $true } } catch {}
-                                    $avatarExt = 'png'; if ($avatarIsAnimated) { $avatarExt = 'gif' }
-                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$avatarExt?size=256"
+                                    $avatarExt = 'png'
+                                    if ($avatarIsAnimated) { $avatarExt = 'gif' }
+                                    if ([string]::IsNullOrWhiteSpace($avatarExt)) { $avatarExt = 'png' }
+                                    try {
+                                        $avatarUrl = ('https://cdn.discordapp.com/avatars/{0}/{1}.{2}?size=256' -f $me.id, $me.avatar, $avatarExt)
+                                    } catch {
+                                        $avatarUrl = ('https://cdn.discordapp.com/avatars/{0}/{1}.png' -f $me.id, $me.avatar)
+                                    }
                                 } else {
                                     $defIdx = 0
                                     try { if ($me.discriminator) { $defIdx = [int]$me.discriminator % 5 } else { $defIdx = ([int64]$me.id % 5) } } catch {}
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
+                                [Console]::WriteLine("OAuth: avatar url = $avatarUrl")
                                 # Mark authed before webhook so UI shows avatar/name even if webhook fails
                                 $authed = $true
                                 # Update run count and send webhook notification (non-blocking for auth)
