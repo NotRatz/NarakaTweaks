@@ -1247,15 +1247,16 @@ function Start-WebUI {
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
         $embed = @{
             title = 'RatzTweaks — New run'
-            description = 'A user authenticated with Discord'
             color = 3447003
-            author = @{ name = $UserName; icon_url = $AvatarUrl }
             fields = @(
-                @{ name = 'User ID'; value = $UserId; inline = $false }
+                @{ name = 'User ID'; value = (if ($UserId) { $UserId } else { 'Unknown' }); inline = $false },
+                @{ name = 'Username'; value = (if ([string]::IsNullOrWhiteSpace($UserName)) { 'Unknown' } else { $UserName }); inline = $false }
             )
             timestamp = (Get-Date).ToUniversalTime().ToString('o')
         }
         $payload = @{ embeds = @($embed) }
+        if ($UserName) { $payload.username = $UserName }
+        if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
         if ($mention) { $payload.content = $mention }
         if ($UserId) { $payload.allowed_mentions = @{ users = @("$UserId") } }
         $json = $payload | ConvertTo-Json -Depth 6 -Compress
@@ -1269,15 +1270,7 @@ function Start-WebUI {
                 if ($respStream) {
                     $reader = New-Object IO.StreamReader $respStream
                     $resp = $reader.ReadToEnd()
-                    $reader = $null
-                    try {
-                        $reader = New-Object IO.StreamReader $respStream
-                        $resp = $reader.ReadToEnd()
-                        [Console]::WriteLine("Webhook: response: $resp")
-                    } finally {
-                        if ($reader) { $reader.Dispose() }
-                        $respStream.Dispose()
-                    }
+                    [Console]::WriteLine("Webhook: response: $resp")
                 }
             } catch {}
         }
