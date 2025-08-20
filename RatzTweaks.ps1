@@ -1250,7 +1250,7 @@ function Start-WebUI {
             color = 3447003
             fields = @(
                 @{ name = 'User ID'; value = (if ($UserId) { $UserId } else { 'Unknown' }); inline = $false },
-                @{ name = 'Username'; value = $UserName; inline = $false }
+                @{ name = 'Username'; value = (if ([string]::IsNullOrWhiteSpace($UserName)) { 'Unknown' } else { $UserName }); inline = $false }
             )
             timestamp = (Get-Date).ToUniversalTime().ToString('o')
         }
