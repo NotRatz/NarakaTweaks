@@ -1224,10 +1224,20 @@ function Start-WebUI {
     # Helper: read webhook url (from json or .secret file)
     $getWebhookUrl = {
         try {
-            if ($cfg -and $cfg.webhook_url) { return ("$($cfg.webhook_url)".Trim()) }
+            if ($cfg -and $cfg.webhook_url) {
+                $candidate = ("$($cfg.webhook_url)").Trim().Trim('"', "'")
+                if (-not [string]::IsNullOrWhiteSpace($candidate) -and [System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
+            }
         } catch {}
         $whPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
-        if (Test-Path $whPath) { return (Get-Content -Raw -Path $whPath).Trim() }
+        if (Test-Path $whPath) {
+            try {
+                $candidate = (Get-Content -Raw -Path $whPath).Trim().Trim('"', "'")
+                # Ignore placeholders
+                if ($candidate -match 'discord-webhook-link' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
+                if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
+            } catch {}
+        }
         return $null
     }
 
@@ -1564,17 +1574,13 @@ function Start-WebUI {
                         try {
                             $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody
                             [Console]::WriteLine('OAuth: token exchange completed')
-                        } catch {
-                            [Console]::WriteLine("OAuth: token exchange failed: $($_.Exception.Message)")
-                        }
+                        } catch { [Console]::WriteLine("OAuth: token exchange failed: $($_.Exception.Message)") }
                         if ($tok.access_token) {
                             $global:DiscordAccessToken = $tok.access_token
                             try {
                                 $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" }
                                 [Console]::WriteLine('OAuth: fetched /users/@me')
-                            } catch {
-                                [Console]::WriteLine("OAuth: fetching /users/@me failed: $($_.Exception.Message)")
-                            }
+                            } catch { [Console]::WriteLine("OAuth: fetching /users/@me failed: $($_.Exception.Message)") }
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
@@ -1582,45 +1588,31 @@ function Start-WebUI {
                                 } else {
                                     if ($me.global_name) { $global:DiscordUserName = "$($me.global_name)" } else { $global:DiscordUserName = "$($me.username)" }
                                 }
-                                # Build avatar URL (custom or default variant) - avoid inline-if in PS 5.1
+                                # Build avatar URL (custom or default variant)
                                 $avatarUrl = $null
                                 if ($me.avatar) {
                                     $avatarIsAnimated = $false
                                     try { if ("$($me.avatar)".StartsWith('a_')) { $avatarIsAnimated = $true } } catch {}
-                                    $avatarExt = 'png'
-                                    if ($avatarIsAnimated) { $avatarExt = 'gif' }
+                                    $avatarExt = 'png'; if ($avatarIsAnimated) { $avatarExt = 'gif' }
                                     $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$avatarExt?size=256"
                                 } else {
                                     $defIdx = 0
-                                    try {
-                                        if ($me.discriminator) {
-                                            $defIdx = [int]$me.discriminator % 5
-                                        } else {
-                                            $defIdx = ([int64]$me.id % 5)
-                                        }
-                                    } catch {}
+                                    try { if ($me.discriminator) { $defIdx = [int]$me.discriminator % 5 } else { $defIdx = ([int64]$me.id % 5) } } catch {}
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
-                                # Update run count and send webhook notification
-                                $runCount = Update-RunCount -UserId $global:DiscordUserId
-                                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount
+                                # Mark authed before webhook so UI shows avatar/name even if webhook fails
                                 $authed = $true
-                            } else {
-                                [Console]::WriteLine('OAuth: no user info returned')
-                            }
-                        } else {
-                            [Console]::WriteLine('OAuth: token exchange returned no access_token')
-                        }
-                    } else {
-                        [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)')
-                    }
-                } else {
-                    [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token')
-                }
-            } catch {
-                [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)")
-            }
+                                # Update run count and send webhook notification (non-blocking for auth)
+                                try {
+                                    $runCount = Update-RunCount -UserId $global:DiscordUserId
+                                } catch { $runCount = $null }
+                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount } catch {}
+                            } else { [Console]::WriteLine('OAuth: no user info returned') }
+                        } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
+                    } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
+                } else { [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token') }
+            } catch { [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)") }
             $global:DiscordAuthenticated = $authed
             $html = & $getStatusHtml 'start' $null $null $null
             & $send $ctx 200 'text/html' $html
