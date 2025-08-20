@@ -1704,7 +1704,7 @@ function Start-WebUI {
 </head><body style='background:#0b0b0b;color:#e5e7eb;font-family:ui-sans-serif,system-ui'>
   <div style='margin:4rem auto;max-width:680px;background:#111827dd;padding:24px;border-radius:12px'>
     <h2 style='color:#f59e0b;margin:0 0 12px 0;font-size:24px;font-weight:800'>All set!</h2>
-    <p>We’ll open Ko‑fi in a new tab. You can close this tab now.</p>
+    <p>You can close this tab now.</p>
   </div>
 </body></html>
 "@
