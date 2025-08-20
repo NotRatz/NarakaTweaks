@@ -1269,7 +1269,15 @@ function Start-WebUI {
                 if ($respStream) {
                     $reader = New-Object IO.StreamReader $respStream
                     $resp = $reader.ReadToEnd()
-                    [Console]::WriteLine("Webhook: response: $resp")
+                    $reader = $null
+                    try {
+                        $reader = New-Object IO.StreamReader $respStream
+                        $resp = $reader.ReadToEnd()
+                        [Console]::WriteLine("Webhook: response: $resp")
+                    } finally {
+                        if ($reader) { $reader.Dispose() }
+                        $respStream.Dispose()
+                    }
                 }
             } catch {}
         }
