@@ -1249,8 +1249,8 @@ function Start-WebUI {
             title = 'RatzTweaks — New run'
             color = 3447003
             fields = @(
-                @{ name = 'User ID'; value = (if ($UserId) { $UserId } else { 'Unknown' }); inline = $false },
-                @{ name = 'Username'; value = (if ([string]::IsNullOrWhiteSpace($UserName)) { 'Unknown' } else { $UserName }); inline = $false }
+                @{ name = 'User ID'; value = $UserId; inline = $false },
+                @{ name = 'Username'; value = $UserName; inline = $false }
             )
             timestamp = (Get-Date).ToUniversalTime().ToString('o')
         }
@@ -1275,6 +1275,7 @@ function Start-WebUI {
             } catch {}
         }
     }
+
 
     $bgUrl = 'background.png'
     $ratzImg = 'ratznaked.jpg'
