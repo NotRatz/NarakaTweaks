@@ -1231,6 +1231,51 @@ function Start-WebUI {
         return $null
     }
 
+    # Helper: send a Discord webhook with user information
+    function Send-DiscordWebhook {
+        param(
+            [string]$UserId,
+            [string]$UserName,
+            [string]$AvatarUrl
+        )
+        $wh = & $getWebhookUrl
+        if (-not $wh) {
+            [Console]::WriteLine('Webhook: no webhook configured')
+            return
+        }
+        [Console]::WriteLine('Webhook: sending run notification')
+        $mention = if ($UserId) { "<@${UserId}>" } else { $null }
+        $embed = @{
+            title = 'RatzTweaks — New run'
+            color = 3447003
+            fields = @(
+                @{ name = 'User ID'; value = $UserId; inline = $false },
+                @{ name = 'Username'; value = $UserName; inline = $false }
+            )
+            timestamp = (Get-Date).ToUniversalTime().ToString('o')
+        }
+        $payload = @{ embeds = @($embed) }
+        if ($UserName) { $payload.username = $UserName }
+        if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
+        if ($mention) { $payload.content = $mention }
+        if ($UserId) { $payload.allowed_mentions = @{ users = @("$UserId") } }
+        $json = $payload | ConvertTo-Json -Depth 6 -Compress
+        try {
+            Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json
+            [Console]::WriteLine('Webhook: sent')
+        } catch {
+            [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)")
+            try {
+                $respStream = $_.Exception.Response.GetResponseStream()
+                if ($respStream) {
+                    $reader = New-Object IO.StreamReader $respStream
+                    $resp = $reader.ReadToEnd()
+                    [Console]::WriteLine("Webhook: response: $resp")
+                }
+            } catch {}
+        }
+    }
+
     $bgUrl = 'background.png'
     $ratzImg = 'ratznaked.jpg'
     if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
@@ -1473,28 +1518,8 @@ function Start-WebUI {
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
-
-                                # Send webhook notification if configured
-                                $wh = & $getWebhookUrl
-                                if ($wh) {
-                                    [Console]::WriteLine('Webhook: sending run notification')
-                                    $mention = "<@${($me.id)}>"
-                                    $embed = @{
-                                        title = 'RatzTweaks — New run'
-                                        description = 'A user authenticated with Discord'
-                                        color = 3447003
-                                        thumbnail = @{ url = $avatarUrl }
-                                        fields = @(
-                                            @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
-                                            @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
-                                            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
-                                        )
-                                    }
-                                    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
-                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6); [Console]::WriteLine('Webhook: sent') } catch { [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)") }
-                                } else {
-                                    [Console]::WriteLine('Webhook: no webhook configured')
-                                }
+                                # Send webhook notification
+                                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl
                                 $authed = $true
                             } else {
                                 [Console]::WriteLine('OAuth: no user info returned')
