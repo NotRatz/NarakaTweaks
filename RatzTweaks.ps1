@@ -1554,6 +1554,13 @@ function Start-WebUI {
             continue
         }
 
+        # Serve the About page on GET (target of the 303 redirect after optional tweaks POST)
+        if ($path -eq '/about' -and $method -eq 'GET') {
+            $html = & $getStatusHtml 'about' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+
         # Serve and execute main tweaks on GET as well (robust against refresh/direct nav)
         if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-AllTweaks'); Invoke-AllTweaks
@@ -1645,6 +1652,7 @@ function Start-WebUI {
             $optVals = @()
             if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
             $global:selectedTweaks = $optVals
+            [Console]::WriteLine("Route:/about POST: selected = " + (($optVals) -join ', '))
 
             # Map selected ids to functions and execute
             $optToFn = @{
@@ -1658,8 +1666,14 @@ function Start-WebUI {
             foreach ($id in $optVals) {
                 $fn = $optToFn[$id]
                 if ($fn -and (Get-Command $fn -ErrorAction SilentlyContinue)) {
-                    [Console]::WriteLine("Route:/about -> $fn")
-                    & $fn
+                    try {
+                        [Console]::WriteLine("Route:/about -> $fn")
+                        & $fn
+                    } catch {
+                        [Console]::WriteLine("Route:/about -> $fn FAILED: $($_.Exception.Message)")
+                    }
+                } else {
+                    [Console]::WriteLine("Route:/about -> unknown option '$id'")
                 }
             }
 
