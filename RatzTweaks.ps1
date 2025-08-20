@@ -1262,7 +1262,7 @@ function Start-WebUI {
         return $null
     }
 
-    # Helper: send a Discord webhook with user information
+# Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
         param(
             [string]$UserId,
@@ -1276,17 +1276,20 @@ function Start-WebUI {
             return
         }
 
-        # Build payload
+        # ensure we get response body back for diagnostics
+        if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
+
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
-        $mention = if ($UserId) { "<@${UserId}>" } else { $null }
+        $mention = $null
+        if ($UserId) { $mention = "<@${UserId}>" }
 
         $descLines = @()
         if ($UserName) { $descLines += "**User:** $UserName" }
         if ($mention)  { $descLines += "**Mention:** $mention" }
         if ($UserId)   { $descLines += "**ID:** $UserId" }
-        if ($AvatarUrl) { $descLines += "**Avatar URL:** $AvatarUrl" }
         if ($RunCount) { $descLines += "**Runs:** $RunCount" }
         $descLines += "**Time:** $timestamp"
+
         $embed = @{
             title       = 'RatzTweaks — New run'
             description = ($descLines -join "`n")
@@ -1294,26 +1297,39 @@ function Start-WebUI {
             timestamp   = $timestamp
         }
 
-        $payload = @{
-            content           = $(if ($mention) { "New run by $mention" } else { "New run started." })
-            embeds            = @($embed)
-            allowed_mentions  = @{ parse = @('users') }
+        # Build JSON without nulls
+        $payload = [ordered]@{
+            content = $(if ($mention) { "New run by $mention" } else { "New run started." })
+            embeds  = @($embed)
         }
-        if ($UserName)  { $payload.username   = $UserName }
-        if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
+        if ($UserName)  { $payload['username']    = $UserName }
+        if ($AvatarUrl) { $payload['avatar_url']  = $AvatarUrl }
 
-        $json = $payload | ConvertTo-Json -Depth 6
+        $json = $payload | ConvertTo-Json -Depth 10
 
         try {
-            # Prefer native PowerShell HTTP to avoid quoting issues
             $resp = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -TimeoutSec 15
             [Console]::WriteLine('Webhook: sent (Invoke-RestMethod)')
         } catch {
-            [Console]::WriteLine("Webhook: Invoke-RestMethod failed, trying curl: $($_.Exception.Message)")
+            # Print Discord error payload to help diagnose 400s
+            $errBody = $null
+            try {
+                if ($_.Exception.Response -and $_.Exception.Response.GetResponseStream) {
+                    $sr = New-Object IO.StreamReader ($_.Exception.Response.GetResponseStream())
+                    $errBody = $sr.ReadToEnd()
+                    $sr.Dispose()
+                } elseif ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+                    $errBody = $_.ErrorDetails.Message
+                }
+            } catch {}
+            [Console]::WriteLine("Webhook: Invoke-RestMethod failed: $($_.Exception.Message)")
+            if ($errBody) { [Console]::WriteLine("Webhook: error body: $errBody") }
+
+            # Fallback to curl with temp file (avoids quoting issues)
             try {
                 $tmp = [System.IO.Path]::GetTempFileName()
                 Set-Content -Path $tmp -Value $json -Encoding UTF8
-                $respText = & curl.exe -s -f -H "Content-Type: application/json" -X POST --data-binary "@$tmp" $wh 2>&1
+                $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -X POST --data-binary "@$tmp" $wh 2>&1
                 Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
                 if ($LASTEXITCODE -eq 0) {
                     [Console]::WriteLine('Webhook: sent (curl fallback)')
@@ -1451,14 +1467,21 @@ function Start-WebUI {
   <meta charset='utf-8'/>
   <title>About</title>
   <script src='https://cdn.tailwindcss.com'></script>
-  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+  <style>
+    body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
+  </style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
-  <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
-  <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' onclick="window.open('https://ko-fi.com/notratz','_blank');window.close();">Complete All Tweaks & Set-Up</button>
-</div>
+  <div class='flex items-start gap-6'>
+    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+      <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
+      <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
+      <form action='/finish' method='post'>
+        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Close and Apply</button>
+      </form>
+    </div>
+    <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
+  </div>
 </body>
 </html>
 "@
@@ -1557,19 +1580,25 @@ function Start-WebUI {
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
                                     $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
                                 } else {
-                                    $global:DiscordUserName = if ($me.global_name) { "$($me.global_name)" } else { "$($me.username)" }
+                                    if ($me.global_name) { $global:DiscordUserName = "$($me.global_name)" } else { $global:DiscordUserName = "$($me.username)" }
                                 }
-                                # Build avatar URL (custom or default variant)
+                                # Build avatar URL (custom or default variant) - avoid inline-if in PS 5.1
                                 $avatarUrl = $null
                                 if ($me.avatar) {
                                     $avatarIsAnimated = $false
                                     try { if ("$($me.avatar)".StartsWith('a_')) { $avatarIsAnimated = $true } } catch {}
-                                    $avatarExt = if ($avatarIsAnimated) { 'gif' } else { 'png' }
-                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$($avatarExt)?size=256"
+                                    $avatarExt = 'png'
+                                    if ($avatarIsAnimated) { $avatarExt = 'gif' }
+                                    $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$avatarExt?size=256"
                                 } else {
                                     $defIdx = 0
-                                    $DISCORD_DEFAULT_AVATAR_VARIANTS = 5
-                                    try { $defIdx = [int]($me.discriminator) % $DISCORD_DEFAULT_AVATAR_VARIANTS } catch {}
+                                    try {
+                                        if ($me.discriminator) {
+                                            $defIdx = [int]$me.discriminator % 5
+                                        } else {
+                                            $defIdx = ([int64]$me.id % 5)
+                                        }
+                                    } catch {}
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
@@ -1598,20 +1627,21 @@ function Start-WebUI {
             continue
         }
 
-        # On /about, run selected optional tweaks
+        # On /about, run selected optional tweaks (do not close app here)
         if ($path -eq '/about' -and $method -eq 'POST') {
             $form = & $parseForm $ctx
             $optVals = @()
             if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
             $global:selectedTweaks = $optVals
+
             # Map selected ids to functions and execute
             $optToFn = @{
-                'MSI Mode' = 'Disable-MSIMode'
-                'Disable Background Apps' = 'Disable-BackgroundApps'
-                'Disable Widgets' = 'Disable-Widgets'
-                'Disable Gamebar' = 'Disable-Gamebar'
-                'Disable Copilot' = 'Disable-Copilot'
-                'ViVeToolFeatures' = 'Disable-ViVeFeatures'
+                'disable-msi'     = 'Disable-MSIMode'
+                'disable-bgapps'  = 'Disable-BackgroundApps'
+                'disable-widgets' = 'Disable-Widgets'
+                'disable-gamebar' = 'Disable-Gamebar'
+                'disable-copilot' = 'Disable-Copilot'
+                'vivetool'        = 'Disable-ViVeFeatures'
             }
             foreach ($id in $optVals) {
                 $fn = $optToFn[$id]
@@ -1620,30 +1650,51 @@ function Start-WebUI {
                     & $fn
                 }
             }
-            $html = & $getStatusHtml 'about' $null $null $optVals
-            & $send $ctx 200 'text/html' $html
-            # Toast + Ko-fi and exit
-            [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-            $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-            $toastXml = $template
-            $toastXml.GetElementsByTagName('text')[0].AppendChild($toastXml.CreateTextNode('RatzTweaks: Restart your PC to finish setup!')) | Out-Null
-            $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
-            $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('RatzTweaks')
-            $notifier.Show($toast)
-            Start-Sleep -Seconds 2
-            Start-Process 'https://ko-fi.com/notratz'
-            [System.Diagnostics.Process]::GetCurrentProcess().CloseMainWindow()
-            [System.Diagnostics.Process]::GetCurrentProcess().Kill()
+
+            # Redirect to About page for the final button
+            $ctx.Response.StatusCode = 303
+            $ctx.Response.RedirectLocation = '/about'
+            try { $ctx.Response.Close() } catch {}
             continue
         }
 
-        # Default for unknown routes
-        & $send $ctx 404 'text/plain' 'Not Found'
+        # Finalize: show toast, open Ko‑fi, and close the PowerShell process after returning a page
+        if ($path -eq '/finish' -and $method -eq 'POST') {
+            try {
+                # Toast
+                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+                $toastXml = $template
+                $toastXml.GetElementsByTagName('text')[0].AppendChild($toastXml.CreateTextNode('RatzTweaks: Restart your PC to finish setup!')) | Out-Null
+                $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
+                $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('RatzTweaks')
+                $notifier.Show($toast)
+            } catch {}
+
+            # Return a quick HTML page that tries to close the tab
+            $doneHtml = @"
+<!doctype html><html><head><meta charset='utf-8'/><title>Done</title>
+<script>setTimeout(function(){ try{window.open('https://ko-fi.com/notratz','_blank');window.close();}catch(e){} }, 200);</script>
+</head><body style='background:#0b0b0b;color:#e5e7eb;font-family:ui-sans-serif,system-ui'>
+  <div style='margin:4rem auto;max-width:680px;background:#111827dd;padding:24px;border-radius:12px'>
+    <h2 style='color:#f59e0b;margin:0 0 12px 0;font-size:24px;font-weight:800'>All set!</h2>
+    <p>We’ll open Ko‑fi in a new tab. You can close this tab now.</p>
+  </div>
+</body></html>
+"@
+            & $send $ctx 200 'text/html' $doneHtml
+
+            # Kill the PS process after a short delay in a background job
+            Start-Job -ArgumentList $PID -ScriptBlock {
+                param($parentId)
+                Start-Sleep -Milliseconds 600
+                try { Start-Process 'https://ko-fi.com/notratz' } catch {}
+                try { [System.Diagnostics.Process]::GetProcessById($parentId).CloseMainWindow() | Out-Null } catch {}
+                try { Stop-Process -Id $parentId -Force } catch {}
+            } | Out-Null
+            continue
+        }
     }
-    $listener.Stop()
-    $listener.Close()
-    Add-Log 'Web UI stopped.'
-    [Console]::WriteLine('Start-WebUI: listener stopped.')
 } # <-- Add this closing brace to properly terminate Start-WebUI function
 $StartInWebUI = $true
 # --- Entry Point ---
