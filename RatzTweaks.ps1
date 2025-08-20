@@ -1231,6 +1231,44 @@ function Start-WebUI {
         return $null
     }
 
+    # Helper: send a Discord webhook with user information
+    function Send-DiscordWebhook {
+        param(
+            [string]$UserId,
+            [string]$UserName,
+            [string]$AvatarUrl
+        )
+        $wh = & $getWebhookUrl
+        if (-not $wh) {
+            [Console]::WriteLine('Webhook: no webhook configured')
+            return
+        }
+        [Console]::WriteLine('Webhook: sending run notification')
+        $mention = "<@${UserId}>"
+        $embed = @{
+            title = 'RatzTweaks — New run'
+            description = 'A user authenticated with Discord'
+            color = 3447003
+            thumbnail = @{ url = $AvatarUrl }
+            fields = @(
+                @{ name = 'Username'; value = $UserName; inline = $true },
+                @{ name = 'User ID'; value = $UserId; inline = $true },
+                @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
+            )
+        }
+        $payload = @{
+            content = $mention
+            embeds = @($embed)
+            allowed_mentions = @{ users = @($UserId) }
+        }
+        try {
+            Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6)
+            [Console]::WriteLine('Webhook: sent')
+        } catch {
+            [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)")
+        }
+    }
+
     $bgUrl = 'background.png'
     $ratzImg = 'ratznaked.jpg'
     if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
@@ -1473,28 +1511,8 @@ function Start-WebUI {
                                     $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
-
-                                # Send webhook notification if configured
-                                $wh = & $getWebhookUrl
-                                if ($wh) {
-                                    [Console]::WriteLine('Webhook: sending run notification')
-                                    $mention = "<@${($me.id)}>"
-                                    $embed = @{
-                                        title = 'RatzTweaks — New run'
-                                        description = 'A user authenticated with Discord'
-                                        color = 3447003
-                                        thumbnail = @{ url = $avatarUrl }
-                                        fields = @(
-                                            @{ name = 'Username'; value = $global:DiscordUserName; inline = $true },
-                                            @{ name = 'User ID'; value = $global:DiscordUserId; inline = $true },
-                                            @{ name = 'Time'; value = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); inline = $false }
-                                        )
-                                    }
-                                    $payload = @{ content = $mention; embeds = @($embed); allowed_mentions = @{ users = @($global:DiscordUserId) } }
-                                    try { Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 6); [Console]::WriteLine('Webhook: sent') } catch { [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)") }
-                                } else {
-                                    [Console]::WriteLine('Webhook: no webhook configured')
-                                }
+                                # Send webhook notification
+                                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl
                                 $authed = $true
                             } else {
                                 [Console]::WriteLine('OAuth: no user info returned')
