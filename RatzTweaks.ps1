@@ -1357,7 +1357,11 @@ function Start-WebUI {
                 if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
                 $name = $global:DiscordUserName
                 $avatar = $global:DiscordAvatarUrl
-                $displayName = if ([string]::IsNullOrEmpty($name)) { 'Logged in with Discord' } else { "Logged in with Discord as $name" }
+                # Avoid inline-if assignment in PS 5.1
+                $displayName = 'Logged in with Discord'
+                if (-not [string]::IsNullOrEmpty($name)) {
+                    $displayName = "Logged in with Discord as $name"
+                }
                 if ($global:DiscordAuthenticated) {
                     if (-not [string]::IsNullOrEmpty($avatar)) {
                         $authSection = "<div class='flex items-center mb-4 text-gray-300'><img src='${avatar}' alt='Avatar' class='w-12 h-12 rounded-full mr-3'/><span>$displayName</span></div>"
