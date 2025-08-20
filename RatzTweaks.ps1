@@ -1262,7 +1262,7 @@ function Start-WebUI {
         if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
         $json = $payload | ConvertTo-Json -Depth 6 -Compress
         try {
-            $resp = & curl -H "Content-Type: application/json" -X POST -d $json $wh 2>&1
+            $resp = & curl.exe -f -H "Content-Type: application/json" -X POST -d $json $wh 2>&1
             if ($LASTEXITCODE -eq 0) {
                 [Console]::WriteLine('Webhook: sent')
             } else {
