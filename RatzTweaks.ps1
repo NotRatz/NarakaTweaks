@@ -1244,35 +1244,32 @@ function Start-WebUI {
             return
         }
         [Console]::WriteLine('Webhook: sending run notification')
+        $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
+        $descLines = @()
+        if ($UserName) { $descLines += "**User:** $UserName" }
+        if ($mention) { $descLines += "**Mention:** $mention" }
+        if ($UserId) { $descLines += "**ID:** $UserId" }
+        $descLines += "**Time:** $timestamp"
         $embed = @{
             title = 'RatzTweaks — New run'
+            description = ($descLines -join "`n")
             color = 3447003
-            fields = @(
-                @{ name = 'User ID'; value = $UserId; inline = $false },
-                @{ name = 'Username'; value = $UserName; inline = $false }
-            )
-            timestamp = (Get-Date).ToUniversalTime().ToString('o')
+            timestamp = $timestamp
         }
         $payload = @{ embeds = @($embed) }
         if ($UserName) { $payload.username = $UserName }
         if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
-        if ($mention) { $payload.content = $mention }
-        if ($UserId) { $payload.allowed_mentions = @{ users = @("$UserId") } }
         $json = $payload | ConvertTo-Json -Depth 6 -Compress
         try {
-            Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json
-            [Console]::WriteLine('Webhook: sent')
+            $resp = & curl.exe -f -H "Content-Type: application/json" -X POST -d $json $wh 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                [Console]::WriteLine('Webhook: sent')
+            } else {
+                [Console]::WriteLine("Webhook: failed: $resp")
+            }
         } catch {
             [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)")
-            try {
-                $respStream = $_.Exception.Response.GetResponseStream()
-                if ($respStream) {
-                    $reader = New-Object IO.StreamReader $respStream
-                    $resp = $reader.ReadToEnd()
-                    [Console]::WriteLine("Webhook: response: $resp")
-                }
-            } catch {}
         }
     }
 
