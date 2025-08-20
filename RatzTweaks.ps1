@@ -1243,33 +1243,53 @@ function Start-WebUI {
             [Console]::WriteLine('Webhook: no webhook configured')
             return
         }
-        [Console]::WriteLine('Webhook: sending run notification')
+
+        # Build payload
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
+
         $descLines = @()
         if ($UserName) { $descLines += "**User:** $UserName" }
-        if ($mention) { $descLines += "**Mention:** $mention" }
-        if ($UserId) { $descLines += "**ID:** $UserId" }
+        if ($mention)  { $descLines += "**Mention:** $mention" }
+        if ($UserId)   { $descLines += "**ID:** $UserId" }
         $descLines += "**Time:** $timestamp"
+
         $embed = @{
-            title = 'RatzTweaks — New run'
+            title       = 'RatzTweaks — New run'
             description = ($descLines -join "`n")
-            color = 3447003
-            timestamp = $timestamp
+            color       = 3447003
+            timestamp   = $timestamp
         }
-        $payload = @{ embeds = @($embed) }
-        if ($UserName) { $payload.username = $UserName }
+
+        $payload = @{
+            content           = $(if ($mention) { "New run by $mention" } else { "New run started." })
+            embeds            = @($embed)
+            allowed_mentions  = @{ parse = @('users') }
+        }
+        if ($UserName)  { $payload.username   = $UserName }
         if ($AvatarUrl) { $payload.avatar_url = $AvatarUrl }
-        $json = $payload | ConvertTo-Json -Depth 6 -Compress
+
+        $json = $payload | ConvertTo-Json -Depth 6
+
         try {
-            $resp = & curl.exe -f -H "Accept: application/json" -H "Content-Type: application/json" -X POST --data "{\"content\": \"$json\"}" $wh 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                [Console]::WriteLine('Webhook: sent')
-            } else {
-                [Console]::WriteLine("Webhook: failed: $resp")
-            }
+            # Prefer native PowerShell HTTP to avoid quoting issues
+            $resp = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -TimeoutSec 15
+            [Console]::WriteLine('Webhook: sent (Invoke-RestMethod)')
         } catch {
-            [Console]::WriteLine("Webhook: failed: $($_.Exception.Message)")
+            [Console]::WriteLine("Webhook: Invoke-RestMethod failed, trying curl: $($_.Exception.Message)")
+            try {
+                $tmp = [System.IO.Path]::GetTempFileName()
+                Set-Content -Path $tmp -Value $json -Encoding UTF8
+                $respText = & curl.exe -s -f -H "Content-Type: application/json" -X POST --data-binary "@$tmp" $wh 2>&1
+                Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    [Console]::WriteLine('Webhook: sent (curl fallback)')
+                } else {
+                    [Console]::WriteLine("Webhook: failed (curl): $respText")
+                }
+            } catch {
+                [Console]::WriteLine("Webhook: failed (curl fallback): $($_.Exception.Message)")
+            }
         }
     }
 
