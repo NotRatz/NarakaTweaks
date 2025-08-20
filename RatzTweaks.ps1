@@ -1230,23 +1230,31 @@ function Start-WebUI {
                 $raw = [string]$cfg.webhook_url
             }
         } catch {}
+        # Try common locations for discord_webhook.secret (handles temp-run case)
         if (-not $raw) {
-            $whPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
-            if (Test-Path $whPath) {
-                try {
-                    # Use first non-empty line only to avoid stray text
-                    $lines = Get-Content -Path $whPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                    if ($lines -and $lines.Count -gt 0) { $raw = $lines[0] }
-                } catch {}
+            $paths = @()
+            try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path (Split-Path -Parent $PSCommandPath) 'discord_webhook.secret') } catch {}
+            try {
+                if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
+                    $root = Resolve-ProjectRoot -startPath $PSScriptRoot
+                    if ($root) { $paths += (Join-Path $root 'discord_webhook.secret') }
+                }
+            } catch {}
+            $paths = $paths | Where-Object { $_ } | Select-Object -Unique
+            foreach ($p in $paths) {
+                if (Test-Path $p) {
+                    try {
+                        $lines = Get-Content -Path $p | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                        if ($lines -and $lines.Count -gt 0) { $raw = $lines[0]; break }
+                    } catch {}
+                }
             }
         }
         if ($raw) {
             $candidate = ($raw.Trim() -replace '[\"'']','')  # strip quotes
-            # Extract first URL-looking token
-            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] }
-            # Drop trailing punctuation
-            $candidate = $candidate.TrimEnd('.,;)]}')
-            # Ignore placeholders and ensure it's a Discord webhook
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] } # first URL token
+            $candidate = $candidate.TrimEnd('.,;)]}')                          # drop trailing punctuation
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
             if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
