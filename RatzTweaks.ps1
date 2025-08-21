@@ -1241,6 +1241,7 @@ function Start-WebUI {
             $sr = New-Object System.IO.StreamReader($ctx.Request.InputStream, $ctx.Request.ContentEncoding)
             $raw = $sr.ReadToEnd()
             $sr.Dispose()
+            $script:LastRawForm = $raw
             return [System.Web.HttpUtility]::ParseQueryString($raw)
         } catch { return $null }
     }
@@ -1336,6 +1337,7 @@ function Start-WebUI {
             [Console]::WriteLine('Webhook: no webhook configured')
             return
         }
+        [Console]::WriteLine('Webhook: configured')
 
         # ensure we get response body back for diagnostics
         if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
@@ -1373,10 +1375,10 @@ function Start-WebUI {
 
         $json = $payload | ConvertTo-Json -Depth 10
 
-        # Use curl.exe with -d $BODY for reliability
+        # Use curl.exe with -d "@$tmp" to avoid PowerShell interpreting @
         $tmp = [System.IO.Path]::GetTempFileName()
         Set-Content -Path $tmp -Value $json -Encoding UTF8
-        $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -d @$tmp $wh 2>&1
+        $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -d "@$tmp" $wh 2>&1
         Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
         if ($LASTEXITCODE -eq 0) {
             [Console]::WriteLine('Webhook: sent (curl)')
@@ -1671,6 +1673,7 @@ function Start-WebUI {
                 } else { [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token') }
             } catch { [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)") }
             $global:DiscordAuthenticated = $authed
+            if ($authed) { [Console]::WriteLine('Webhook: attempting to send (after auth)') }
             $html = & $getStatusHtml 'start' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
@@ -1679,6 +1682,8 @@ function Start-WebUI {
         # On /about, run selected optional tweaks (do not close app here)
         if ($path -eq '/about' -and $method -eq 'POST') {
             $form = & $parseForm $ctx
+            $rawLen = 0; try { if ($script:LastRawForm) { $rawLen = $script:LastRawForm.Length } } catch {}
+            [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
             $optVals = @()
             if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
             $global:selectedTweaks = $optVals
