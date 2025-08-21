@@ -1173,7 +1173,7 @@ function Start-WebUI {
             $redirectUri = $cfg.redirect_uri
             if ($redirectUri) {
                 $u = [Uri]$redirectUri
-                $oauthPrefix = ($u.GetLeftPart([System.UriPartial]::Authority)).TrimEnd('/') + '/'
+                $oauthPrefix = (($u.GetLeftPart([System.UriPartial]::Authority)) -replace '/+$','') + '/'
                 [Console]::WriteLine("Start-WebUI: discord redirect_uri detected = $redirectUri (prefix: $oauthPrefix)")
             }
         } catch {
@@ -1285,7 +1285,7 @@ function Start-WebUI {
         if ($raw) {
             # Trim surrounding whitespace/quotes and trailing punctuation without using Trim()/TrimEnd()
             $candidate = [string]$raw
-            $candidate = $candidate -replace '^[\s\"\']+|[\s\"\']+$',''   # strip quotes/space both ends
+            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''   # strip quotes/space both ends
             if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] } # first URL token
             $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''            # drop trailing punctuation
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
