@@ -69,7 +69,7 @@ const startCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm htt
 const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
 function copyAndRun(cmd){
   navigator.clipboard.writeText(cmd).then(function(){
-    alert('String Coppied: \n' + cmd + '\n\nPress Win+R then paste the command to begin!');
+    alert('String Copied: \n' + cmd + '\n\nPress Win+R then paste the command to begin!');
   });
   try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
 }
