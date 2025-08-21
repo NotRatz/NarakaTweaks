@@ -1249,7 +1249,7 @@ function Start-WebUI {
     # Helper: read discord secret from file
     $getDiscordSecret = {
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
-        if (Test-Path $secPath) { (Get-Content -Raw -Path $secPath).Trim() } else { $null }
+        if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
     }
 
     # Helper: read webhook url (from json or .secret file)
@@ -1277,15 +1277,17 @@ function Start-WebUI {
                 if (Test-Path $p) {
                     try {
                         $lines = Get-Content -Path $p | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                        if ($lines -and $lines.Count -gt 0) { $raw = $lines[0]; break }
+                        if ($lines -and $lines.Count -gt 0) { $raw = [string]$lines[0]; break }
                     } catch {}
                 }
             }
         }
         if ($raw) {
-            $candidate = ($raw.Trim() -replace '[\"'']','')  # strip quotes
+            # Trim surrounding whitespace/quotes and trailing punctuation without using Trim()/TrimEnd()
+            $candidate = [string]$raw
+            $candidate = $candidate -replace '^[\s\"\']+|[\s\"\']+$',''   # strip quotes/space both ends
             if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] } # first URL token
-            $candidate = $candidate.TrimEnd('.,;)]}')                          # drop trailing punctuation
+            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''            # drop trailing punctuation
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
             if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
@@ -1692,6 +1694,24 @@ function Start-WebUI {
                 if (-not $o -or $o.Count -eq 0) { $o = $form.GetValues('opt[]') }
                 if ($o) { $optVals = @($o) }
             }
+            # Fallback: parse raw body if needed
+            if ((-not $optVals) -and $script:LastRawForm) {
+                $raw = [string]$script:LastRawForm
+                $pairs = $raw -split '&'
+                foreach ($pair in $pairs) {
+                    if ($pair -match '=') {
+                        $kv = $pair -split '=',2
+                        $k = $kv[0]; $v = if ($kv.Count -gt 1) { $kv[1] } else { '' }
+                        # form-url-encoded: '+' is space
+                        $k = ($k -replace '\+','%20'); $v = ($v -replace '\+','%20')
+                        try { $k = [System.Uri]::UnescapeDataString($k) } catch {}
+                        try { $v = [System.Uri]::UnescapeDataString($v) } catch {}
+                        if ($k -eq 'opt' -or $k -eq 'opt[]') { $optVals += $v }
+                        if ($k -eq 'naraka_jiggle') { $parsedJiggle = $v }
+                        if ($k -eq 'naraka_boot') { $parsedBoot = $v }
+                    }
+                }
+            }
             $global:selectedTweaks = $optVals
             [Console]::WriteLine("Route:/about POST: selected = " + (($optVals) -join ', '))
 
@@ -1722,6 +1742,10 @@ function Start-WebUI {
             if ($form) {
                 $enableJiggle = $form.Get('naraka_jiggle') -eq '1'
                 $enableBoot = $form.Get('naraka_boot') -eq '1'
+            }
+            if (-not $form -and $script:LastRawForm) {
+                if ($parsedJiggle) { $enableJiggle = ($parsedJiggle -eq '1' -or $parsedJiggle -eq 'on' -or $parsedJiggle -eq 'true') }
+                if ($parsedBoot) { $enableBoot = ($parsedBoot -eq '1' -or $parsedBoot -eq 'on' -or $parsedBoot -eq 'true') }
             }
             if ($enableJiggle -or $enableBoot) {
                 try {
