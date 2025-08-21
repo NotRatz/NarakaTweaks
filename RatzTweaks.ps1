@@ -1726,7 +1726,8 @@ function Start-WebUI {
             }
             foreach ($id in $optVals) {
                 $fn = $optToFn[$id]
-                if ($fn -and (Get-Command $fn -ErrorAction SilentlyContinue)) {
+                if (-not $fn -and $id -eq 'vivetool') { $fn = 'Disable-ViVeFeatures' }
+                if ($fn) {
                     try {
                         [Console]::WriteLine("Route:/about -> $fn")
                         & $fn
