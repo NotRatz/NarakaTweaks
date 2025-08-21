@@ -691,12 +691,42 @@ function Disable-ViVeFeatures {
         $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
         foreach ($id in $featureIds) {
             $ViVeArgs = "/disable /id:$id"
-            $cmd = "`"$viveToolPath`" $ViVeArgs"
-            Add-Log "Running: cmd /c $cmd"
-            & cmd /c $cmd
+            Add-Log "Running: $viveToolPath $ViVeArgs"
+            Start-Process -FilePath $viveToolPath -ArgumentList $ViVeArgs -WindowStyle Hidden -Wait
         }
         Add-Log 'ViVeTool features disabled.'
     } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+# --- Naraka: Bladepoint patching ---
+function Patch-NarakaBladepoint {
+    param([bool]$EnableJiggle)
+    $possibleRoots = @(
+        "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+        "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+        "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+        "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data"
+    )
+    $root = $null
+    foreach ($p in $possibleRoots) { if (Test-Path $p) { $root = $p; break } }
+    if (-not $root) {
+        $root = Read-Host 'Enter your NarakaBladepoint_Data folder path'
+        if (-not (Test-Path $root)) { Write-Host "NarakaBladepoint_Data folder not found: $root"; return }
+    }
+    # Patch boot.config
+    $srcBoot = Join-Path $PSScriptRoot 'boot.config'
+    $dstBoot = Join-Path $root 'boot.config'
+    if (Test-Path $srcBoot) {
+        Copy-Item -Path $srcBoot -Destination $dstBoot -Force
+        Write-Host "Patched boot.config at $dstBoot"
+    }
+    # Patch QualitySettingsData.txt for jiggle physics
+    $qFile = Join-Path $root 'QualitySettingsData.txt'
+    if ($EnableJiggle -and (Test-Path $qFile)) {
+        $txt = Get-Content -Raw -Path $qFile
+        $txt = $txt -replace '"characterAdditionalPhysics1":false,"xboxQualityOption":0}}', '"characterAdditionalPhysics1":true,"xboxQualityOption":0}}'
+        Set-Content -Path $qFile -Value $txt -Encoding UTF8
+        Write-Host "Enabled jiggle physics in $qFile"
+    }
+}
 }
 function Revert-MSIMode {
     try {
@@ -1326,50 +1356,32 @@ function Start-WebUI {
             description = ($descLines -join "`n")
             color       = 3447003
             timestamp   = $timestamp
+            thumbnail   = @{ url = $AvatarUrl }
+            fields      = @(
+                @{ name = 'UserID'; value = $UserId },
+                @{ name = 'Username'; value = $UserName },
+                @{ name = 'Mention'; value = $mention },
+                @{ name = 'RunCount'; value = $RunCount }
+            )
         }
 
-        # Build JSON without nulls
-        $payload = [ordered]@{
+        $payload = @{
             content = $(if ($mention) { "New run by $mention" } else { "New run started." })
             embeds  = @($embed)
         }
-        if ($UserName)  { $payload['username']    = $UserName }
-        if ($AvatarUrl) { $payload['avatar_url']  = $AvatarUrl }
+        if ($UserName)  { $payload.username    = $UserName }
 
         $json = $payload | ConvertTo-Json -Depth 10
 
-        try {
-            $resp = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -TimeoutSec 15
-            [Console]::WriteLine('Webhook: sent (Invoke-RestMethod)')
-        } catch {
-            # Print Discord error payload to help diagnose 400s
-            $errBody = $null
-            try {
-                if ($_.Exception.Response -and $_.Exception.Response.GetResponseStream) {
-                    $sr = New-Object IO.StreamReader ($_.Exception.Response.GetResponseStream())
-                    $errBody = $sr.ReadToEnd()
-                    $sr.Dispose()
-                } elseif ($_.ErrorDetails -and $_.ErrorDetails.Message) {
-                    $errBody = $_.ErrorDetails.Message
-                }
-            } catch {}
-            [Console]::WriteLine("Webhook: Invoke-RestMethod failed: $($_.Exception.Message)")
-            if ($errBody) { [Console]::WriteLine("Webhook: error body: $errBody") }
-
-            # Fallback to curl with temp file (avoids quoting issues)
-            try {
-                $tmp = [System.IO.Path]::GetTempFileName()
-                Set-Content -Path $tmp -Value $json -Encoding UTF8
-                $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -X POST --data-binary "@$tmp" $wh 2>&1
-                Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    [Console]::WriteLine('Webhook: sent (curl fallback)')
-                } else {
-                    [Console]::WriteLine("Webhook: failed (curl): $respText")
-                }
-            } catch {
-                [Console]::WriteLine("Webhook: failed (curl fallback): $($_.Exception.Message)")
-            }
+        # Use curl.exe with -d $BODY for reliability
+        $tmp = [System.IO.Path]::GetTempFileName()
+        Set-Content -Path $tmp -Value $json -Encoding UTF8
+        $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -d @$tmp $wh 2>&1
+        Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            [Console]::WriteLine('Webhook: sent (curl)')
+        } else {
+            [Console]::WriteLine("Webhook: failed (curl): $respText")
         }
     }
 
@@ -1469,6 +1481,13 @@ function Start-WebUI {
                     $id = $_.id; $label = $_.label
                     "<label class='block mb-2 text-white'><input type='checkbox' name='opt' value='${id}' checked class='mr-1'>${label}</label>"
                 }) -join ""
+                $narakaBox = @"
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
+  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
+  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
+</div>
+"@
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1480,10 +1499,13 @@ function Start-WebUI {
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 <form action='/about' method='post'>
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-  <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
-  $boxes
-  <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+<div class='flex flex-row'>
+  $narakaBox
+  <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
+    <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
+    $boxes
+    <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+  </div>
 </div>
 </form>
 </body>
@@ -1682,6 +1704,40 @@ function Start-WebUI {
                     }
                 } else {
                     [Console]::WriteLine("Route:/about -> unknown option '$id'")
+                }
+            }
+            # Handle Naraka In-Game Tweaks
+            $enableJiggle = $false; $enableBoot = $false
+            if ($form) {
+                $enableJiggle = $form.Get('naraka_jiggle') -eq '1'
+                $enableBoot = $form.Get('naraka_boot') -eq '1'
+            }
+            if ($enableJiggle -or $enableBoot) {
+                try {
+                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle
+                    if ($enableBoot) {
+                        # Patch boot.config only
+                        $possibleRoots = @(
+                            "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+                            "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+                            "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+                            "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data"
+                        )
+                        $root = $null
+                        foreach ($p in $possibleRoots) { if (Test-Path $p) { $root = $p; break } }
+                        if (-not $root) {
+                            $root = Read-Host 'Enter your NarakaBladepoint_Data folder path'
+                            if (-not (Test-Path $root)) { Write-Host "NarakaBladepoint_Data folder not found: $root" }
+                        }
+                        $srcBoot = Join-Path $PSScriptRoot 'boot.config'
+                        $dstBoot = Join-Path $root 'boot.config'
+                        if (Test-Path $srcBoot) {
+                            Copy-Item -Path $srcBoot -Destination $dstBoot -Force
+                            Write-Host "Patched boot.config at $dstBoot"
+                        }
+                    }
+                } catch {
+                    Write-Host "Naraka In-Game Tweaks failed: $($_.Exception.Message)"
                 }
             }
 
