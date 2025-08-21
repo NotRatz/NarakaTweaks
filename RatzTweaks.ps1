@@ -1332,6 +1332,7 @@ function Start-WebUI {
             [string]$AvatarUrl,
             [int]$RunCount
         )
+        [Console]::WriteLine('Webhook: enter Send-DiscordWebhook')
         $wh = & $getWebhookUrl
         if (-not $wh) {
             [Console]::WriteLine('Webhook: no webhook configured')
@@ -1481,7 +1482,7 @@ function Start-WebUI {
             'optional-tweaks' {
                 $boxes = ($optionalTweaks | ForEach-Object {
                     $id = $_.id; $label = $_.label
-                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt' value='${id}' checked class='mr-1'>${label}</label>"
+                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='${id}' checked class='mr-1'>${label}</label>"
                 }) -join ""
                 $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
@@ -1666,7 +1667,7 @@ function Start-WebUI {
                                 try {
                                     $runCount = Update-RunCount -UserId $global:DiscordUserId
                                 } catch { $runCount = $null }
-                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount } catch {}
+                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
@@ -1684,8 +1685,13 @@ function Start-WebUI {
             $form = & $parseForm $ctx
             $rawLen = 0; try { if ($script:LastRawForm) { $rawLen = $script:LastRawForm.Length } } catch {}
             [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
+            if ($script:LastRawForm) { [Console]::WriteLine("Route:/about raw: $($script:LastRawForm.Substring(0, [Math]::Min(512, $script:LastRawForm.Length)))") }
             $optVals = @()
-            if ($form) { $o = $form.GetValues('opt'); if ($o) { $optVals = @($o) } }
+            if ($form) {
+                $o = $form.GetValues('opt')
+                if (-not $o -or $o.Count -eq 0) { $o = $form.GetValues('opt[]') }
+                if ($o) { $optVals = @($o) }
+            }
             $global:selectedTweaks = $optVals
             [Console]::WriteLine("Route:/about POST: selected = " + (($optVals) -join ', '))
 
