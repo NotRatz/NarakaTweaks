@@ -1,3 +1,21 @@
+    If (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator"))
+    {Start-Process PowerShell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $PSCommandPath) -Verb RunAs
+    Exit}
+    $Host.UI.RawUI.WindowTitle = $myInvocation.MyCommand.Definition + " (Administrator)"
+    $Host.UI.RawUI.BackgroundColor = "Black"
+	$Host.PrivateData.ProgressBackgroundColor = "Black"
+    $Host.PrivateData.ProgressForegroundColor = "White"
+    Clear-Host
+
+    Write-Host "1. Timer Resolution: On (Recommended)"
+    Write-Host "2. Timer Resolution: Default"
+    while ($true) {
+    $choice = Read-Host " "
+    if ($choice -match '^[1-2]$') {
+    switch ($choice) {
+    1 {
+
+Clear-Host
 Write-Host "Installing: Set Timer Resolution Service . . ."
 # create .cs file
 $MultilineComment = @"
@@ -209,3 +227,20 @@ Set-Service -Name "Set Timer Resolution Service" -Status Running -ErrorAction Si
 # start taskmanager
 Start-Process taskmgr.exe
 exit
+
+      }
+    2 {
+
+Clear-Host
+# stop disable delete service
+Set-Service -Name "Set Timer Resolution Service" -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
+Set-Service -Name "Set Timer Resolution Service" -Status Stopped -ErrorAction SilentlyContinue | Out-Null
+sc.exe delete "Set Timer Resolution Service" | Out-Null
+# delete file
+Remove-Item "$env:SystemDrive\Windows\SetTimerResolutionService.exe" -Force -ErrorAction SilentlyContinue | Out-Null
+# start taskmanager
+Start-Process taskmgr.exe
+exit
+
+      }
+    } } else { Write-Host "Invalid input. Please select a valid option (1-2)." } }
