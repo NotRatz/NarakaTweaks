@@ -701,43 +701,38 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
             if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
             $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
             foreach ($id in $featureIds) {
-                $ViVeArgs = "/disable /id:$id"
-                Add-Log "Running: $viveToolPath $ViVeArgs"
-                Start-Process -FilePath $viveToolPath -ArgumentList $ViVeArgs -WindowStyle Hidden -Wait
+                $ViVeArgs = @('/disable', "/id:$id")
+                Add-Log "Running: $viveToolPath $($ViVeArgs -join ' ')"
+                try { & $viveToolPath @ViVeArgs 2>$null } catch {}
             }
             Add-Log 'ViVeTool features disabled.'
         } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
     }
 }
+
 # --- Naraka: Bladepoint patching ---
 function Patch-NarakaBladepoint {
-    param([bool]$EnableJiggle)
-    $possibleRoots = @(
-        "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-        "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-        "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-        "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data"
-    )
-    $root = $null
-    foreach ($p in $possibleRoots) { if (Test-Path $p) { $root = $p; break } }
-    if (-not $root) {
-        $root = Read-Host 'Enter your NarakaBladepoint_Data folder path'
-        if (-not (Test-Path $root)) { Write-Host "NarakaBladepoint_Data folder not found: $root"; return }
-    }
-    # Patch boot.config
-    $srcBoot = Join-Path $PSScriptRoot 'boot.config'
-    $dstBoot = Join-Path $root 'boot.config'
-    if (Test-Path $srcBoot) {
-        Copy-Item -Path $srcBoot -Destination $dstBoot -Force
-        Write-Host "Patched boot.config at $dstBoot"
+    param([bool]$EnableJiggle, [bool]$PatchBoot)
+    $root = Find-NarakaDataPath
+    if (-not $root) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
+    # Patch boot.config if requested
+    if ($PatchBoot) {
+        $srcBoot = Join-Path $PSScriptRoot 'boot.config'
+        $dstBoot = Join-Path $root 'boot.config'
+        if (Test-Path $srcBoot) {
+            try { Copy-Item -Path $srcBoot -Destination $dstBoot -Force; Add-Log "Patched boot.config at $dstBoot" } catch { Add-Log "Naraka boot.config copy failed: $($_.Exception.Message)" }
+        }
     }
     # Patch QualitySettingsData.txt for jiggle physics
-    $qFile = Join-Path $root 'QualitySettingsData.txt'
-    if ($EnableJiggle -and (Test-Path $qFile)) {
-        $txt = Get-Content -Raw -Path $qFile
-        $txt = $txt -replace '"characterAdditionalPhysics1":false,"xboxQualityOption":0}}', '"characterAdditionalPhysics1":true,"xboxQualityOption":0}}'
-        Set-Content -Path $qFile -Value $txt -Encoding UTF8
-        Write-Host "Enabled jiggle physics in $qFile"
+    if ($EnableJiggle) {
+        $qFile = Join-Path $root 'QualitySettingsData.txt'
+        if (Test-Path $qFile) {
+            try {
+                $txt = Get-Content -Raw -Path $qFile
+                $txt2 = $txt -replace '"characterAdditionalPhysics1"\s*:\s*false','"characterAdditionalPhysics1":true'
+                if ($txt2 -ne $txt) { Set-Content -Path $qFile -Value $txt2 -Encoding UTF8; Add-Log "Enabled jiggle physics in $qFile" } else { Add-Log 'No jiggle flag found to toggle in QualitySettingsData.txt' }
+            } catch { Add-Log "Jiggle edit failed: $($_.Exception.Message)" }
+        }
     }
 }
 
@@ -1270,11 +1265,8 @@ function Start-WebUI {
         $raw = $null
         # Prefer explicit webhook_url in discord_oauth.json
         try {
-            if ($cfg -and $cfg.webhook_url) {
-                $raw = [string]$cfg.webhook_url
-            }
+            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url }
         } catch {}
-        # Try common locations for discord_webhook.secret (handles temp-run case)
         if (-not $raw) {
             $paths = @()
             try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
@@ -1296,14 +1288,13 @@ function Start-WebUI {
             }
         }
         if ($raw) {
-            # Trim surrounding whitespace/quotes and trailing punctuation without using Trim()/TrimEnd()
             $candidate = [string]$raw
-            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''   # strip quotes/space both ends
-            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] } # first URL token
-            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''            # drop trailing punctuation
+            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] }
+            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
-            if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate }
+            try { if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate } } catch {}
         }
         return $null
     }
@@ -1339,6 +1330,36 @@ function Start-WebUI {
         return $null
     }
 
+    # Find NarakaBladepoint_Data path by checking Steam/Epic defaults and Steam library folders
+    function Find-NarakaDataPath {
+        $candidates = @(
+            "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+            "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+            "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
+            "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data"
+        )
+        foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { return $p } }
+        # Steam custom libraries
+        try {
+            $steamReg = Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue
+            $steamPath = $steamReg.InstallPath
+            if ($steamPath -and (Test-Path $steamPath)) {
+                $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
+                if (Test-Path $vdf) {
+                    $lines = Get-Content -Path $vdf -ErrorAction SilentlyContinue
+                    foreach ($ln in $lines) {
+                        if ($ln -match '"path"\s*"([^"]+)"') {
+                            $lib = $matches[1]
+                            $cand = Join-Path $lib 'steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data'
+                            if (Test-Path $cand) { return $cand }
+                        }
+                    }
+                }
+            }
+        } catch {}
+        return $null
+    }
+
 # Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
         param(
@@ -1347,17 +1368,16 @@ function Start-WebUI {
             [string]$AvatarUrl,
             [int]$RunCount
         )
-        [Console]::WriteLine('Webhook: enter Send-DiscordWebhook')
         $wh = & $getWebhookUrl
         if (-not $wh) { [Console]::WriteLine('Webhook: no webhook configured'); return }
-        [Console]::WriteLine('Webhook: configured')
-
         try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+        if ($wh -notmatch '^https?://') { [Console]::WriteLine("Webhook: invalid URL (no scheme): '$wh'"); return }
         if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
+        # Masked logging
+        try { $uriObj = [Uri]$wh; $tail = ($uriObj.AbsolutePath -split '/')[-1]; [Console]::WriteLine("Webhook: host=$($uriObj.Host) id=...$($tail.Substring([Math]::Max(0,$tail.Length-6)))") } catch {}
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
-
         $embed = @{
             title       = 'Ratz Tweak Alert'
             description = 'New Run!'
@@ -1365,27 +1385,20 @@ function Start-WebUI {
             timestamp   = $timestamp
             thumbnail   = @{ url = $AvatarUrl }
             fields      = @(
-                @{ name = 'Username'; value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
-                @{ name = 'UserID';   value = "$UserId";   inline = $true }
-                @{ name = 'Run Count';value = "$RunCount"; inline = $true }
+                @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
+                @{ name = 'UserID';    value = "$UserId";   inline = $true }
+                @{ name = 'Run Count'; value = "$RunCount"; inline = $true }
             )
         }
-
-        $payload = @{
-            content = $(if ($mention) { "New run by $mention" } else { 'New run started.' })
-            embeds  = @($embed)
-        }
+        $payload = @{ content = $(if ($mention) { "New run by $mention" } else { 'New run started.' }); embeds = @($embed) }
         if ($UserName) { $payload.username = $UserName }
-
         $json = $payload | ConvertTo-Json -Depth 10
 
-        # Preferred: Invoke-RestMethod
         try {
-            $null = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
-            [Console]::WriteLine('Webhook: sent (irm)')
-            return
+            $null = Invoke-WebRequest -Method Post -Uri $wh -ContentType 'application/json' -Body $json -UseBasicParsing -ErrorAction Stop
+            [Console]::WriteLine('Webhook: sent (iwr)')
         } catch {
-            [Console]::WriteLine("Webhook: irm failed: $($_.Exception.Message)")
+            [Console]::WriteLine("Webhook: iwr failed: $($_.Exception.Message)")
         }
 
         # Fallback: curl.exe
