@@ -1,4 +1,5 @@
 {
   "client_id": "1402803428123476039",
-  "redirect_uri": "http://127.0.0.1:17690/auth-callback"
+  "redirect_uri": "http://127.0.0.1:17690/auth-callback",
+  "webhook_url": "https://discord.com/api/webhooks/1407089363237736591/lVyjjc_9PvqRtpthXkLKpa6-_XOvCXlY3ynBNspdiBtSNh3jyjhMtXbHbRkfmo3WkOvd"
 }

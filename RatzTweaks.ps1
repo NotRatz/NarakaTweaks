@@ -46,6 +46,16 @@ if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 
+# Lightweight global logger used throughout the script
+if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
+    function global:Add-Log {
+        param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Message)
+        try { $msg = -join $Message } catch { $msg = [string]::Join('', $Message) }
+        try { $global:RatzLog += $msg } catch {}
+        try { if ($logPath) { Add-Content -Path $logPath -Value ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg) } } catch {}
+    }
+}
+
 # --- Auto-download all required files if missing (for irm ... | iex users) ---
 $needDownload = $false
 if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Join-Path $PSScriptRoot 'RatzSettings.nip')) -or -not (Test-Path (Join-Path $PSScriptRoot 'ratznaked.jpg'))) {
@@ -696,6 +706,7 @@ function Disable-ViVeFeatures {
         }
         Add-Log 'ViVeTool features disabled.'
     } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+}
 # --- Naraka: Bladepoint patching ---
 function Patch-NarakaBladepoint {
     param([bool]$EnableJiggle)
@@ -727,7 +738,7 @@ function Patch-NarakaBladepoint {
         Write-Host "Enabled jiggle physics in $qFile"
     }
 }
-}
+
 function Revert-MSIMode {
     try {
         $pciDevices = Get-WmiObject Win32_PnPEntity | Where-Object { $_.DeviceID -like 'PCI*' }
