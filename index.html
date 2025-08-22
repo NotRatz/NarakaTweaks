@@ -19,60 +19,58 @@ body{
 </style>
 </head>
 <body class="min-h-screen flex items-center justify-center text-white font-sans">
-<main class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-5xl w-full">
-  <h1 class="text-3xl font-bold mb-2 text-yellow-400 text-center">RatzTweaks</h1>
-  <p class="text-center text-gray-300 mb-6">Modern Windows optimization utility by Rat</p>
-
-  <section class="mt-4">
-    <h2 class="text-xl font-semibold text-white">Main Tweaks</h2>
-    <p class="text-gray-300">Applies core system optimizations for stability and lower latency, including reduced telemetry and high-performance DWM adjustments.</p>
-  </section>
-
-  <section class="mt-4">
-    <h2 class="text-xl font-semibold text-white">GPU Tweaks</h2>
-    <p class="text-gray-300">Automatically detects AMD/NVIDIA GPU and applies configs for each. Imports Ratz's NVIDIA profile and latency registry tweaks.</p>
-  </section>
-
-  <section class="mt-4">
-    <h2 class="text-xl font-semibold text-white">Optional Tweaks</h2>
-    <p class="text-gray-300">Enable MSI mode and disable background apps, widgets, Game Bar, or Copilot—apply only what you need. Revert anytime.</p>
-  </section>
-
-  <section class="mt-4">
-    <h2 class="text-xl font-semibold text-white">Quick Video Explaination!</h2>
-    <video width="640" height="360" controls class="rounded-md shadow-lg">
-      <source src="RatzTweaks_Explained.mp4" type="video/mp4">
-      Your browser does not support the video tag.
-    </video>
-  </section>
-
-  <div class="my-8 flex items-center justify-center gap-3">
-    <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
-    <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
-  </div>
-
-  <div class="mt-8 flex flex-col md:flex-row items-start justify-between gap-8">
-    <div class="flex flex-col gap-6">
-      <a href="https://twitch.tv/notratz" target="_blank" rel="noopener" class="flex items-center gap-4 hover:underline">
-        <img src="https://cdn0.iconfinder.com/data/icons/social-network-7/50/16-512.png" alt="Twitch" class="w-24 h-24 object-contain"/>
-        <span class="text-2xl font-bold">Twitch</span>
-      </a>
-      <a href="https://www.youtube.com/@notratz" target="_blank" rel="noopener" class="flex items-center gap-4 hover:underline">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/2560px-YouTube_full-color_icon_%282017%29.svg.png" alt="YouTube" class="w-24 h-24 object-contain"/>
-        <span class="text-2xl font-bold">YouTube</span>
-      </a>
-      <a href="https://discord.gg/teamstrive" target="_blank" rel="noopener" class="flex items-center gap-4 hover:underline">
-        <img src="https://images.icon-icons.com/2108/PNG/512/discord_icon_130958.png" alt="Discord" class="w-24 h-24 object-contain"/>
-        <span class="text-2xl font-bold">Discord</span>
-      </a>
+  <!-- New top navigation with socials + Ko‑Fi + Source -->
+  <nav class="fixed top-0 left-0 right-0 bg-black/70 backdrop-blur z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <span class="font-bold text-yellow-400">RatzTweaks</span>
+      <div class="flex items-center gap-5 text-sm md:text-base">
+        <a href="https://twitch.tv/notratz" target="_blank" rel="noopener" class="hover:underline">Twitch</a>
+        <a href="https://www.youtube.com/@notratz" target="_blank" rel="noopener" class="hover:underline">YouTube</a>
+        <a href="https://discord.gg/teamstrive" target="_blank" rel="noopener" class="hover:underline">Discord</a>
+        <a href="https://ko-fi.com/notratz" target="_blank" rel="noopener" class="hover:underline">Ko‑Fi</a>
+        <a href="https://github.com/NotRatz/NarakaTweaks" target="_blank" rel="noopener" class="hover:underline">Source</a>
+      </div>
     </div>
-    <div class="md:ml-4">
-      <iframe src="https://discord.com/widget?id=1130709958225297510&theme=dark" width="350" height="500" allowtransparency="true" frameborder="0" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts" class="rounded-md shadow-lg"></iframe>
-    </div>
-  </div>
-</main>
+  </nav>
 
-<script>
+  <main class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-5xl w-full mt-20">
+    <h1 class="text-3xl font-bold mb-2 text-yellow-400 text-center">RatzTweaks</h1>
+    <p class="text-center text-gray-300 mb-6">Modern Windows optimization utility by Rat</p>
+
+    <section class="mt-4">
+      <h2 class="text-xl font-semibold text-white">Main Tweaks</h2>
+      <p class="text-gray-300">Applies core system optimizations for stability and lower latency, including reduced telemetry and high-performance DWM adjustments.</p>
+    </section>
+
+    <section class="mt-4">
+      <h2 class="text-xl font-semibold text-white">GPU Tweaks</h2>
+      <p class="text-gray-300">Automatically detects AMD/NVIDIA GPU and applies configs for each. Imports Ratz's NVIDIA profile and latency registry tweaks.</p>
+    </section>
+
+    <section class="mt-4">
+      <h2 class="text-xl font-semibold text-white">Optional Tweaks</h2>
+      <p class="text-gray-300">Enable MSI mode and disable background apps, widgets, Game Bar, or Copilot—apply only what you need. Revert anytime.</p>
+    </section>
+
+    <section class="mt-4">
+      <h2 class="text-xl font-semibold text-white">Quick Video Explanation</h2>
+      <div class="mt-3 flex flex-col md:flex-row gap-6 items-start">
+        <video controls class="rounded-md shadow-lg w-full md:w-[640px] md:h-[360px]">
+          <source src="RatzTweaks_Explained.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+        <!-- Discord widget moved to the right of the video -->
+        <iframe src="https://discord.com/widget?id=1130709958225297510&theme=dark" width="350" height="500" allowtransparency="true" frameborder="0" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts" class="rounded-md shadow-lg"></iframe>
+      </div>
+    </section>
+
+    <div class="my-8 flex items-center justify-center gap-3">
+      <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
+      <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
+    </div>
+  </main>
+
+  <script>
 const startCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex";
 const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
 function copyAndRun(cmd){
