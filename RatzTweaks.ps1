@@ -700,10 +700,11 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
             $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
             if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
             $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+            $cmdExe = Join-Path $env:SystemRoot 'System32' 'cmd.exe'
             foreach ($id in $featureIds) {
-                $ViVeArgs = @('/disable', "/id:$id")
-                Add-Log "Running: $viveToolPath $($ViVeArgs -join ' ')"
-                try { & $viveToolPath @ViVeArgs 2>$null } catch {}
+                $args = "/c `"$viveToolPath`" /disable /id:$id"
+                Add-Log "Running: cmd.exe $args"
+                try { Start-Process -FilePath $cmdExe -ArgumentList $args -WindowStyle Hidden -Wait } catch {}
             }
             Add-Log 'ViVeTool features disabled.'
         } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
@@ -1397,6 +1398,7 @@ function Start-WebUI {
         try {
             $null = Invoke-WebRequest -Method Post -Uri $wh -ContentType 'application/json' -Body $json -UseBasicParsing -ErrorAction Stop
             [Console]::WriteLine('Webhook: sent (iwr)')
+            return
         } catch {
             [Console]::WriteLine("Webhook: iwr failed: $($_.Exception.Message)")
         }
@@ -1410,6 +1412,19 @@ function Start-WebUI {
         } catch {
             [Console]::WriteLine("Webhook: curl threw: $($_.Exception.Message)")
         }
+
+                # Fallback: HttpClient (no installation required)
+        try {
+            $client = New-Object System.Net.Http.HttpClient
+            $content = New-Object System.Net.Http.StringContent($json,[System.Text.Encoding]::UTF8,'application/json')
+            $response = $client.PostAsync($wh,$content).Result
+            if ($response.IsSuccessStatusCode) { [Console]::WriteLine('Webhook: sent (httpclient)'); return }
+            $body = $response.Content.ReadAsStringAsync().Result
+            [Console]::WriteLine("Webhook: httpclient status=$([int]$response.StatusCode) body='${body}'")
+        } catch {
+            [Console]::WriteLine("Webhook: httpclient failed: $($_.Exception.Message)")
+        }
+        [Console]::WriteLine('Webhook: all methods failed, no notification sent.')
     }
 
 
@@ -1781,8 +1796,10 @@ function Start-WebUI {
                                 try {
                                     $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
                                     $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+                                    $cmdExe = Join-Path $env:SystemRoot 'System32' 'cmd.exe'
                                     foreach ($fid in $featureIds) {
-                                        Start-Process -FilePath $viveToolPath -ArgumentList "/disable /id:$fid" -WindowStyle Hidden -Wait
+                                        $args = "/c `"$viveToolPath`" /disable /id:$fid"
+                                        Start-Process -FilePath $cmdExe -ArgumentList $args -WindowStyle Hidden -Wait
                                     }
                                 } catch {
                                     [Console]::WriteLine("Route:/about -> ViVeTool direct FAILED: $($_.Exception.Message)")
@@ -1815,28 +1832,7 @@ function Start-WebUI {
             }
             if ($enableJiggle -or $enableBoot) {
                 try {
-                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle
-                    if ($enableBoot) {
-                        # Patch boot.config only
-                        $possibleRoots = @(
-                            "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-                            "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-                            "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-                            "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data"
-                        )
-                        $root = $null
-                        foreach ($p in $possibleRoots) { if (Test-Path $p) { $root = $p; break } }
-                        if (-not $root) {
-                            $root = Read-Host 'Enter your NarakaBladepoint_Data folder path'
-                            if (-not (Test-Path $root)) { Write-Host "NarakaBladepoint_Data folder not found: $root" }
-                        }
-                        $srcBoot = Join-Path $PSScriptRoot 'boot.config'
-                        $dstBoot = Join-Path $root 'boot.config'
-                        if (Test-Path $srcBoot) {
-                            Copy-Item -Path $srcBoot -Destination $dstBoot -Force
-                            Write-Host "Patched boot.config at $dstBoot"
-                        }
-                    }
+                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle -PatchBoot:$enableBoot
                 } catch {
                     Write-Host "Naraka In-Game Tweaks failed: $($_.Exception.Message)"
                 }
