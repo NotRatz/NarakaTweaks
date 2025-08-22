@@ -694,18 +694,20 @@ function Revert-OptionalTweaks {
         Add-Log "ERROR reverting optional tweaks: $($_.Exception.Message)"
     }
 }
-function Disable-ViVeFeatures {
-    try {
-        $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
-        if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
-        $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
-        foreach ($id in $featureIds) {
-            $ViVeArgs = "/disable /id:$id"
-            Add-Log "Running: $viveToolPath $ViVeArgs"
-            Start-Process -FilePath $viveToolPath -ArgumentList $ViVeArgs -WindowStyle Hidden -Wait
-        }
-        Add-Log 'ViVeTool features disabled.'
-    } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyContinue)) {
+    function global:Disable-ViVeFeatures {
+        try {
+            $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
+            if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
+            $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+            foreach ($id in $featureIds) {
+                $ViVeArgs = "/disable /id:$id"
+                Add-Log "Running: $viveToolPath $ViVeArgs"
+                Start-Process -FilePath $viveToolPath -ArgumentList $ViVeArgs -WindowStyle Hidden -Wait
+            }
+            Add-Log 'ViVeTool features disabled.'
+        } catch { Add-Log "ERROR in Disable-ViVeFeatures: $($_.Exception.Message)" }
+    }
 }
 # --- Naraka: Bladepoint patching ---
 function Patch-NarakaBladepoint {
@@ -1353,7 +1355,8 @@ function Start-WebUI {
         }
         [Console]::WriteLine('Webhook: configured')
 
-        # ensure we get response body back for diagnostics
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
         if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
@@ -1374,10 +1377,10 @@ function Start-WebUI {
             timestamp   = $timestamp
             thumbnail   = @{ url = $AvatarUrl }
             fields      = @(
-                @{ name = 'UserID'; value = $UserId },
-                @{ name = 'Username'; value = $UserName },
-                @{ name = 'Mention'; value = $mention },
-                @{ name = 'RunCount'; value = $RunCount }
+                @{ name = 'UserID';   value = "$UserId" },
+                @{ name = 'Username'; value = "$UserName" },
+                @{ name = 'Mention';  value = "$mention" },
+                @{ name = 'RunCount'; value = "$RunCount" }
             )
         }
 
@@ -1389,15 +1392,20 @@ function Start-WebUI {
 
         $json = $payload | ConvertTo-Json -Depth 10
 
-        # Use curl.exe with -d "@$tmp" to avoid PowerShell interpreting @
-        $tmp = [System.IO.Path]::GetTempFileName()
-        Set-Content -Path $tmp -Value $json -Encoding UTF8
-        $respText = & curl.exe -s -S -f -H "Content-Type: application/json" -d "@$tmp" $wh 2>&1
-        Remove-Item $tmp -ErrorAction SilentlyContinue | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            [Console]::WriteLine('Webhook: sent (curl)')
+        # Send inline JSON string to curl.exe as body
+        $respText = & curl.exe -s -S -H "Content-Type: application/json" -d "$json" -w "`nHTTP_STATUS:%{http_code}" $wh 2>&1
+        $exit = $LASTEXITCODE
+        $httpStatus = 0
+        $respBody = $respText
+        if ($respText -match 'HTTP_STATUS:(\d{3})') {
+            $httpStatus = [int]$matches[1]
+            $respBody = ($respText -replace 'HTTP_STATUS:\d{3}','').Trim()
+        }
+        if ($httpStatus -ge 200 -and $httpStatus -lt 300) {
+            [Console]::WriteLine("Webhook: sent (curl) HTTP $httpStatus")
         } else {
-            [Console]::WriteLine("Webhook: failed (curl): $respText")
+            if ($httpStatus -eq 0) { [Console]::WriteLine("Webhook: failed (curl) exit=$exit body='$respBody'") }
+            else { [Console]::WriteLine("Webhook: failed (curl) HTTP $httpStatus body='$respBody'") }
         }
     }
 
@@ -1432,11 +1440,8 @@ function Start-WebUI {
                 if (-not $global:DiscordAuthenticated) { $startDisabledAttr = 'disabled style="opacity:0.5;cursor:not-allowed"' }
                 $name = $global:DiscordUserName
                 $avatar = $global:DiscordAvatarUrl
-                # Avoid inline-if assignment in PS 5.1
                 $displayName = 'Logged in with Discord'
-                if (-not [string]::IsNullOrEmpty($name)) {
-                    $displayName = "Logged in with Discord as $name"
-                }
+                if (-not [string]::IsNullOrEmpty($name)) { $displayName = "Logged in with Discord as $name" }
                 if ($global:DiscordAuthenticated) {
                     if (-not [string]::IsNullOrEmpty($avatar)) {
                         $authSection = "<div class='flex items-center mb-4 text-gray-300'><img src='${avatar}' alt='Avatar' class='w-12 h-12 rounded-full mr-3'/><span>$displayName</span></div>"
@@ -1463,7 +1468,7 @@ function Start-WebUI {
   <div class='flex gap-3 mb-6'>
     $loginLink
     <form action='/main-tweaks' method='post'>
-      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
+      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
     </form>
   </div>
 </div>
@@ -1471,7 +1476,6 @@ function Start-WebUI {
 "@
             }
             'main-tweaks' {
-                # No checkboxes, just a spinner and message
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1699,6 +1703,8 @@ function Start-WebUI {
             $rawLen = 0; try { if ($script:LastRawForm) { $rawLen = $script:LastRawForm.Length } } catch {}
             [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
             if ($script:LastRawForm) { [Console]::WriteLine("Route:/about raw: $($script:LastRawForm.Substring(0, [Math]::Min(512, $script:LastRawForm.Length)))") }
+
+            # Collect selected options
             $optVals = @()
             if ($form) {
                 $o = $form.GetValues('opt')
@@ -1706,13 +1712,15 @@ function Start-WebUI {
                 if ($o) { $optVals = @($o) }
             }
             # Fallback: parse raw body if needed
+            $parsedJiggle = $null; $parsedBoot = $null
             if ((-not $optVals) -and $script:LastRawForm) {
                 $raw = [string]$script:LastRawForm
                 $pairs = $raw -split '&'
                 foreach ($pair in $pairs) {
                     if ($pair -match '=') {
                         $kv = $pair -split '=',2
-                        $k = $kv[0]; $v = if ($kv.Count -gt 1) { $kv[1] } else { '' }
+                        $k = $kv[0]
+                        $v = if ($kv.Count -gt 1) { $kv[1] } else { '' }
                         # form-url-encoded: '+' is space
                         $k = ($k -replace '\+','%20'); $v = ($v -replace '\+','%20')
                         try { $k = [System.Uri]::UnescapeDataString($k) } catch {}
@@ -1737,11 +1745,18 @@ function Start-WebUI {
             }
             foreach ($id in $optVals) {
                 $fn = $optToFn[$id]
-                if (-not $fn -and $id -eq 'vivetool') { $fn = 'Disable-ViVeFeatures' }
                 if ($fn) {
                     try {
                         [Console]::WriteLine("Route:/about -> $fn")
-                        & $fn
+                        if ($id -eq 'vivetool') {
+                            & global:Disable-ViVeFeatures
+                        } elseif (Get-Command $fn -ErrorAction SilentlyContinue) {
+                            & $fn
+                        } elseif (Get-Command ("global:" + $fn) -ErrorAction SilentlyContinue) {
+                            & ("global:" + $fn)
+                        } else {
+                            [Console]::WriteLine("Route:/about -> $fn not found")
+                        }
                     } catch {
                         [Console]::WriteLine("Route:/about -> $fn FAILED: $($_.Exception.Message)")
                     }
@@ -1749,15 +1764,16 @@ function Start-WebUI {
                     [Console]::WriteLine("Route:/about -> unknown option '$id'")
                 }
             }
+
             # Handle Naraka In-Game Tweaks
             $enableJiggle = $false; $enableBoot = $false
             if ($form) {
                 $enableJiggle = $form.Get('naraka_jiggle') -eq '1'
-                $enableBoot = $form.Get('naraka_boot') -eq '1'
+                $enableBoot   = $form.Get('naraka_boot') -eq '1'
             }
             if (-not $form -and $script:LastRawForm) {
                 if ($parsedJiggle) { $enableJiggle = ($parsedJiggle -eq '1' -or $parsedJiggle -eq 'on' -or $parsedJiggle -eq 'true') }
-                if ($parsedBoot) { $enableBoot = ($parsedBoot -eq '1' -or $parsedBoot -eq 'on' -or $parsedBoot -eq 'true') }
+                if ($parsedBoot)   { $enableBoot   = ($parsedBoot -eq '1' -or $parsedBoot -eq 'on' -or $parsedBoot -eq 'true') }
             }
             if ($enableJiggle -or $enableBoot) {
                 try {
@@ -1792,43 +1808,6 @@ function Start-WebUI {
             $ctx.Response.StatusCode = 303
             $ctx.Response.RedirectLocation = '/about'
             try { $ctx.Response.Close() } catch {}
-            continue
-        }
-
-        # Finalize: show toast, open Ko‑fi, and close the PowerShell process after returning a page
-        if ($path -eq '/finish' -and $method -eq 'POST') {
-            try {
-                # Toast
-                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-                $toastXml = $template
-                $toastXml.GetElementsByTagName('text')[0].AppendChild($toastXml.CreateTextNode('RatzTweaks: Restart your PC to finish setup!')) | Out-Null
-                $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
-                $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('RatzTweaks')
-                $notifier.Show($toast)
-            } catch {}
-
-            # Return a quick HTML page that tries to close the tab
-            $doneHtml = @"
-<!doctype html><html><head><meta charset='utf-8'/><title>Done</title>
-<script>setTimeout(function(){ try{window.open('https://ko-fi.com/notratz','_blank');window.close();}catch(e){} }, 200);</script>
-</head><body style='background:#0b0b0b;color:#e5e7eb;font-family:ui-sans-serif,system-ui'>
-  <div style='margin:4rem auto;max-width:680px;background:#111827dd;padding:24px;border-radius:12px'>
-    <h2 style='color:#f59e0b;margin:0 0 12px 0;font-size:24px;font-weight:800'>All set!</h2>
-    <p>You can close this tab now.</p>
-  </div>
-</body></html>
-"@
-            & $send $ctx 200 'text/html' $doneHtml
-
-            # Kill the PS process after a short delay in a background job
-            Start-Job -ArgumentList $PID -ScriptBlock {
-                param($parentId)
-                Start-Sleep -Milliseconds 600
-                try { Start-Process 'https://ko-fi.com/notratz' } catch {}
-                try { [System.Diagnostics.Process]::GetProcessById($parentId).CloseMainWindow() | Out-Null } catch {}
-                try { Stop-Process -Id $parentId -Force } catch {}
-            } | Out-Null
             continue
         }
     }
