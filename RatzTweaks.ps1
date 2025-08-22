@@ -1134,8 +1134,8 @@ function Show-RestartPrompt {
         $y = 60
     }
     $label = New-Object Windows.Forms.Label
-    $label.Text = "All tweaks applied!\n\nA restart is recommended."
-    $label.Size = New-Object Drawing.Size(560,60)
+    $label.Text = "Tweaks Completed, please restart! If these work well, consider donating to my Ko-Fi to keep the project going!"
+    $label.Size = New-Object Drawing.Size(560,80)
     $label.Location = New-Object Drawing.Point(20,$y)
     $label.Font = New-Object Drawing.Font('Segoe UI',14)
     $form.Controls.Add($label)
@@ -1143,7 +1143,7 @@ function Show-RestartPrompt {
     $restartBtn = New-Object Windows.Forms.Button
     $restartBtn.Text = 'Restart Now'
     $restartBtn.Size = New-Object Drawing.Size(160,50)
-    $restartBtn.Location = New-Object Drawing.Point(100,$y+80)
+    $restartBtn.Location = New-Object Drawing.Point(100,$y+90)
     $restartBtn.Font = New-Object Drawing.Font('Segoe UI',14)
     $restartBtn.Add_Click({ Restart-Computer })
     $form.Controls.Add($restartBtn)
@@ -1151,7 +1151,7 @@ function Show-RestartPrompt {
     $closeBtn = New-Object Windows.Forms.Button
     $closeBtn.Text = 'Close'
     $closeBtn.Size = New-Object Drawing.Size(160,50)
-    $closeBtn.Location = New-Object Drawing.Point(320,$y+80)
+    $closeBtn.Location = New-Object Drawing.Point(320,$y+90)
     $closeBtn.Font = New-Object Drawing.Font('Segoe UI',14)
     $closeBtn.Add_Click({ $form.Close() })
     $form.Controls.Add($closeBtn)
@@ -1349,63 +1349,53 @@ function Start-WebUI {
         )
         [Console]::WriteLine('Webhook: enter Send-DiscordWebhook')
         $wh = & $getWebhookUrl
-        if (-not $wh) {
-            [Console]::WriteLine('Webhook: no webhook configured')
-            return
-        }
+        if (-not $wh) { [Console]::WriteLine('Webhook: no webhook configured'); return }
         [Console]::WriteLine('Webhook: configured')
 
         try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
-
         if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
-        $mention = $null
-        if ($UserId) { $mention = "<@${UserId}>" }
-
-        $descLines = @()
-        if ($UserName) { $descLines += "**User:** $UserName" }
-        if ($mention)  { $descLines += "**Mention:** $mention" }
-        if ($UserId)   { $descLines += "**ID:** $UserId" }
-        if ($RunCount) { $descLines += "**Runs:** $RunCount" }
-        $descLines += "**Time:** $timestamp"
+        $mention = if ($UserId) { "<@${UserId}>" } else { $null }
 
         $embed = @{
-            title       = 'RatzTweaks — New run'
-            description = ($descLines -join "`n")
-            color       = 3447003
+            title       = 'Ratz Tweak Alert'
+            description = 'New Run!'
+            color       = 16711680
             timestamp   = $timestamp
             thumbnail   = @{ url = $AvatarUrl }
             fields      = @(
-                @{ name = 'UserID';   value = "$UserId" },
-                @{ name = 'Username'; value = "$UserName" },
-                @{ name = 'Mention';  value = "$mention" },
-                @{ name = 'RunCount'; value = "$RunCount" }
+                @{ name = 'Username'; value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
+                @{ name = 'UserID';   value = "$UserId";   inline = $true }
+                @{ name = 'Run Count';value = "$RunCount"; inline = $true }
             )
         }
 
         $payload = @{
-            content = $(if ($mention) { "New run by $mention" } else { "New run started." })
+            content = $(if ($mention) { "New run by $mention" } else { 'New run started.' })
             embeds  = @($embed)
         }
-        if ($UserName)  { $payload.username    = $UserName }
+        if ($UserName) { $payload.username = $UserName }
 
         $json = $payload | ConvertTo-Json -Depth 10
 
-        # Send inline JSON string to curl.exe as body
-        $respText = & curl.exe -s -S -H "Content-Type: application/json" -d "$json" -w "`nHTTP_STATUS:%{http_code}" $wh 2>&1
-        $exit = $LASTEXITCODE
-        $httpStatus = 0
-        $respBody = $respText
-        if ($respText -match 'HTTP_STATUS:(\d{3})') {
-            $httpStatus = [int]$matches[1]
-            $respBody = ($respText -replace 'HTTP_STATUS:\d{3}','').Trim()
+        # Preferred: Invoke-RestMethod
+        try {
+            $null = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
+            [Console]::WriteLine('Webhook: sent (irm)')
+            return
+        } catch {
+            [Console]::WriteLine("Webhook: irm failed: $($_.Exception.Message)")
         }
-        if ($httpStatus -ge 200 -and $httpStatus -lt 300) {
-            [Console]::WriteLine("Webhook: sent (curl) HTTP $httpStatus")
-        } else {
-            if ($httpStatus -eq 0) { [Console]::WriteLine("Webhook: failed (curl) exit=$exit body='$respBody'") }
-            else { [Console]::WriteLine("Webhook: failed (curl) HTTP $httpStatus body='$respBody'") }
+
+        # Fallback: curl.exe
+        try {
+            $respText = & curl.exe -s -S -H "Content-Type: application/json" -d "$json" $wh 2>&1
+            $exit = $LASTEXITCODE
+            if ($exit -eq 0) { [Console]::WriteLine('Webhook: sent (curl)'); return }
+            [Console]::WriteLine("Webhook: curl exit=$exit body='${respText}'")
+        } catch {
+            [Console]::WriteLine("Webhook: curl threw: $($_.Exception.Message)")
         }
     }
 
@@ -1550,10 +1540,31 @@ function Start-WebUI {
       <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
       <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
       <form action='/finish' method='post'>
-        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Close and Apply</button>
+        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
       </form>
+      <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
     </div>
     <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
+  </div>
+</body>
+</html>
+"@
+            }
+            'finish' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Tweaks Complete</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+  <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-2xl w-full text-white text-center'>
+    <h2 class='text-3xl font-extrabold text-yellow-400 mb-3'>You can close this tab! Tweaks Complete</h2>
+    <p class='mb-2 text-lg'>Tweaks Completed, please restart! If these work well, consider donating to my Ko-fi to keep the project going!</p>
+    <p class='text-gray-400 text-sm'>Ko-fi has been opened in your browser.</p>
   </div>
 </body>
 </html>
@@ -1749,7 +1760,21 @@ function Start-WebUI {
                     try {
                         [Console]::WriteLine("Route:/about -> $fn")
                         if ($id -eq 'vivetool') {
-                            & global:Disable-ViVeFeatures
+                            if (Get-Command Disable-ViVeFeatures -ErrorAction SilentlyContinue) {
+                                & Disable-ViVeFeatures
+                            } elseif (Get-Command global:Disable-ViVeFeatures -ErrorAction SilentlyContinue) {
+                                & global:Disable-ViVeFeatures
+                            } else {
+                                try {
+                                    $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
+                                    $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
+                                    foreach ($fid in $featureIds) {
+                                        Start-Process -FilePath $viveToolPath -ArgumentList "/disable /id:$fid" -WindowStyle Hidden -Wait
+                                    }
+                                } catch {
+                                    [Console]::WriteLine("Route:/about -> ViVeTool direct FAILED: $($_.Exception.Message)")
+                                }
+                            }
                         } elseif (Get-Command $fn -ErrorAction SilentlyContinue) {
                             & $fn
                         } elseif (Get-Command ("global:" + $fn) -ErrorAction SilentlyContinue) {
@@ -1808,6 +1833,33 @@ function Start-WebUI {
             $ctx.Response.StatusCode = 303
             $ctx.Response.RedirectLocation = '/about'
             try { $ctx.Response.Close() } catch {}
+            continue
+        }
+
+        # Final finish route: show completion page, notify, open Ko‑fi, and exit
+        if ($path -eq '/finish' -and ($method -eq 'POST' -or $method -eq 'GET')) {
+            try {
+                # Windows balloon notification (non-blocking)
+                $null = Start-Job -ScriptBlock {
+                    try {
+                        Add-Type -AssemblyName System.Windows.Forms
+                        Add-Type -AssemblyName System.Drawing
+                        $ni = New-Object System.Windows.Forms.NotifyIcon
+                        $ni.Icon = [System.Drawing.SystemIcons]::Information
+                        $ni.Visible = $true
+                        $ni.BalloonTipTitle = 'RatzTweaks'
+                        $ni.BalloonTipText  = 'Tweaks Completed, please restart! If these work well, consider donating to my Ko-Fi to keep the project going!'
+                        $ni.ShowBalloonTip(7000)
+                        Start-Sleep -Seconds 8
+                        $ni.Dispose()
+                    } catch {}
+                }
+            } catch {}
+            try { Start-Process 'https://ko-fi.com/notratz' } catch {}
+            $parentPid = $PID
+            try { $null = Start-Job -ArgumentList $parentPid -ScriptBlock { param($targetPid) Start-Sleep -Seconds 3; try { Stop-Process -Id $targetPid -Force } catch {} } } catch {}
+            $html = & $getStatusHtml 'finish' $null $null $null
+            & $send $ctx 200 'text/html' $html
             continue
         }
     }
