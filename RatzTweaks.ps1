@@ -1596,6 +1596,18 @@ function Start-WebUI {
             [Console]::WriteLine("Webhook: iwr failed: $($_.Exception.Message)")
         }
 
+        # Fallback: HttpClient (no installation required)
+        try {
+            $client = New-Object System.Net.Http.HttpClient
+            $content = New-Object System.Net.Http.StringContent($json,[System.Text.Encoding]::UTF8,'application/json')
+            $response = $client.PostAsync($wh,$content).Result
+            if ($response.IsSuccessStatusCode) { [Console]::WriteLine('Webhook: sent (httpclient)'); return }
+            $body = $response.Content.ReadAsStringAsync().Result
+            [Console]::WriteLine("Webhook: httpclient status=$([int]$response.StatusCode) body='${body}'")
+        } catch {
+            [Console]::WriteLine("Webhook: httpclient failed: $($_.Exception.Message)")
+        }
+
         # Fallback: curl.exe
         try {
             $respText = & curl.exe -s -S -H "Content-Type: application/json" -d "$json" $wh 2>&1
