@@ -77,8 +77,12 @@ const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm ht
 function copyAndRun(cmd){
   navigator.clipboard.writeText(cmd).then(function(){
     alert('String Copied: \n' + cmd + '\n\nPress Win+R then paste the command to begin!');
+  }).catch(function(){
+    // Fallback: show prompt if clipboard fails
+    prompt('Copy and run this command in PowerShell:', cmd);
   });
-  try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
+  // Removed for Chrome compatibility: launching PowerShell URI is blocked
+  // try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
 }
 function startTweaks(){ copyAndRun(startCmd); }
 function revertTweaks(){ copyAndRun(revertCmd); }
