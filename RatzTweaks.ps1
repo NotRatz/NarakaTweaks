@@ -1226,9 +1226,9 @@ function Disable-HPET {
 
 function Restore-DefaultTimers {
     try {
-        bcdedit /deletevalue useplatformclock 2>$null
-        bcdedit /deletevalue disabledynamictick 2>$null
-        bcdedit /deletevalue tscsyncpolicy 2>$null
+        bcdedit /deletevalue useplatformclock -ErrorAction SilentlyContinue | Out-Null
+        bcdedit /deletevalue disabledynamictick -ErrorAction SilentlyContinue | Out-Null
+        bcdedit /deletevalue tscsyncpolicy -ErrorAction SilentlyContinue | Out-Null
         Add-Log 'Timer overrides removed.'
     } catch { Add-Log "ERROR in Restore-DefaultTimers: $($_.Exception.Message)" }
 }
