@@ -90,11 +90,22 @@ function copyAndRun(cmd){
   // Removed for Chrome compatibility: launching PowerShell URI is blocked
   // try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
 }
-function startTweaks(){ copyAndRun(startCmd); }
-function revertTweaks(){ copyAndRun(revertCmd); }
+function startTweaks(){
+  copyAndRun(startCmd);
+  let count = localStorage.getItem('ratzRuns') || 0;
+  count++;
+  localStorage.setItem('ratzRuns', count);
+  document.getElementById('runCount').innerText = count;
+}
+function revertTweaks(){
+  copyAndRun(revertCmd);
+  let count = localStorage.getItem('ratzRuns') || 0;
+  count++;
+  localStorage.setItem('ratzRuns', count);
+  document.getElementById('runCount').innerText = count;
+}
+// On page load, just display the current run count
 let count = localStorage.getItem('ratzRuns') || 0;
-count++;
-localStorage.setItem('ratzRuns', count);
 document.getElementById('runCount').innerText = count;
 </script>
 </body>
