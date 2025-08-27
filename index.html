@@ -49,7 +49,12 @@ body{
 
     <section class="mt-4">
       <h2 class="text-xl font-semibold text-white">Optional Tweaks</h2>
-      <p class="text-gray-300">Enable MSI mode and disable background apps, widgets, Game Bar, or Copilot—apply only what you need. Revert anytime.</p>
+      <ul class="list-disc list-inside text-gray-300">
+        <li>Game Bar/DVR – optional toggle, off by default.</li>
+        <li>Widgets – optional toggle, off by default.</li>
+        <li>Copilot – optional toggle, off by default.</li>
+        <li>MSI Mode & Power Plans – opt-in with easy revert.</li>
+      </ul>
     </section>
 
     <section class="mt-4">
@@ -69,6 +74,7 @@ body{
       <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
       <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
     </div>
+    <p class="text-center text-gray-300">Runs: <span id="runCount">0</span></p>
   </main>
 
   <script>
@@ -86,6 +92,10 @@ function copyAndRun(cmd){
 }
 function startTweaks(){ copyAndRun(startCmd); }
 function revertTweaks(){ copyAndRun(revertCmd); }
+let count = localStorage.getItem('ratzRuns') || 0;
+count++;
+localStorage.setItem('ratzRuns', count);
+document.getElementById('runCount').innerText = count;
 </script>
 </body>
 </html>
