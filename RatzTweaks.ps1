@@ -39,20 +39,27 @@ function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][obj
 $InformationPreference = 'SilentlyContinue'
 $ProgressPreference = 'SilentlyContinue'
 $WarningPreference = 'SilentlyContinue'
-$ErrorActionPreference = 'SilentlyContinue'
+
 
 # Ensure log path and PSCommandPath are defined even when run via iwr | iex
 if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 if (-not $global:RatzLog) { $global:RatzLog = @() }
+if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
+if (-not $global:SendDiscordPing) { $global:SendDiscordPing = $false }
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
     function global:Add-Log {
         param([Parameter(ValueFromRemainingArguments=$true)][object[]]$Message)
         try { $msg = -join $Message } catch { $msg = [string]::Join('', $Message) }
+        if ($msg -match 'ERROR') { $global:ErrorsDetected = $true }
         try { $global:RatzLog += $msg } catch {}
-        try { if ($logPath) { Add-Content -Path $logPath -Value ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg) } } catch {}
+        try {
+            if ($logPath) {
+                Add-Content -Path $logPath -Value ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
+            }
+        } catch {}
     }
 }
 
@@ -62,20 +69,23 @@ if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Jo
     $needDownload = $true
 }
 if ($needDownload) {
-    $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
-    $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
-    $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
-    Write-Host 'Downloading full NarakaTweaks package...'
-    Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
-    Remove-Item $zipPath -Force
-    $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
-    $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
-    Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-    Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
-    # Ensure the original process exits immediately to prevent double execution
-    Stop-Process -Id $PID -Force
+    try {
+        $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
+        $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
+        $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
+        Write-Host 'Downloading full NarakaTweaks package...'
+        Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+        Remove-Item $zipPath -Force
+        $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
+        $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
+        Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
+        Stop-Process -Id $PID -Force
+    } catch {
+        Add-Log "ERROR downloading package: $($_.Exception.Message)"
+    }
 }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
     $msg = @"
@@ -689,6 +699,8 @@ function Revert-OptionalTweaks {
         Revert-Widgets
         Revert-Gamebar
         Revert-Copilot
+        Restore-DefaultTimers
+        Revert-PowerPlan
         Add-Log 'All optional tweaks reverted.'
     } catch {
         Add-Log "ERROR reverting optional tweaks: $($_.Exception.Message)"
@@ -857,19 +869,6 @@ function Invoke-AllTweaks {
         } catch {
             # Suppress error output, optionally log to file if needed
         }
-    }
-
-    # --- Always run all utility tweaks (formerly optional, now always run, no user input) ---
-
-    try {
-        Disable-MSIMode
-        Disable-BackgroundApps
-        Disable-Widgets
-        Disable-Gamebar
-        Disable-Copilot
-        # No logging to PowerShell window
-    } catch {
-        # Suppress error output
     }
 
     # Set timer resolution using embedded C# service (no external EXE needed)
@@ -1211,6 +1210,51 @@ function Disable-Copilot {
     } catch { Add-Log "ERROR in Disable-Copilot: $($_.Exception.Message)" }
 }
 
+function Enable-HPET {
+    try {
+        bcdedit /set useplatformclock true | Out-Null
+        Add-Log 'HPET enabled.'
+    } catch { Add-Log "ERROR in Enable-HPET: $($_.Exception.Message)" }
+}
+
+function Disable-HPET {
+    try {
+        bcdedit /deletevalue useplatformclock | Out-Null
+        Add-Log 'HPET disabled.'
+    } catch { Add-Log "ERROR in Disable-HPET: $($_.Exception.Message)" }
+}
+
+function Restore-DefaultTimers {
+    try {
+        bcdedit /deletevalue useplatformclock -ErrorAction SilentlyContinue | Out-Null
+        bcdedit /deletevalue disabledynamictick -ErrorAction SilentlyContinue | Out-Null
+        bcdedit /deletevalue tscsyncpolicy -ErrorAction SilentlyContinue | Out-Null
+        Add-Log 'Timer overrides removed.'
+    } catch { Add-Log "ERROR in Restore-DefaultTimers: $($_.Exception.Message)" }
+}
+
+function Set-PowerPlanHigh {
+    try { powercfg /setactive SCHEME_MIN; Add-Log 'High performance power plan enabled.' }
+    catch { Add-Log "ERROR in Set-PowerPlanHigh: $($_.Exception.Message)" }
+}
+
+function Set-PowerPlanUltimate {
+    try {
+        $ultimate = (powercfg /list | Select-String 'Ultimate Performance').ToString().Split()[3]
+        if ($ultimate) {
+            powercfg /setactive $ultimate
+            Add-Log 'Ultimate Performance power plan enabled.'
+        } else {
+            Add-Log 'Ultimate Performance plan not found.'
+        }
+    } catch { Add-Log "ERROR in Set-PowerPlanUltimate: $($_.Exception.Message)" }
+}
+
+function Revert-PowerPlan {
+    try { powercfg /setactive SCHEME_BALANCED; Add-Log 'Power plan reverted to Balanced.' }
+    catch { Add-Log "ERROR in Revert-PowerPlan: $($_.Exception.Message)" }
+}
+
 function Invoke-NVPI {
     param()
     # Start NVPI work in a background job so the UI thread is never blocked
@@ -1266,25 +1310,6 @@ function Invoke-NVPI {
         Add-Log "ERROR starting NVPI job: $($_.Exception.Message)"
     }
 }
-
-function Set-PowerPlan {
-    # Set power plan based on Windows version
-    $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
-    if ($osVersion -like '10.*') {
-        # Windows 10: Set High Performance
-        powercfg /setactive SCHEME_MIN
-    } elseif ($osVersion -like '11.*') {
-        # Windows 11: Set Balanced Max Performance Overlay (if available)
-        # Try to set Ultimate Performance, fallback to High Performance
-        $ultimate = (powercfg /list | Select-String 'Ultimate Performance').ToString().Split()[3]
-        if ($ultimate) {
-            powercfg /setactive $ultimate
-        } else {
-            powercfg /setactive SCHEME_MIN
-        }
-    }
-}
-
 
 function Invoke-SelectedOptionalTweaks {
     # Run selected optional tweaks asynchronously and wait for all to finish
@@ -1628,23 +1653,32 @@ function Start-WebUI {
 
     # Option definitions
     $mainTweaks = @(
-        @{ id='main-tweaks'; label='Main Tweaks'; fn='Invoke-AllTweaks' },
-        @{ id='set-powerplan'; label='Set Power Plan'; fn='Set-PowerPlan' }
+        @{ id='main-tweaks'; label='Main Tweaks'; fn='Invoke-AllTweaks' }
     )
     $gpuTweaks = @(
         @{ id='import-nvpi'; label='Import NVPI Profile'; fn='Invoke-NVPI' }
     )
     $optionalTweaks = @(
-        @{ id='disable-msi'; label='Enable MSI Mode for all PCI devices'; fn='Disable-MSIMode' },
+        @{ id='enable-msi'; label='Enable MSI Mode for all PCI devices'; fn='Disable-MSIMode' },
         @{ id='disable-bgapps'; label='Disable Background Apps'; fn='Disable-BackgroundApps' },
         @{ id='disable-widgets'; label='Disable Widgets'; fn='Disable-Widgets' },
         @{ id='disable-gamebar'; label='Disable Game Bar'; fn='Disable-Gamebar' },
         @{ id='disable-copilot'; label='Disable Copilot'; fn='Disable-Copilot' },
+        @{ id='enable-hpet'; label='Enable HPET'; fn='Enable-HPET' },
+        @{ id='disable-hpet'; label='Disable HPET'; fn='Disable-HPET' },
+        @{ id='restore-timers'; label='Restore Default Timers'; fn='Restore-DefaultTimers' },
+        @{ id='pp-high'; label='Set High Performance Power Plan'; fn='Set-PowerPlanHigh' },
+        @{ id='pp-ultimate'; label='Set Ultimate Performance Power Plan'; fn='Set-PowerPlanUltimate' },
+        @{ id='pp-revert'; label='Revert to Balanced Power Plan'; fn='Revert-PowerPlan' },
         @{ id='vivetool'; label='Disable ViVeTool Features'; fn='Disable-ViVeFeatures' }
     )
 
     $getStatusHtml = {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
+        $errorBanner = ''
+        if ($global:ErrorsDetected) {
+            $errorBanner = "<div class='bg-red-600 text-white text-center p-2'><a href='/log' class='underline'>View log</a></div>"
+        }
         switch ($step) {
             'start' {
                 $startDisabledAttr = ''
@@ -1673,9 +1707,12 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+$errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
   $authSection
+  <label class='block mb-2 text-gray-300'><input type='checkbox' id='pingChk' class='mr-2'/>Send Discord identity ping</label>
+  <pre id='payloadPreview' class='text-xs text-gray-400 mb-4 hidden'></pre>
   <div class='flex gap-3 mb-6'>
     $loginLink
     <form action='/main-tweaks' method='post'>
@@ -1683,6 +1720,19 @@ function Start-WebUI {
     </form>
   </div>
 </div>
+<script>
+const chk=document.getElementById('pingChk');
+const prev=document.getElementById('payloadPreview');
+chk.addEventListener('change',e=>{
+  fetch('/set-ping?enable='+(e.target.checked?'1':'0'));
+  if(e.target.checked){
+    prev.classList.remove('hidden');
+    prev.textContent=JSON.stringify({username:'$global:DiscordUserName',id:'$global:DiscordUserId',timestamp:new Date().toISOString()},null,2);
+  }else{
+    prev.classList.add('hidden');
+  }
+});
+</script>
 </body></html>
 "@
             }
@@ -1697,6 +1747,7 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+$errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Applying Main & GPU Tweaks...</h2>
   <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
@@ -1710,7 +1761,7 @@ function Start-WebUI {
             'optional-tweaks' {
                 $boxes = ($optionalTweaks | ForEach-Object {
                     $id = $_.id; $label = $_.label
-                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='${id}' checked class='mr-1'>${label}</label>"
+                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='${id}' class='mr-1'>${label}</label>"
                 }) -join ""
                 $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
@@ -1729,6 +1780,7 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+$errorBanner
 <form action='/about' method='post'>
 <div class='flex flex-row'>
   $narakaBox
@@ -1756,6 +1808,7 @@ function Start-WebUI {
   </style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+$errorBanner
   <div class='flex items-start gap-6'>
     <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
       <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
@@ -1782,6 +1835,7 @@ function Start-WebUI {
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
+$errorBanner
   <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-2xl w-full text-white text-center'>
     <h2 class='text-3xl font-extrabold text-yellow-400 mb-3'>You can close this tab! Tweaks Complete</h2>
     <p class='mb-2 text-lg'>Tweaks Completed, please restart! If these work well, consider donating to my Ko-fi to keep the project going!</p>
@@ -1818,6 +1872,19 @@ function Start-WebUI {
             continue
         }
 
+        if ($path -eq '/log') {
+            $log = ''
+            try { if (Test-Path $logPath) { $log = Get-Content -Raw -Path $logPath } } catch { $log = 'Log unavailable' }
+            & $send $ctx 200 'text/plain' $log
+            continue
+        }
+
+        if ($path -eq '/set-ping') {
+            $global:SendDiscordPing = ($req.QueryString['enable'] -eq '1')
+            & $send $ctx 204 'text/plain' ''
+            continue
+        }
+
         # Start Discord OAuth
         if ($path -eq '/auth') {
             if (-not $clientId) { & $send $ctx 500 'text/plain' 'Discord client_id missing in discord_oauth.json'; continue }
@@ -1846,7 +1913,6 @@ function Start-WebUI {
         # Serve and execute main tweaks on GET as well (robust against refresh/direct nav)
         if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-AllTweaks'); Invoke-AllTweaks
-            [Console]::WriteLine('Route:/main-tweaks (GET) -> Set-PowerPlan'); Set-PowerPlan
             [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
@@ -1856,7 +1922,6 @@ function Start-WebUI {
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
-            [Console]::WriteLine('Route:/main-tweaks -> Set-PowerPlan'); Set-PowerPlan
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
@@ -1916,7 +1981,9 @@ function Start-WebUI {
                                 try {
                                     $runCount = Update-RunCount -UserId $global:DiscordUserId
                                 } catch { $runCount = $null }
-                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
+                                if ($global:SendDiscordPing) {
+                                    try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
+                                }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
@@ -1968,12 +2035,18 @@ function Start-WebUI {
 
             # Map selected ids to functions and execute
             $optToFn = @{
-                'disable-msi'     = 'Disable-MSIMode'
-                'disable-bgapps'  = 'Disable-BackgroundApps'
-                'disable-widgets' = 'Disable-Widgets'
-                'disable-gamebar' = 'Disable-Gamebar'
-                'disable-copilot' = 'Disable-Copilot'
-                'vivetool'        = 'Disable-ViVeFeatures'
+                'enable-msi'     = 'Disable-MSIMode'
+                'disable-bgapps' = 'Disable-BackgroundApps'
+                'disable-widgets'= 'Disable-Widgets'
+                'disable-gamebar'= 'Disable-Gamebar'
+                'disable-copilot'= 'Disable-Copilot'
+                'enable-hpet'    = 'Enable-HPET'
+                'disable-hpet'   = 'Disable-HPET'
+                'restore-timers' = 'Restore-DefaultTimers'
+                'pp-high'        = 'Set-PowerPlanHigh'
+                'pp-ultimate'    = 'Set-PowerPlanUltimate'
+                'pp-revert'      = 'Revert-PowerPlan'
+                'vivetool'       = 'Disable-ViVeFeatures'
             }
             foreach ($id in $optVals) {
                 $fn = $optToFn[$id]
