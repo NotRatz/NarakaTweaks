@@ -74,7 +74,6 @@ body{
       <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
       <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
     </div>
-    <p class="text-center text-gray-300">Runs: <span id="runCount">0</span></p>
   </main>
 
   <script>
@@ -92,10 +91,6 @@ function copyAndRun(cmd){
 }
 function startTweaks(){ copyAndRun(startCmd); }
 function revertTweaks(){ copyAndRun(revertCmd); }
-let count = localStorage.getItem('ratzRuns') || 0;
-count++;
-localStorage.setItem('ratzRuns', count);
-document.getElementById('runCount').innerText = count;
 </script>
 </body>
 </html>

@@ -46,7 +46,6 @@ if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
-if (-not $global:SendDiscordPing) { $global:SendDiscordPing = $false }
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
@@ -114,8 +113,8 @@ function Revert-OptionalTweaks {
 
 # --- Naraka: Bladepoint patching ---
 function Patch-NarakaBladepoint {
-    param([bool]$EnableJiggle, [bool]$PatchBoot)
-    $root = Find-NarakaDataPath
+    param([bool]$EnableJiggle, [bool]$PatchBoot, [string]$CustomPath)
+    $root = if ($CustomPath) { $CustomPath } else { Find-NarakaDataPath }
     if (-not $root) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
     if ($PatchBoot) {
         $srcBoot = Join-Path $PSScriptRoot 'boot.config'
@@ -863,37 +862,6 @@ function Start-WebUI {
         return $null
     }
 
-    # Helper: update and persist per-user run counts
-    function Update-RunCount {
-        param([string]$UserId)
-        $path = Join-Path $PSScriptRoot 'run_counts.json'
-        if (-not (Test-Path $path)) {
-            '{}' | Set-Content -Path $path -Encoding UTF8
-            try { attrib +h $path 2>$null | Out-Null } catch {}
-            try { icacls $path /inheritance:r /grant:r Administrators:F /grant:r SYSTEM:F 2>$null | Out-Null } catch {}
-        }
-        # Always materialize as a hashtable (PS 5.1 has no -AsHashtable)
-        $counts = @{}
-        try {
-            $json = Get-Content -Raw -Path $path
-            if ($json) {
-                $obj = $json | ConvertFrom-Json
-                if ($obj) {
-                    $obj.PSObject.Properties | ForEach-Object {
-                        $counts[$_.Name] = $_.Value
-                    }
-                }
-            }
-        } catch { $counts = @{} }
-
-        if ($UserId) {
-            if ($counts.ContainsKey($UserId)) { $counts[$UserId] = [int]$counts[$UserId] + 1 } else { $counts[$UserId] = 1 }
-            ($counts | ConvertTo-Json -Compress) | Set-Content -Path $path -Encoding UTF8
-            return $counts[$UserId]
-        }
-        return $null
-    }
-
     # Find NarakaBladepoint_Data path by checking Steam/Epic defaults and Steam library folders
     function Find-NarakaDataPath {
         $candidates = @(
@@ -930,7 +898,7 @@ function Start-WebUI {
             [string]$UserId,
             [string]$UserName,
             [string]$AvatarUrl,
-            [int]$RunCount
+            [switch]$Problem
         )
         $wh = & $getWebhookUrl
         if (-not $wh) { [Console]::WriteLine('Webhook: no webhook configured'); return }
@@ -942,19 +910,24 @@ function Start-WebUI {
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
+        $desc = if ($Problem) { 'Problem reported' } else { 'New Run!' }
+        $contentMsg = if ($Problem) {
+            if ($mention) { "Problem reported by $mention" } else { 'Problem reported' }
+        } else {
+            if ($mention) { "New run by $mention" } else { 'New run started.' }
+        }
         $embed = @{
             title       = 'Ratz Tweak Alert'
-            description = 'New Run!'
+            description = $desc
             color       = 16711680
             timestamp   = $timestamp
             thumbnail   = @{ url = $AvatarUrl }
             fields      = @(
                 @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
                 @{ name = 'UserID';    value = "$UserId";   inline = $true }
-                @{ name = 'Run Count'; value = "$RunCount"; inline = $true }
             )
         }
-        $payload = @{ content = $(if ($mention) { "New run by $mention" } else { 'New run started.' }); embeds = @($embed) }
+        $payload = @{ content = $contentMsg; embeds = @($embed) }
         if ($UserName) { $payload.username = $UserName }
         $json = $payload | ConvertTo-Json -Depth 10
 
@@ -1022,7 +995,7 @@ function Start-WebUI {
         param($step, $selectedMain, $selectedGPU, $selectedOpt)
         $errorBanner = ''
         if ($global:ErrorsDetected) {
-            $errorBanner = "<div class='bg-red-600 text-white text-center p-2'><a href='/log' class='underline'>View log</a></div>"
+            $errorBanner = "<div class='fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center p-2'><a href='/log' class='underline'>View log</a></div>"
         }
         switch ($step) {
             'start' {
@@ -1056,8 +1029,8 @@ $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
   $authSection
-  <label class='block mb-2 text-gray-300'><input type='checkbox' id='pingChk' class='mr-2'/>Send Discord identity ping</label>
-  <pre id='payloadPreview' class='text-xs text-gray-400 mb-4 hidden'></pre>
+  <div class='bg-gray-800 text-gray-200 p-2 mb-4 rounded'>Discord identity ping is sent automatically for problem management.</div>
+  <pre id='payloadPreview' class='text-xs text-gray-400 mb-4'></pre>
   <div class='flex gap-3 mb-6'>
     $loginLink
     <form action='/main-tweaks' method='post'>
@@ -1066,17 +1039,8 @@ $errorBanner
   </div>
 </div>
 <script>
-const chk=document.getElementById('pingChk');
 const prev=document.getElementById('payloadPreview');
-chk.addEventListener('change',e=>{
-  fetch('/set-ping?enable='+(e.target.checked?'1':'0'));
-  if(e.target.checked){
-    prev.classList.remove('hidden');
-    prev.textContent=JSON.stringify({username:'$global:DiscordUserName',id:'$global:DiscordUserId',timestamp:new Date().toISOString()},null,2);
-  }else{
-    prev.classList.add('hidden');
-  }
-});
+prev.textContent=JSON.stringify({username:'$global:DiscordUserName',id:'$global:DiscordUserId',timestamp:new Date().toISOString()},null,2);
 </script>
 </body></html>
 "@
@@ -1111,6 +1075,12 @@ $errorBanner
                 $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
   <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+  <label class='block mb-2 text-white'>NarakaBladepoint_Data Folder</label>
+  <div class='flex mb-2'>
+    <input type='text' id='narakaPathInput' name='naraka_path' class='text-black flex-1 p-1 rounded' placeholder='C:\\...\\NarakaBladepoint_Data'/>
+    <button type='button' class='bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded ml-2' onclick='browseNaraka()'>Browse</button>
+  </div>
+  <input type='file' id='narakaFolderSel' webkitdirectory directory multiple style='display:none'/>
   <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
   <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
 </div>
@@ -1136,6 +1106,25 @@ $errorBanner
   </div>
 </div>
 </form>
+<script>
+function browseNaraka(){
+  const sel=document.getElementById('narakaFolderSel');
+  sel.onchange=e=>{
+    const file=e.target.files[0];
+    if(file){
+      const full=file.path||file.webkitRelativePath;
+      if(full){
+        const idx=Math.max(full.lastIndexOf('/'),full.lastIndexOf('\\'));
+        const folder=idx>0?full.substring(0,idx):full;
+        document.getElementById('narakaPathInput').value=folder;
+      }else{
+        alert('Path unavailable; please enter it manually.');
+      }
+    }
+  };
+  sel.click();
+}
+</script>
 </body>
 </html>
 "@
@@ -1158,13 +1147,19 @@ $errorBanner
     <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
       <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
       <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
-      <form action='/finish' method='post'>
+      <form action='/finish' method='post' class='mb-2'>
         <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
       </form>
+      <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mb-2' type='button' onclick='reportProblem()'>Have a problem?</button>
       <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
     </div>
     <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
   </div>
+<script>
+function reportProblem(){
+  fetch('/problem',{method:'POST'}).then(()=>alert('Problem reported.'));
+}
+</script>
 </body>
 </html>
 "@
@@ -1224,8 +1219,8 @@ $errorBanner
             continue
         }
 
-        if ($path -eq '/set-ping') {
-            $global:SendDiscordPing = ($req.QueryString['enable'] -eq '1')
+        if ($path -eq '/problem' -and $method -eq 'POST') {
+            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -Problem } catch { [Console]::WriteLine("Webhook: problem report failed: $($_.Exception.Message)") }
             & $send $ctx 204 'text/plain' ''
             continue
         }
@@ -1322,13 +1317,7 @@ $errorBanner
                                 [Console]::WriteLine("OAuth: avatar url = $avatarUrl")
                                 # Mark authed before webhook so UI shows avatar/name even if webhook fails
                                 $authed = $true
-                                # Update run count and send webhook notification (non-blocking for auth)
-                                try {
-                                    $runCount = Update-RunCount -UserId $global:DiscordUserId
-                                } catch { $runCount = $null }
-                                if ($global:SendDiscordPing) {
-                                    try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl -RunCount $runCount; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
-                                }
+                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
@@ -1356,7 +1345,7 @@ $errorBanner
                 if ($o) { $optVals = @($o) }
             }
             # Fallback: parse raw body if needed
-            $parsedJiggle = $null; $parsedBoot = $null
+            $parsedJiggle = $null; $parsedBoot = $null; $parsedPath = $null
             if ((-not $optVals) -and $script:LastRawForm) {
                 $raw = [string]$script:LastRawForm
                 $pairs = $raw -split '&'
@@ -1372,6 +1361,7 @@ $errorBanner
                         if ($k -eq 'opt' -or $k -eq 'opt[]') { $optVals += $v }
                         if ($k -eq 'naraka_jiggle') { $parsedJiggle = $v }
                         if ($k -eq 'naraka_boot') { $parsedBoot = $v }
+                        if ($k -eq 'naraka_path') { $parsedPath = $v }
                     }
                 }
             }
@@ -1398,25 +1388,7 @@ $errorBanner
                 if ($fn) {
                     try {
                         [Console]::WriteLine("Route:/about -> $fn")
-                        if ($id -eq 'vivetool') {
-                            if (Get-Command Disable-ViVeFeatures -ErrorAction SilentlyContinue) {
-                                & Disable-ViVeFeatures
-                            } elseif (Get-Command global:Disable-ViVeFeatures -ErrorAction SilentlyContinue) {
-                                & global:Disable-ViVeFeatures
-                            } else {
-                                try {
-                                    $viveToolPath = Join-Path $PSScriptRoot 'UTILITY' 'ViVeTool.exe'
-                                    $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
-                                    $cmdExe = Join-Path $env:SystemRoot 'System32' 'cmd.exe'
-                                    foreach ($fid in $featureIds) {
-                                        $args = "/c `"$viveToolPath`" /disable /id:$fid"
-                                        Start-Process -FilePath $cmdExe -ArgumentList $args -WindowStyle Hidden -Wait
-                                    }
-                                } catch {
-                                    [Console]::WriteLine("Route:/about -> ViVeTool direct FAILED: $($_.Exception.Message)")
-                                }
-                            }
-                        } elseif (Get-Command $fn -ErrorAction SilentlyContinue) {
+                        if (Get-Command $fn -ErrorAction SilentlyContinue) {
                             & $fn
                         } elseif (Get-Command ("global:" + $fn) -ErrorAction SilentlyContinue) {
                             & ("global:" + $fn)
@@ -1432,18 +1404,20 @@ $errorBanner
             }
 
             # Handle Naraka In-Game Tweaks
-            $enableJiggle = $false; $enableBoot = $false
+            $enableJiggle = $false; $enableBoot = $false; $narakaPath = $null
             if ($form) {
                 $enableJiggle = $form.Get('naraka_jiggle') -eq '1'
                 $enableBoot   = $form.Get('naraka_boot') -eq '1'
+                $narakaPath   = $form.Get('naraka_path')
             }
             if (-not $form -and $script:LastRawForm) {
                 if ($parsedJiggle) { $enableJiggle = ($parsedJiggle -eq '1' -or $parsedJiggle -eq 'on' -or $parsedJiggle -eq 'true') }
                 if ($parsedBoot)   { $enableBoot   = ($parsedBoot -eq '1' -or $parsedBoot -eq 'on' -or $parsedBoot -eq 'true') }
+                if ($parsedPath)   { $narakaPath = $parsedPath }
             }
             if ($enableJiggle -or $enableBoot) {
                 try {
-                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle -PatchBoot:$enableBoot
+                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle -PatchBoot:$enableBoot -CustomPath:$narakaPath
                 } catch {
                     Write-Host "Naraka In-Game Tweaks failed: $($_.Exception.Message)"
                 }
