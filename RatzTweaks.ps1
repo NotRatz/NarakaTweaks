@@ -1503,6 +1503,17 @@ $errorBanner
         # Final finish route: show completion page, open Ko‑fi, and exit
         if ($path -eq '/finish' -and ($method -eq 'POST' -or $method -eq 'GET')) {
             try { Start-Process 'https://ko-fi.com/notratz' } catch {}
+            # Show Windows notification to restart PC
+            try {
+                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+                $textNodes = $template.GetElementsByTagName('text')
+                $textNodes.Item(0).AppendChild($template.CreateTextNode('Restart Recommended')) | Out-Null
+                $textNodes.Item(1).AppendChild($template.CreateTextNode('Please restart your PC to apply all tweaks.')) | Out-Null
+                $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+                $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('NarakaTweaks')
+                $notifier.Show($toast)
+            } catch {}
             $parentPid = $PID
             try { $null = Start-Job -ArgumentList $parentPid -ScriptBlock { param($targetPid) Start-Sleep -Seconds 3; try { Stop-Process -Id $targetPid -Force } catch {} } } catch {}
             $html = & $getStatusHtml 'finish' $null $null $null
