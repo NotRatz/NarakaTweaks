@@ -208,10 +208,10 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
             if (-not (Test-Path $viveToolPath)) { Add-Log 'ViVeTool.exe not found.'; return }
             $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
             foreach ($id in $featureIds) {
-                $args = @('/disable', "/id:$id")
-                Add-Log "Running: $viveToolPath $($args -join ' ')"
+                $cmd = '"' + $viveToolPath + '" /disable /id:' + $id
+                Add-Log "Running: cmd.exe /c $cmd"
                 try {
-                    $proc = Start-Process -FilePath $viveToolPath -ArgumentList $args -Wait -NoNewWindow -PassThru
+                    $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList "/c $cmd" -Wait -NoNewWindow -PassThru
                     if ($proc.ExitCode -ne 0) {
                         Add-Log "ViVeTool exited with code $($proc.ExitCode) for id $id"
                     }
@@ -1511,9 +1511,9 @@ $errorBanner
     }
 }
 
-Add-Log "====================================="
-Add-Log "Script Started! Previous Logs Above!"
-Add-Log "====================================="
+Add-Log "================="
+Add-Log "Script Started!"
+Add-Log "================="
 $StartInWebUI = $true
 # --- Entry Point ---
 # Diagnostic: show entry point state before launching UI
