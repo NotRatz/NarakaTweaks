@@ -646,7 +646,7 @@ function Invoke-NVPI {
     # Start NVPI work in a background job so the UI thread is never blocked
     try {
         # Unblock NVIDIA DRS cache to avoid profile import issues
-        $drsPath = Join-Path $env:ProgramData 'NVIDIA Corporation\Drs'
+    $drsPath = Join-Path $env:ProgramData 'NVIDIA Corporation\Drs'
         if (Test-Path $drsPath) {
             try {
                 Get-ChildItem -Path $drsPath -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
@@ -859,38 +859,47 @@ function Start-WebUI {
         return $null
     }
 
-    # Find NarakaBladepoint_Data path by checking Steam/Epic defaults and Steam library folders
-    function Find-NarakaDataPath {
-        $candidates = @(
-            "$env:ProgramFiles(x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-            "$env:ProgramFiles\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-            "$env:ProgramFiles(x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-            "$env:ProgramFiles\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data",
-            'D:\\Program Files (x86)\\Steam\\steamapps\\common\\NARAKA BLADEPOINT\\NarakaBladepoint_Data',
-            'C:\\Program Files (x86)\\Epic Games\\NARAKA BLADEPOINT\\NarakaBladepoint_Data',
-            'D:\\Program Files (x86)\\Epic Games\\NARAKA BLADEPOINT\\NarakaBladepoint_Data'
-        )
-        foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { return $p } }
-        # Steam custom libraries
-        try {
-            $steamReg = Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue
-            $steamPath = $steamReg.InstallPath
-            if ($steamPath -and (Test-Path $steamPath)) {
-                $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
-                if (Test-Path $vdf) {
-                    $lines = Get-Content -Path $vdf -ErrorAction SilentlyContinue
-                    foreach ($ln in $lines) {
-                        if ($ln -match '"path"\s*"([^"]+)"') {
-                            $lib = $matches[1]
-                            $cand = Join-Path $lib 'steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data'
-                            if (Test-Path $cand) { return $cand }
-                        }
+
+
+# --- Cache Naraka path at startup, allow manual override ---
+$global:DetectedNarakaPath = $env:NARAKA_DATA_PATH
+function Find-NarakaDataPath {
+    if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { return $global:DetectedNarakaPath }
+    $candidates = @(
+        'C:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'D:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'C:\Program Files (x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'D:\Program Files (x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'C:\Program Files\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'D:\Program Files\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'C:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
+        'D:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data'
+    )
+    foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { $global:DetectedNarakaPath = $p; return $p } }
+    # Steam custom libraries
+    try {
+        $steamReg = Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue
+        $steamPath = $steamReg.InstallPath
+        if ($steamPath -and (Test-Path $steamPath)) {
+            $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
+            if (Test-Path $vdf) {
+                $lines = Get-Content -Path $vdf -ErrorAction SilentlyContinue
+                foreach ($ln in $lines) {
+                    if ($ln -match '"path"\s*"([^"]+)"') {
+                        $lib = $matches[1]
+                        $cand = Join-Path $lib 'steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data'
+                        if (Test-Path $cand) { $global:DetectedNarakaPath = $cand; return $cand }
                     }
                 }
             }
-        } catch {}
-        return $null
-    }
+        }
+    } catch {}
+    $global:DetectedNarakaPath = $null
+    return $null
+}
+
+# Call detection at startup
+$null = Find-NarakaDataPath
 
 # Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
@@ -902,9 +911,15 @@ function Start-WebUI {
             [string]$MessagePrefix
         )
         $wh = & $getWebhookUrl
-        if (-not $wh) { [Console]::WriteLine('Webhook: no webhook configured'); return }
+        [Console]::WriteLine("Webhook: getWebhookUrl returned: '$wh'")
+        if ([string]::IsNullOrWhiteSpace($wh)) {
+            [Console]::WriteLine('Webhook: no webhook configured or blank value returned'); return
+        }
+        # Always use the URL from getWebhookUrl directly
         try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
-        if ($wh -notmatch '^https?://') { [Console]::WriteLine("Webhook: invalid URL (no scheme): '$wh'"); return }
+        if ($wh -notmatch '^https?://') {
+            [Console]::WriteLine("Webhook: invalid URL (no scheme): '$wh'"); return
+        }
         if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
         # Masked logging
         try { $uriObj = [Uri]$wh; $tail = ($uriObj.AbsolutePath -split '/')[-1]; [Console]::WriteLine("Webhook: host=$($uriObj.Host) id=...$($tail.Substring([Math]::Max(0,$tail.Length-6)))") } catch {}
@@ -929,38 +944,20 @@ function Start-WebUI {
         } else {
             $content = if ($mention) { "New run by $mention" } else { 'New run started.' }
         }
-        $payload = @{ content = $content; embeds = @($embed) }
-        if ($UserName) { $payload.username = $UserName }
+        $payload = @{ content = "$content"; embeds = @($embed) }
         $json = $payload | ConvertTo-Json -Depth 10
 
         try {
-            $null = Invoke-WebRequest -Method Post -Uri $wh -ContentType 'application/json' -Body $json -UseBasicParsing -ErrorAction Stop
-            [Console]::WriteLine('Webhook: sent (iwr)')
+            $response = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
+            [Console]::WriteLine('Webhook: sent (Invoke-RestMethod)')
+            [Console]::WriteLine("Webhook response: $($response | Out-String)")
             return
         } catch {
-            [Console]::WriteLine("Webhook: iwr failed: $($_.Exception.Message)")
-        }
-
-        # Fallback: curl.exe
-        try {
-            $respText = & curl.exe -s -S -H "Content-Type: application/json" -d "$json" $wh 2>&1
-            $exit = $LASTEXITCODE
-            if ($exit -eq 0) { [Console]::WriteLine('Webhook: sent (curl)'); return }
-            [Console]::WriteLine("Webhook: curl exit=$exit body='${respText}'")
-        } catch {
-            [Console]::WriteLine("Webhook: curl threw: $($_.Exception.Message)")
-        }
-
-                # Fallback: HttpClient (no installation required)
-        try {
-            $client = New-Object System.Net.Http.HttpClient
-            $content = New-Object System.Net.Http.StringContent($json,[System.Text.Encoding]::UTF8,'application/json')
-            $response = $client.PostAsync($wh,$content).Result
-            if ($response.IsSuccessStatusCode) { [Console]::WriteLine('Webhook: sent (httpclient)'); return }
-            $body = $response.Content.ReadAsStringAsync().Result
-            [Console]::WriteLine("Webhook: httpclient status=$([int]$response.StatusCode) body='${body}'")
-        } catch {
-            [Console]::WriteLine("Webhook: httpclient failed: $($_.Exception.Message)")
+            [Console]::WriteLine("Webhook: Invoke-RestMethod failed: $($_.Exception.Message)")
+            if ($_.Exception.Response -and $_.Exception.Response.Content) {
+                $errContent = $_.Exception.Response.Content | Out-String
+                [Console]::WriteLine("Webhook error response: $errContent")
+            }
         }
         [Console]::WriteLine('Webhook: all methods failed, no notification sent.')
     }
@@ -1031,9 +1028,12 @@ $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
   $authSection
-    <div class='flex gap-3 mb-6'>
-        $loginLink
-    </div>
+        <div class='flex gap-3 mb-6'>
+            $loginLink
+            <form action='/main-tweaks' method='post'>
+                <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
+            </form>
+        </div>
 </div>
 <script>
 <div class='flex gap-3 mb-6'>
@@ -1066,34 +1066,44 @@ $errorBanner
 "@
             }
             'optional-tweaks' {
-                $boxes = ($optionalTweaks | ForEach-Object {
-                    $id = $_.id; $label = $_.label
-                    "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='${id}' class='mr-1'>${label}</label>"
-                }) -join ""
-            $detectedNaraka = Find-NarakaDataPath
-                if ($detectedNaraka) {
-                    $narakaBox = @"
+                # Group tweaks and add section titles/spacers
+                $systemTweaks = @('Disable Background Apps','Disable Widgets','Disable Game Bar','Disable Copilot','Enable HPET','Disable HPET','Restore Default Timers')
+                $powerTweaks = @('Set High Performance Power Plan','Set Ultimate Performance Power Plan','Revert to Balanced Power Plan')
+                $viveTweaks = @('Disable ViVeTool Features')
+                $msiTweaks = @('Enable MSI Mode for all PCI devices')
+
+                $boxes = ""
+                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>System Tweaks</h3>"
+                $boxes += ($optionalTweaks | Where-Object { $systemTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
+                $boxes += "</div>"
+                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>Power Tweaks</h3>"
+                $boxes += ($optionalTweaks | Where-Object { $powerTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
+                $boxes += "</div>"
+                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>ViVeTool Tweaks</h3>"
+                $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
+                $boxes += "</div>"
+                $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
+                $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
+                $boxes += "</div>"
+                        $detectedNaraka = Find-NarakaDataPath
+                        if ($detectedNaraka) {
+                                $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-  <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-  <p class='text-gray-300 text-sm mb-2'>Detected path:</p>
-  <p class='text-gray-400 text-xs break-all mb-4'>$detectedNaraka</p>
-  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
-  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
+    <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+    <p class='text-gray-300 text-sm mb-2'>Detected path:</p>
+    <p class='text-gray-400 text-xs break-all mb-4'>$detectedNaraka</p>
+    <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
+    <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
 </div>
 "@
-                } else {
-                    $narakaBox = @"
+                        } else {
+                                $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-  <label class='block mb-2 text-white'>NarakaBladepoint_Data Folder</label>
-  <input type='text' name='naraka_path' class='text-black w-full p-1 rounded mb-2' placeholder='C:\\...\\NarakaBladepoint_Data'/>
-  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
-  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
+    <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+    <p class='text-gray-300 text-sm mb-2'>NarakaBladepoint_Data folder not found. Please install the game or select manually in a future version.</p>
 </div>
 "@
-                }
+                        }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1169,9 +1179,8 @@ $errorBanner
         <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
       </form>
       <form action='/need-help' method='post' class='mt-4'>
-        <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>Have a problem?</button>
-      </form>
-      <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mb-2' type='button' onclick='reportProblem()'>Have a problem?</button>
+                <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>Have a problem?</button>
+            </form>
       <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
     </div>
     <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
