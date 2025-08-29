@@ -276,14 +276,19 @@ function Invoke-AllTweaks {
         }
     }
 
-    # Set timer resolution using embedded C# service (no external EXE needed)
-    try {
-        Write-Host "Installing: Set Timer Resolution Service ..."
-        $csPath = "$env:SystemDrive\Windows\SetTimerResolutionService.cs"
-        $exePath = "$env:SystemDrive\Windows\SetTimerResolutionService.exe"
-        $cscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-        $serviceName = "Set Timer Resolution Service"
-        $MultilineComment = @"
+# Set timer resolution using embedded C# service (no external EXE needed)
+try {
+    Write-Host "Installing: Set Timer Resolution Service ..."
+    $csPath = "$env:SystemDrive\Windows\SetTimerResolutionService.cs"
+    $exePath = "$env:SystemDrive\Windows\SetTimerResolutionService.exe"
+    $cscPath = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    if (-not (Test-Path $cscPath)) { $cscPath = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+
+    # IMPORTANT: ServiceBase.ServiceName in code == actual service name you create
+    $serviceName   = "STR"
+    $displayName   = "Set Timer Resolution Service"
+
+    $MultilineComment = @"
 using System;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
@@ -353,7 +358,14 @@ namespace WindowsService
             {
                 this.startWatch.Stop();
             }
-
+            // Restore default timer resolution on service stop
+            try {
+                uint actual = 0;
+                NtSetTimerResolution(this.DefaultResolution, true, out actual);
+                if(null != this.EventLog)
+                    try { this.EventLog.WriteEntry(String.Format("Restored default; Actual={0}", actual)); }
+                    catch {}
+            } catch {}
             base.OnStop();
         }
         ManagementEventWatcher startWatch;
@@ -437,13 +449,14 @@ namespace WindowsService
         long processCounter = 0;
         void SetMaximumResolution()
         {
+            // Force 5040 (0.504 ms) regardless of reported Maximum; kernel clamps if unsupported.
             long counter = Interlocked.Increment(ref this.processCounter);
             if(counter <= 1)
             {
                 uint actual = 0;
-                NtSetTimerResolution(this.MaximumResolution, true, out actual);
+                NtSetTimerResolution(5040, true, out actual);
                 if(null != this.EventLog)
-                    try { this.EventLog.WriteEntry(String.Format("Actual resolution = {0}", actual)); }
+                    try { this.EventLog.WriteEntry(String.Format("Requested=5040; Actual={0}", actual)); }
                     catch {}
             }
         }
@@ -481,26 +494,39 @@ namespace WindowsService
 }
 "@
 
-        Set-Content -Path $csPath -Value $MultilineComment -Force
-        # Compile and create service
-        if (Test-Path $cscPath) {
-            Start-Process -Wait $cscPath -ArgumentList "-out:$exePath $csPath" -WindowStyle Hidden
-            Remove-Item $csPath -ErrorAction SilentlyContinue | Out-Null
-            # Install and start service
-            New-Service -Name $serviceName -BinaryPathName $exePath -ErrorAction SilentlyContinue | Out-Null
-            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction SilentlyContinue | Out-Null
-            Set-Service -Name $serviceName -Status Running -ErrorAction SilentlyContinue | Out-Null
-        } else {
-            $errMsg = "ERROR: csc.exe not found at $cscPath. Timer resolution service not installed."
-            if ($script:txtProgress) { $script:txtProgress.Lines += $errMsg }
-            if ($global:RatzLog) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $errMsg }
+    Set-Content -Path $csPath -Value $MultilineComment -Force
+
+    if (Test-Path $cscPath) {
+        Start-Process -Wait $cscPath -ArgumentList "-out:$exePath $csPath" -WindowStyle Hidden
+        Remove-Item $csPath -ErrorAction SilentlyContinue | Out-Null
+
+        # Remove any prior service with either name
+        foreach ($old in @("STR","Set Timer Resolution Service")) {
+            $svc = Get-Service -Name $old -ErrorAction SilentlyContinue
+            if ($svc) {
+                try {
+                    Set-Service -Name $old -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
+                    Stop-Service -Name $old -Force -ErrorAction SilentlyContinue | Out-Null
+                    sc.exe delete $old | Out-Null
+                } catch {}
+            }
         }
-        Start-Sleep -Seconds 1
-    } catch {
-        $errMsg = "ERROR installing Set Timer Resolution Service: $($_.Exception.Message)"
+
+        # Install and start service (name must be STR to match ServiceBase.ServiceName)
+        New-Service -Name $serviceName -DisplayName $displayName -BinaryPathName $exePath -StartupType Automatic -ErrorAction SilentlyContinue | Out-Null
+        Start-Service -Name $serviceName -ErrorAction SilentlyContinue | Out-Null
+    } else {
+        $errMsg = "ERROR: csc.exe not found at $cscPath. Timer resolution service not installed."
         if ($script:txtProgress) { $script:txtProgress.Lines += $errMsg }
         if ($global:RatzLog) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $errMsg }
     }
+    Start-Sleep -Seconds 1
+} catch {
+    $errMsg = "ERROR installing Set Timer Resolution Service: $($_.Exception.Message)"
+    if ($script:txtProgress) { $script:txtProgress.Lines += $errMsg }
+    if ($global:RatzLog) { $global:RatzLog += (Get-Date -Format 'HH:mm:ss') + '  ' + $errMsg }
+}
+
 
     # GPU-specific tweaks (NvidiawA/AMD) will be auto-detected and applied below
     $gpuInfo = Get-WmiObject Win32_VideoController | Select-Object -ExpandProperty Name | Out-String
