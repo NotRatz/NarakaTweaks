@@ -1106,12 +1106,13 @@ $errorBanner
             }
             'optional-tweaks' {
                 # Group tweaks and add section titles/spacers
-                $systemTweaks = @('Disable Background Apps','Disable Widgets','Disable Game Bar','Disable Copilot','Enable HPET','Disable HPET','Restore Default Timers')
-                $powerTweaks = @('Set High Performance Power Plan','Set Ultimate Performance Power Plan','Revert to Balanced Power Plan')
+                $systemTweaks = @('Disable Background Apps','Disable Widgets','Disable Game Bar','Disable Copilot','Disable HPET')
+                $powerTweaks = @('Set High Performance Power Plan','Set Ultimate Performance Power Plan')
                 $viveTweaks = @('Disable ViVeTool Features')
                 $msiTweaks = @('Enable MSI Mode for all PCI devices')
-
                 $boxes = ""
+                $boxes += "<div class='flex flex-row gap-8'>"
+                $boxes += "<div class='flex-1'>"
                 $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>System Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $systemTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
                 $boxes += "</div>"
@@ -1124,6 +1125,22 @@ $errorBanner
                 $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
                 $boxes += "</div>"
+                $boxes += "</div>"
+                $boxes += "</div>"
+
+                # Render Revert Tweaks as a separate main container outside the Optional Tweaks container
+                $revertBox = "<div class='flex flex-row gap-8 mt-8'>"
+                $revertBox += "<div class='flex-1 mb-6 pb-2 border-b border-gray-700 rounded-xl shadow-xl bg-black bg-opacity-70'><h2 class='font-bold text-2xl mb-4 text-yellow-400'>Revert Tweaks</h2>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='pp-revert' class='mr-1'>Revert to Balanced Power Plan</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='msi-revert' class='mr-1'>Revert MSI Mode</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-1'>Revert Background Apps</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='widgets-revert' class='mr-1'>Revert Widgets</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-1'>Revert Game Bar</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='copilot-revert' class='mr-1'>Revert Copilot</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='restore-timers' class='mr-1'>Restore Default Timers</label>"
+                $revertBox += "<label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='enable-hpet' class='mr-1'>Enable HPET</label>"
+                $revertBox += "</div>"
+                $revertBox += "</div>"
                         $detectedNaraka = Find-NarakaDataPath
                         if ($detectedNaraka) {
                                 $narakaBox = @"
@@ -1155,13 +1172,24 @@ $errorBanner
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
 <form action='/about' method='post'>
-<div class='flex flex-row'>
-  $narakaBox
-  <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-    <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
-    $boxes
-    <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
-  </div>
+<div class='flex flex-row gap-8'>
+    $narakaBox
+    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
+        <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
+        $boxes
+        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+    </div>
+    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
+        <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Revert Tweaks</h2>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='pp-revert' class='mr-1'>Revert to Balanced Power Plan</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='msi-revert' class='mr-1'>Revert MSI Mode</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-1'>Revert Background Apps</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='widgets-revert' class='mr-1'>Revert Widgets</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-1'>Revert Game Bar</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='copilot-revert' class='mr-1'>Revert Copilot</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='restore-timers' class='mr-1'>Restore Default Timers</label>
+        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='enable-hpet' class='mr-1'>Enable HPET</label>
+    </div>
 </div>
 </form>
 <script>
