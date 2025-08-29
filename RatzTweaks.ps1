@@ -44,6 +44,11 @@ $WarningPreference = 'SilentlyContinue'
 # Ensure log path and PSCommandPath are defined even when run via iwr | iex
 if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
+# If log file exists from a previous run, delete and recreate it
+if (Test-Path $logPath) {
+    try { Remove-Item $logPath -Force } catch {}
+    try { New-Item -Path $logPath -ItemType File -Force | Out-Null } catch {}
+}
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 
@@ -113,38 +118,38 @@ function Revert-OptionalTweaks {
 
 # --- Naraka: Bladepoint patching ---
 function Patch-NarakaBladepoint {
-    param([bool]$EnableJiggle, [bool]$PatchBoot, [string]$CustomPath)
+    param(
+        [bool]$EnableJiggle,
+        [bool]$PatchBoot,
+        [string]$CustomPath
+    )
+    Add-Log "Patch-NarakaBladepoint called: EnableJiggle=$EnableJiggle PatchBoot=$PatchBoot CustomPath=$CustomPath"
     $root = if ($CustomPath) { $CustomPath } else { Find-NarakaDataPath }
-    if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' } if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' }
-    if (-not $root) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
+    if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' }
+    if (-not $root -or -not (Test-Path $root)) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
+    $dstBoot = Join-Path $root 'boot.config'
+    $dstJiggle = Join-Path $root 'QualitySettingsData.txt'
     if ($PatchBoot) {
         $srcBoot = Join-Path $PSScriptRoot 'boot.config'
-        $dstBoot = Join-Path $root 'boot.config'
         if (Test-Path $srcBoot) {
             try { Copy-Item -Path $srcBoot -Destination $dstBoot -Force; Add-Log "Patched boot.config at $dstBoot" } catch { Add-Log "Naraka boot.config copy failed: $($_.Exception.Message)" }
         }
     }
+
     if ($EnableJiggle) {
-        $qFile = Join-Path $root 'QualitySettingsData.txt'
-        if (Test-Path $qFile) {
-            try {
-                $txt = Get-Content -Raw -Path $qFile
-                # Replace the ending 'characterAdditionalPhysics1':true,... with 'characterAdditionalPhysics1':true,"xboxQualityOption":0}}
-                $pattern = '("characterAdditionalPhysics1":true)([^}]*)}}$'
-                $replacement = '"characterAdditionalPhysics1":true,"xboxQualityOption":0}}'
-                $txt2 = [regex]::Replace($txt, $pattern, $replacement)
-                if ($txt2 -ne $txt) {
-                    Set-Content -Path $qFile -Value $txt2 -Encoding UTF8
-                    Add-Log "Enabled jiggle physics in $qFile"
-                } else {
-                    Add-Log 'No jiggle flag found to toggle in QualitySettingsData.txt'
-                }
-            } catch {
-                Add-Log "Jiggle edit failed: $($_.Exception.Message)"
-            }
+        $content = Get-Content -Raw -Path $dstJiggle
+        if ($content -match '"characterAdditionalPhysics1"\s*:\s*false') {
+            $patched = $content -replace '"characterAdditionalPhysics1"\s*:\s*false', '"characterAdditionalPhysics1": true'
+            Set-Content -Path $dstJiggle -Value $patched
+            Add-Log "Patched: characterAdditionalPhysics1 set to true in $dstJiggle."
+        } elseif ($content -match '"characterAdditionalPhysics1"\s*:\s*true') {
+            Add-Log "Already enabled: characterAdditionalPhysics1 is true in $dstJiggle."
         } else {
-            Add-Log "QualitySettingsData.txt not found for jiggle physics patch."
+            Add-Log "ERROR: No jiggle flag found to toggle in $dstJiggle"
         }
+    } catch {
+        Add-Log "Jiggle edit failed: $($_.Exception.Message)"
+        return
     }
 }
 
@@ -1165,36 +1170,44 @@ async function browseNaraka(){
 "@
             }
             'about' {
-                @"
+                                # Fetch log contents for display
+                                $logContent = ''
+                                try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
+                                $logContent = ($logContent -replace '<', '&lt;') -replace '>', '&gt;'
+                                @"
 <!doctype html>
 <html lang='en'>
 <head>
-  <meta charset='utf-8'/>
-  <title>About</title>
-  <script src='https://cdn.tailwindcss.com'></script>
-  <style>
-    body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
-  </style>
+    <meta charset='utf-8'/>
+    <title>About</title>
+    <script src='https://cdn.tailwindcss.com'></script>
+    <style>
+        body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
+    </style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
-  <div class='flex items-start gap-6'>
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-      <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
-      <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
-      <form action='/finish' method='post' class='mb-2'>
-        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
-      </form>
-      <form action='/need-help' method='post' class='mt-4'>
+    <div class='flex items-start gap-6'>
+        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
+            <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
+            <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
+            <form action='/finish' method='post' class='mb-2'>
+                <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
+            </form>
+            <form action='/need-help' method='post' class='mt-4'>
                 <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>Have a problem?</button>
             </form>
-      <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
+            <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
+        </div>
+        <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
+        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white overflow-y-auto max-h-[32rem]'>
+            <h2 class='text-xl font-bold text-yellow-300 mb-4'>Log Output</h2>
+            <pre class='text-xs text-gray-200 whitespace-pre-wrap'>$logContent</pre>
+        </div>
     </div>
-    <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
-  </div>
 <script>
 function reportProblem(){
-  fetch('/problem',{method:'POST'}).then(()=>alert('Problem reported.'));
+    fetch('/problem',{method:'POST'}).then(()=>alert('Problem reported.'));
 }
 </script>
 </body>
