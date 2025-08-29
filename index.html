@@ -71,6 +71,9 @@ body{
     </section>
 
     <div class="my-8 flex items-center justify-center gap-3">
+      <div class="w-full text-center mb-4">
+        <span class="text-sm text-red-400 font-semibold">Incase of a windows firewall error, open Powershell.exe as admin and copy <code class='bg-gray-800 text-yellow-300 px-2 py-1 rounded'>irm https://raw.githubusercontent.com/NotRatz/NarakaTweaks/refs/heads/main/RatzTweaks.ps1 | iex</code></span>
+      </div>
       <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
       <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
     </div>
