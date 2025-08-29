@@ -1,23 +1,29 @@
-    If (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator"))
-    {Start-Process PowerShell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $PSCommandPath) -Verb RunAs
-    Exit}
-    $Host.UI.RawUI.WindowTitle = $myInvocation.MyCommand.Definition + " (Administrator)"
-    $Host.UI.RawUI.BackgroundColor = "Black"
-	$Host.PrivateData.ProgressBackgroundColor = "Black"
-    $Host.PrivateData.ProgressForegroundColor = "White"
-    Clear-Host
+# Requires -RunAsAdministrator
 
-    Write-Host "1. Timer Resolution: On (Recommended)"
-    Write-Host "2. Timer Resolution: Default"
-    while ($true) {
+# --- Elevate if needed ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process PowerShell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $PSCommandPath) -Verb RunAs
+    exit
+}
+
+$Host.UI.RawUI.WindowTitle = $myInvocation.MyCommand.Definition + " (Administrator)"
+$Host.UI.RawUI.BackgroundColor = "Black"
+$Host.PrivateData.ProgressBackgroundColor = "Black"
+$Host.PrivateData.ProgressForegroundColor = "White"
+Clear-Host
+
+Write-Host "1. Timer Resolution: On (5040, 0.504 ms)"
+Write-Host "2. Timer Resolution: Default / Remove service"
+
+while ($true) {
     $choice = Read-Host " "
     if ($choice -match '^[1-2]$') {
-    switch ($choice) {
-    1 {
+        switch ($choice) {
+            1 {
+                Clear-Host
+                Write-Host "Installing: Set Timer Resolution Service (forcing 5040) . . ."
 
-Clear-Host
-Write-Host "Installing: Set Timer Resolution Service . . ."
-# create .cs file
 $MultilineComment = @"
 using System;
 using System.Runtime.InteropServices;
@@ -30,15 +36,17 @@ using System.IO;
 using System.Management;
 using System.Threading;
 using System.Diagnostics;
+
 [assembly: AssemblyVersion("2.1")]
 [assembly: AssemblyProduct("Set Timer Resolution service")]
+
 namespace WindowsService
 {
     class WindowsService : ServiceBase
     {
         public WindowsService()
         {
-            this.ServiceName = "STR";
+            this.ServiceName = "STR";                  // Keep service name consistent
             this.EventLog.Log = "Application";
             this.CanStop = true;
             this.CanHandlePowerEvent = false;
@@ -46,10 +54,12 @@ namespace WindowsService
             this.CanPauseAndContinue = false;
             this.CanShutdown = false;
         }
+
         static void Main()
         {
             ServiceBase.Run(new WindowsService());
         }
+
         protected override void OnStart(string[] args)
         {
             base.OnStart(args);
@@ -58,15 +68,17 @@ namespace WindowsService
             if(null != this.EventLog)
                 try { this.EventLog.WriteEntry(String.Format("Minimum={0}; Maximum={1}; Default={2}; Processes='{3}'", this.MininumResolution, this.MaximumResolution, this.DefaultResolution, null != this.ProcessesNames ? String.Join("','", this.ProcessesNames) : "")); }
                 catch {}
+
             if(null == this.ProcessesNames)
             {
-                SetMaximumResolution();
+                SetMaximumResolution();   // Always-on mode if no .ini
                 return;
             }
             if(0 == this.ProcessesNames.Count)
             {
                 return;
             }
+
             this.ProcessStartDelegate = new OnProcessStart(this.ProcessStarted);
             try
             {
@@ -82,16 +94,21 @@ namespace WindowsService
                     catch {}
             }
         }
+
         protected override void OnStop()
         {
             if(null != this.startWatch)
-            {
                 this.startWatch.Stop();
-            }
-
             base.OnStop();
+            // Restore default on service stop
+            try {
+                uint actual = 0;
+                NtSetTimerResolution(this.DefaultResolution, true, out actual);
+            } catch {}
         }
+
         ManagementEventWatcher startWatch;
+
         void startWatch_EventArrived(object sender, EventArrivedEventArgs e) 
         {
             try
@@ -105,9 +122,9 @@ namespace WindowsService
                 if(null != this.EventLog)
                     try { this.EventLog.WriteEntry(ee.ToString(), EventLogEntryType.Warning); }
                     catch {}
-
             }
         }
+
         [DllImport("kernel32.dll", SetLastError=true)]
         static extern Int32 WaitForSingleObject(IntPtr Handle, Int32 Milliseconds);
         [DllImport("kernel32.dll", SetLastError=true)]
@@ -115,8 +132,10 @@ namespace WindowsService
         [DllImport("kernel32.dll", SetLastError=true)]
         static extern Int32 CloseHandle(IntPtr Handle);
         const UInt32 SYNCHRONIZE = 0x00100000;
+
         delegate void OnProcessStart(UInt32 processId);
         OnProcessStart ProcessStartDelegate = null;
+
         void ProcessStarted(UInt32 processId)
         {
             SetMaximumResolution();
@@ -140,7 +159,9 @@ namespace WindowsService
             }
             SetDefaultResolution();
         }
+
         List<String> ProcessesNames = null;
+
         void ReadProcessList()
         {
             String iniFilePath = Assembly.GetExecutingAssembly().Location + ".ini";
@@ -162,85 +183,127 @@ namespace WindowsService
                 }
             }
         }
+
         [DllImport("ntdll.dll", SetLastError=true)]
         static extern int NtSetTimerResolution(uint DesiredResolution, bool SetResolution, out uint CurrentResolution);
         [DllImport("ntdll.dll", SetLastError=true)]
         static extern int NtQueryTimerResolution(out uint MinimumResolution, out uint MaximumResolution, out uint ActualResolution);
+
         uint DefaultResolution = 0;
         uint MininumResolution = 0;
         uint MaximumResolution = 0;
+
         long processCounter = 0;
+
         void SetMaximumResolution()
         {
+            // Force 5040 (0.504 ms) regardless of reported Maximum
+            // If your platform can't go that low, the kernel clamps it.
             long counter = Interlocked.Increment(ref this.processCounter);
             if(counter <= 1)
             {
                 uint actual = 0;
-                NtSetTimerResolution(this.MaximumResolution, true, out actual);
-                if(null != this.EventLog)
-                    try { this.EventLog.WriteEntry(String.Format("Actual resolution = {0}", actual)); }
-                    catch {}
+                try {
+                    NtSetTimerResolution(5040, true, out actual);
+                    if(null != this.EventLog)
+                        try { this.EventLog.WriteEntry(String.Format("Requested=5040; Actual={0}", actual)); }
+                        catch {}
+                } catch {}
             }
         }
+
         void SetDefaultResolution()
         {
             long counter = Interlocked.Decrement(ref this.processCounter);
             if(counter < 1)
             {
                 uint actual = 0;
-                NtSetTimerResolution(this.DefaultResolution, true, out actual);
-                if(null != this.EventLog)
-                    try { this.EventLog.WriteEntry(String.Format("Actual resolution = {0}", actual)); }
-                    catch {}
+                try {
+                    NtSetTimerResolution(this.DefaultResolution, true, out actual);
+                    if(null != this.EventLog)
+                        try { this.EventLog.WriteEntry(String.Format("Restored default; Actual={0}", actual)); }
+                        catch {}
+                } catch {}
             }
         }
     }
+
     [RunInstaller(true)]
     public class WindowsServiceInstaller : Installer
     {
         public WindowsServiceInstaller()
         {
-            ServiceProcessInstaller serviceProcessInstaller = 
-                               new ServiceProcessInstaller();
+            ServiceProcessInstaller serviceProcessInstaller = new ServiceProcessInstaller();
             ServiceInstaller serviceInstaller = new ServiceInstaller();
             serviceProcessInstaller.Account = ServiceAccount.LocalSystem;
             serviceProcessInstaller.Username = null;
             serviceProcessInstaller.Password = null;
             serviceInstaller.DisplayName = "Set Timer Resolution Service";
             serviceInstaller.StartType = ServiceStartMode.Automatic;
-            serviceInstaller.ServiceName = "STR";
+            serviceInstaller.ServiceName = "STR";      // Must match ServiceBase.ServiceName
             this.Installers.Add(serviceProcessInstaller);
             this.Installers.Add(serviceInstaller);
         }
     }
 }
 "@
-Set-Content -Path "$env:SystemDrive\Windows\SetTimerResolutionService.cs" -Value $MultilineComment -Force
-# compile and create service
-Start-Process -Wait "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" -ArgumentList "-out:C:\Windows\SetTimerResolutionService.exe C:\Windows\SetTimerResolutionService.cs" -WindowStyle Hidden
-# delete file
-Remove-Item "$env:SystemDrive\Windows\SetTimerResolutionService.cs" -ErrorAction SilentlyContinue | Out-Null
-# install and start service
-New-Service -Name "Set Timer Resolution Service" -BinaryPathName "$env:SystemDrive\Windows\SetTimerResolutionService.exe" -ErrorAction SilentlyContinue | Out-Null
-Set-Service -Name "Set Timer Resolution Service" -StartupType Auto -ErrorAction SilentlyContinue | Out-Null
-Set-Service -Name "Set Timer Resolution Service" -Status Running -ErrorAction SilentlyContinue | Out-Null
-# start taskmanager
-Start-Process taskmgr.exe
-exit
 
-      }
-    2 {
+                $csPath  = "$env:SystemDrive\Windows\SetTimerResolutionService.cs"
+                $exePath = "$env:SystemDrive\Windows\SetTimerResolutionService.exe"
 
-Clear-Host
-# stop disable delete service
-Set-Service -Name "Set Timer Resolution Service" -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
-Set-Service -Name "Set Timer Resolution Service" -Status Stopped -ErrorAction SilentlyContinue | Out-Null
-sc.exe delete "Set Timer Resolution Service" | Out-Null
-# delete file
-Remove-Item "$env:SystemDrive\Windows\SetTimerResolutionService.exe" -Force -ErrorAction SilentlyContinue | Out-Null
-# start taskmanager
-Start-Process taskmgr.exe
-exit
+                Set-Content -Path $csPath -Value $MultilineComment -Force
 
-      }
-    } } else { Write-Host "Invalid input. Please select a valid option (1-2)." } }
+                $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+                if (-not (Test-Path $csc)) {
+                    $csc = "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+                }
+                if (-not (Test-Path $csc)) {
+                    Write-Host "ERROR: C# compiler (csc.exe) not found." -ForegroundColor Red
+                    pause
+                    exit
+                }
+
+                Start-Process -Wait $csc -ArgumentList "-out:$exePath $csPath" -WindowStyle Hidden
+                Remove-Item $csPath -ErrorAction SilentlyContinue | Out-Null
+
+                # Remove any old service variants
+                foreach ($old in @("Set Timer Resolution Service","STR")) {
+                    if (Get-Service -Name $old -ErrorAction SilentlyContinue) {
+                        try {
+                            Set-Service -Name $old -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
+                            Stop-Service -Name $old -Force -ErrorAction SilentlyContinue | Out-Null
+                            sc.exe delete $old | Out-Null
+                        } catch {}
+                    }
+                }
+
+                # Create consistent service name (STR) with a human DisplayName
+                New-Service -Name "STR" -DisplayName "Set Timer Resolution Service" -BinaryPathName $exePath -StartupType Automatic -ErrorAction SilentlyContinue | Out-Null
+                Start-Service -Name "STR" -ErrorAction SilentlyContinue | Out-Null
+
+                Start-Process taskmgr.exe
+                exit
+            }
+            2 {
+                Clear-Host
+                Write-Host "Stopping and removing service . . ."
+                foreach ($svc in @("STR","Set Timer Resolution Service")) {
+                    if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
+                        try {
+                            Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
+                            Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue | Out-Null
+                            sc.exe delete $svc | Out-Null
+                        } catch {}
+                    }
+                }
+                # Remove exe
+                $exePath = "$env:SystemDrive\Windows\SetTimerResolutionService.exe"
+                if (Test-Path $exePath) { Remove-Item $exePath -Force -ErrorAction SilentlyContinue | Out-Null }
+                Start-Process taskmgr.exe
+                exit
+            }
+        }
+    } else {
+        Write-Host "Invalid input. Please select a valid option (1-2)."
+    }
+}
