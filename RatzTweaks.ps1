@@ -125,15 +125,25 @@ function Patch-NarakaBladepoint {
         }
     }
     if ($EnableJiggle) {
-        $qFile = Join-Path $root 'qualitysettings.txt'
+        $qFile = Join-Path $root 'QualitySettingsData.txt'
         if (Test-Path $qFile) {
             try {
                 $txt = Get-Content -Raw -Path $qFile
-                $pattern = 'false,"xboxQualityOption":0\}\}'
-                $replacement = 'true,"xboxQualityOption":0}}'
-                $txt2 = $txt -replace $pattern, $replacement
-                if ($txt2 -ne $txt) { Set-Content -Path $qFile -Value $txt2 -Encoding UTF8; Add-Log "Enabled jiggle physics in $qFile" } else { Add-Log 'No jiggle flag found to toggle in qualitysettings.txt' }
-            } catch { Add-Log "Jiggle edit failed: $($_.Exception.Message)" }
+                # Replace the ending 'characterAdditionalPhysics1':true,... with 'characterAdditionalPhysics1':true,"xboxQualityOption":0}}
+                $pattern = '("characterAdditionalPhysics1":true)([^}]*)}}$'
+                $replacement = '"characterAdditionalPhysics1":true,"xboxQualityOption":0}}'
+                $txt2 = [regex]::Replace($txt, $pattern, $replacement)
+                if ($txt2 -ne $txt) {
+                    Set-Content -Path $qFile -Value $txt2 -Encoding UTF8
+                    Add-Log "Enabled jiggle physics in $qFile"
+                } else {
+                    Add-Log 'No jiggle flag found to toggle in QualitySettingsData.txt'
+                }
+            } catch {
+                Add-Log "Jiggle edit failed: $($_.Exception.Message)"
+            }
+        } else {
+            Add-Log "QualitySettingsData.txt not found for jiggle physics patch."
         }
     }
 }
@@ -196,7 +206,10 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
                 $args = @('/disable', "/id:$id")
                 Add-Log "Running: $viveToolPath $($args -join ' ')"
                 try {
-                    try { & $cmdExe $args } catch {}
+                    $proc = Start-Process -FilePath $viveToolPath -ArgumentList $args -Wait -NoNewWindow -PassThru
+                    if ($proc.ExitCode -ne 0) {
+                        Add-Log "ViVeTool exited with code $($proc.ExitCode) for id $id"
+                    }
                 } catch {
                     Add-Log "ViVeTool run failed: $($_.Exception.Message)"
                 }
@@ -626,12 +639,22 @@ function Set-PowerPlanHigh {
 
 function Set-PowerPlanUltimate {
     try {
-        $ultimate = (powercfg /list | Select-String 'Ultimate Performance').ToString().Split()[3]
-        if ($ultimate) {
+        $ultimateRaw = powercfg /list | Select-String 'Ultimate Performance'
+        if ($ultimateRaw) {
+            $ultimate = $ultimateRaw.ToString().Split()[3]
             powercfg /setactive $ultimate
             Add-Log 'Ultimate Performance power plan enabled.'
         } else {
-            Add-Log 'Ultimate Performance plan not found.'
+            # Try to add the Ultimate Performance plan
+            powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61
+            $ultimateRaw = powercfg /list | Select-String 'Ultimate Performance'
+            if ($ultimateRaw) {
+                $ultimate = $ultimateRaw.ToString().Split()[3]
+                powercfg /setactive $ultimate
+                Add-Log 'Ultimate Performance power plan created and enabled.'
+            } else {
+                Add-Log 'Ultimate Performance plan could not be created.'
+            }
         }
     } catch { Add-Log "ERROR in Set-PowerPlanUltimate: $($_.Exception.Message)" }
 }
@@ -823,10 +846,11 @@ function Start-WebUI {
     # Helper: read webhook url (from json or .secret file)
     $getWebhookUrl = {
         $raw = $null
+        Write-Host "getWebhookUrl: starting"
         # Prefer explicit webhook_url in discord_oauth.json
         try {
-            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url }
-        } catch {}
+            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
+        } catch { Write-Host "getWebhookUrl: error reading config: $($_.Exception.Message)" }
         if (-not $raw) {
             $paths = @()
             try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
@@ -838,30 +862,36 @@ function Start-WebUI {
                 }
             } catch {}
             $paths = $paths | Where-Object { $_ } | Select-Object -Unique
+            Write-Host ("getWebhookUrl: checking paths: {0}" -f ($paths -join ', '))
             foreach ($p in $paths) {
                 if (Test-Path $p) {
                     try {
                         $lines = Get-Content -Path $p | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                        if ($lines -and $lines.Count -gt 0) { $raw = [string]$lines[0]; break }
-                    } catch {}
+                        Write-Host ("getWebhookUrl: lines from {0}: {1}" -f $p, ($lines -join ', '))
+                        if ($lines -and $lines.Count -gt 0) { $raw = [string]$lines[0]; Write-Host "getWebhookUrl: found in secret: '$raw'"; break }
+                    } catch { Write-Host ("getWebhookUrl: error reading {0}: {1}" -f $p, $_.Exception.Message) }
+                } else {
+                    Write-Host ("getWebhookUrl: path not found: {0}" -f $p)
                 }
             }
         }
+        Write-Host "getWebhookUrl: raw value before candidate: '$raw'"
         if ($raw) {
             $candidate = [string]$raw
             $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
-            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] }
+            Write-Host "getWebhookUrl: candidate after trim: '$candidate'"
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1]; Write-Host "getWebhookUrl: candidate after regex: '$candidate'" }
             $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
-            if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
-            if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
-            try { if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { return $candidate } } catch {}
+            Write-Host "getWebhookUrl: candidate after trailing cleanup: '$candidate'"
+            if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { Write-Host "getWebhookUrl: candidate rejected as example/blank: '$candidate'"; return $null }
+            if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { Write-Host "getWebhookUrl: candidate rejected as not Discord webhook: '$candidate'"; return $null }
+            try { if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { Write-Host "getWebhookUrl: returning valid webhook: '$candidate'"; return $candidate } else { Write-Host "getWebhookUrl: candidate not well-formed URI: '$candidate'" } } catch { Write-Host "getWebhookUrl: URI check exception for '$candidate'" }
         }
+        Write-Host "getWebhookUrl: returning null (no valid candidate found)"
         return $null
     }
+    
 
-
-
-# --- Cache Naraka path at startup, allow manual override ---
 $global:DetectedNarakaPath = $env:NARAKA_DATA_PATH
 function Find-NarakaDataPath {
     if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { return $global:DetectedNarakaPath }
@@ -875,31 +905,14 @@ function Find-NarakaDataPath {
         'C:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
         'D:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data'
     )
-    foreach ($p in $candidates) { if ($p -and (Test-Path $p)) { $global:DetectedNarakaPath = $p; return $p } }
-    # Steam custom libraries
-    try {
-        $steamReg = Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue
-        $steamPath = $steamReg.InstallPath
-        if ($steamPath -and (Test-Path $steamPath)) {
-            $vdf = Join-Path $steamPath 'steamapps\libraryfolders.vdf'
-            if (Test-Path $vdf) {
-                $lines = Get-Content -Path $vdf -ErrorAction SilentlyContinue
-                foreach ($ln in $lines) {
-                    if ($ln -match '"path"\s*"([^"]+)"') {
-                        $lib = $matches[1]
-                        $cand = Join-Path $lib 'steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data'
-                        if (Test-Path $cand) { $global:DetectedNarakaPath = $cand; return $cand }
-                    }
-                }
-            }
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            $global:DetectedNarakaPath = $candidate
+            return $global:DetectedNarakaPath
         }
-    } catch {}
-    $global:DetectedNarakaPath = $null
+    }
     return $null
 }
-
-# Call detection at startup
-$null = Find-NarakaDataPath
 
 # Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
@@ -910,18 +923,12 @@ $null = Find-NarakaDataPath
             [switch]$Problem,
             [string]$MessagePrefix
         )
-        $wh = & $getWebhookUrl
+        $wh = (& $getWebhookUrl)
+        if ($null -eq $wh -or [string]::IsNullOrWhiteSpace($wh)) {
+            [Console]::WriteLine("Webhook: no webhook configured or blank. Value: '$wh'"); return
+        }
+        $wh = $wh.Trim()
         [Console]::WriteLine("Webhook: getWebhookUrl returned: '$wh'")
-        if ([string]::IsNullOrWhiteSpace($wh)) {
-            [Console]::WriteLine('Webhook: no webhook configured or blank value returned'); return
-        }
-        # Always use the URL from getWebhookUrl directly
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
-        if ($wh -notmatch '^https?://') {
-            [Console]::WriteLine("Webhook: invalid URL (no scheme): '$wh'"); return
-        }
-        if ($wh -notmatch '\?') { $wh = "$wh?wait=true" } else { $wh = "$wh&wait=true" }
-        # Masked logging
         try { $uriObj = [Uri]$wh; $tail = ($uriObj.AbsolutePath -split '/')[-1]; [Console]::WriteLine("Webhook: host=$($uriObj.Host) id=...$($tail.Substring([Math]::Max(0,$tail.Length-6)))") } catch {}
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
@@ -1490,6 +1497,10 @@ $errorBanner
         }
     }
 }
+
+Add-Log "====================================="
+Add-Log "Script Started! Previous Logs Above!"
+Add-Log "====================================="
 $StartInWebUI = $true
 # --- Entry Point ---
 # Diagnostic: show entry point state before launching UI
@@ -1499,9 +1510,6 @@ if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::Wr
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
     Start-WebUI
-    Add-Log "====================================="
-    Add-Log "Script Started! Previous Logs Above!"
-    Add-Log "====================================="
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
     # Do not exit automatically; keep console open for debugging
 }
