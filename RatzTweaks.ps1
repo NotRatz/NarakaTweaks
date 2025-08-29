@@ -115,7 +115,7 @@ function Revert-OptionalTweaks {
 function Patch-NarakaBladepoint {
     param([bool]$EnableJiggle, [bool]$PatchBoot, [string]$CustomPath)
     $root = if ($CustomPath) { $CustomPath } else { Find-NarakaDataPath }
-    if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' }
+    if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' } if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' }
     if (-not $root) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
     if ($PatchBoot) {
         $srcBoot = Join-Path $PSScriptRoot 'boot.config'
@@ -208,12 +208,10 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
 
 
 function Invoke-AllTweaks {
-    # Ensure Discord OAuth completed before making any changes
+    # Only proceed if Discord OAuth completed before making any changes
     if (-not $global:DiscordAuthenticated) {
-        if (-not (Ensure-DiscordAuthenticated)) {
-            Add-Log 'Discord authentication required — aborting tweaks.'
-            return
-        }
+        Add-Log 'Discord authentication required — aborting tweaks.'
+        return
     }
 
     # Main registry and system tweaks from RatzTweak.bat
@@ -913,12 +911,8 @@ function Start-WebUI {
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
-        $desc = if ($Problem) { 'Problem reported' } else { 'New Run!' }
-        $contentMsg = if ($Problem) {
-            if ($mention) { "Problem reported by $mention" } else { 'Problem reported' }
-        } else {
-            if ($mention) { "New run by $mention" } else { 'New run started.' }
-        }
+        $desc = 'New Run!'
+        if ($MessagePrefix) { $desc = 'Problem reported' }
         $embed = @{
             title       = 'Ratz Tweak Alert'
             description = $desc
@@ -930,7 +924,12 @@ function Start-WebUI {
                 @{ name = 'UserID';    value = "$UserId";   inline = $true }
             )
         }
-        $payload = @{ content = $contentMsg; embeds = @($embed) }
+        if ($MessagePrefix) {
+            $content = if ($mention) { "$MessagePrefix $mention" } else { $MessagePrefix }
+        } else {
+            $content = if ($mention) { "New run by $mention" } else { 'New run started.' }
+        }
+        $payload = @{ content = $content; embeds = @($embed) }
         if ($UserName) { $payload.username = $UserName }
         $json = $payload | ConvertTo-Json -Depth 10
 
@@ -1032,28 +1031,14 @@ $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
   $authSection
-  <div class='bg-gray-800 text-gray-200 p-2 mb-4 rounded'>Discord identity ping is optional and helps with problem management.</div>
-  <p class='text-gray-300 mb-4'>If enabled, the ping sends your Discord username, user ID, and a timestamp.</p>
-  <div class='flex gap-3 mb-6'>
-    $loginLink
-    <form action='/main-tweaks' method='post' class='flex flex-col'>
-      <label class='inline-flex items-center text-gray-200 mb-2'>
-        <input type='checkbox' name='discord_ping' value='1' class='mr-2'/>
-        Send Discord identity ping
-      </label>
-      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
-    </form>
-  </div>
+    <div class='flex gap-3 mb-6'>
+        $loginLink
+    </div>
 </div>
 <script>
 <div class='flex gap-3 mb-6'>
     $loginLink
-    <form action='/main-tweaks' method='post'>
-      <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
-    </form>
-  </div>
 </div>
-});
 </script>
 </body></html>
 "@
@@ -1085,19 +1070,30 @@ $errorBanner
                     $id = $_.id; $label = $_.label
                     "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='${id}' class='mr-1'>${label}</label>"
                 }) -join ""
-                $narakaBox = @"
+            $detectedNaraka = Find-NarakaDataPath
+                if ($detectedNaraka) {
+                    $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
   <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-  <label class='block mb-2 text-white'>NarakaBladepoint_Data Folder</label>
-  <div class='flex mb-2'>
-    <input type='text' id='narakaPathInput' name='naraka_path' class='text-black flex-1 p-1 rounded' placeholder='C:\\...\\NarakaBladepoint_Data'/>
-    <button type='button' class='bg-indigo-500 hover:bg-indigo-600 text-white px-2 py-1 rounded ml-2' onclick='browseNaraka()'>Browse</button>
-  </div>
-  <input type='file' id='narakaFolderSel' webkitdirectory directory multiple style='display:none'/>
+  <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
+  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+  <p class='text-gray-300 text-sm mb-2'>Detected path:</p>
+  <p class='text-gray-400 text-xs break-all mb-4'>$detectedNaraka</p>
   <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
   <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
 </div>
 "@
+                } else {
+                    $narakaBox = @"
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
+  <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+  <label class='block mb-2 text-white'>NarakaBladepoint_Data Folder</label>
+  <input type='text' name='naraka_path' class='text-black w-full p-1 rounded mb-2' placeholder='C:\\...\\NarakaBladepoint_Data'/>
+  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
+  <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
+</div>
+"@
+                }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1173,7 +1169,7 @@ $errorBanner
         <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
       </form>
       <form action='/need-help' method='post' class='mt-4'>
-        <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>I Need Help</button>
+        <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>Have a problem?</button>
       </form>
       <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded mb-2' type='button' onclick='reportProblem()'>Have a problem?</button>
       <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
@@ -1283,11 +1279,8 @@ $errorBanner
             continue
         }
 
-        # Serve and execute main tweaks on GET as well (robust against refresh/direct nav)
+        # Serve main-tweaks page on GET, do NOT run tweaks
         if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
-            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
-            [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-AllTweaks'); Invoke-AllTweaks
-            [Console]::WriteLine('Route:/main-tweaks (GET) -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue
@@ -1295,12 +1288,19 @@ $errorBanner
         
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            # Only trigger Discord authentication if not already authenticated
+            if (-not $global:DiscordAuthenticated) {
+                [Console]::WriteLine('Route:/main-tweaks (POST) blocked: Discord not authenticated')
+                $html = & $getStatusHtml 'main-tweaks' $null $null $null
+                & $send $ctx 200 'text/html' $html
+                continue
+            }
             try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
             $form = & $parseForm $ctx
             if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
             $optIn = $false
             if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
-            if ($optIn -and $global:DiscordAuthenticated) {
+            if ($optIn) {
                 try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
             }
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
@@ -1490,6 +1490,9 @@ if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::Wr
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
     Start-WebUI
+    Add-Log "====================================="
+    Add-Log "Script Started! Previous Logs Above!"
+    Add-Log "====================================="
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
     # Do not exit automatically; keep console open for debugging
 }
