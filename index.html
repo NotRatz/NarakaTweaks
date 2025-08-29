@@ -53,7 +53,7 @@ body{
         <li>Game Bar/DVR – optional toggle, off by default.</li>
         <li>Widgets – optional toggle, off by default.</li>
         <li>Copilot – optional toggle, off by default.</li>
-        <li>MSI Mode & Power Plans – opt-in with easy revert.</li>
+        <li>MSI Mode (device-dependent) & Power Plans – opt-in with easy revert.</li>
       </ul>
     </section>
 
@@ -74,6 +74,7 @@ body{
       <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="startTweaks()">Start</button>
       <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
     </div>
+    <p class="text-center text-gray-400">Runs: <span id="runCount">0</span></p>
   </main>
 
   <script>
@@ -89,6 +90,10 @@ function copyAndRun(cmd){
   // Removed for Chrome compatibility: launching PowerShell URI is blocked
   // try{ window.location.href = 'powershell:' + encodeURIComponent(cmd); }catch(e){}
 }
+let count = localStorage.getItem('ratzRuns') || 0;
+count++;
+localStorage.setItem('ratzRuns', count);
+document.getElementById('runCount').innerText = count;
 function startTweaks(){ copyAndRun(startCmd); }
 function revertTweaks(){ copyAndRun(revertCmd); }
 </script>

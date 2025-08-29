@@ -115,6 +115,7 @@ function Revert-OptionalTweaks {
 function Patch-NarakaBladepoint {
     param([bool]$EnableJiggle, [bool]$PatchBoot, [string]$CustomPath)
     $root = if ($CustomPath) { $CustomPath } else { Find-NarakaDataPath }
+    if ($root -and $root -notmatch '(?i)NarakaBladepoint_Data$') { $root = Join-Path $root 'NarakaBladepoint_Data' }
     if (-not $root) { Add-Log 'NarakaBladepoint_Data folder not found. Skipping Naraka tweaks.'; return }
     if ($PatchBoot) {
         $srcBoot = Join-Path $PSScriptRoot 'boot.config'
@@ -124,12 +125,12 @@ function Patch-NarakaBladepoint {
         }
     }
     if ($EnableJiggle) {
-        $qFile = Join-Path $root 'QualitySettingsData.txt'
+        $qFile = Join-Path $root 'qualitysettings.txt'
         if (Test-Path $qFile) {
             try {
                 $txt = Get-Content -Raw -Path $qFile
                 $txt2 = $txt -replace '"characterAdditionalPhysics1"\s*:\s*false','"characterAdditionalPhysics1":true'
-                if ($txt2 -ne $txt) { Set-Content -Path $qFile -Value $txt2 -Encoding UTF8; Add-Log "Enabled jiggle physics in $qFile" } else { Add-Log 'No jiggle flag found to toggle in QualitySettingsData.txt' }
+                if ($txt2 -ne $txt) { Set-Content -Path $qFile -Value $txt2 -Encoding UTF8; Add-Log "Enabled jiggle physics in $qFile" } else { Add-Log 'No jiggle flag found to toggle in qualitysettings.txt' }
             } catch { Add-Log "Jiggle edit failed: $($_.Exception.Message)" }
         }
     }
@@ -225,13 +226,6 @@ function Invoke-AllTweaks {
         'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v "FeatureSettings" /t REG_DWORD /d "1" /f',
         'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v "FeatureSettingsOverride" /t REG_DWORD /d "3" /f',
         'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v "FeatureSettingsMask" /t REG_DWORD /d "3" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_Enabled" /t REG_DWORD /d "0" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_FSEBehavior" /t REG_DWORD /d "2" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_FSEBehaviorMode" /t REG_DWORD /d "2" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_HonorUserFSEBehaviorMode" /t REG_DWORD /d "1" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_FSEBehavior" /t REG_DWORD /d "2" /f',
-        'reg add "HKCU\System\GameConfigStore" /v "GameDVR_DXGIHonorFSEWindowsCompatible" /t REG_DWORD /d "1" /f',
-        'reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR" /v "AppCaptureEnabled" /t REG_DWORD /d "0" /f',
         'reg add "HKCU\Control Panel\Keyboard" /v "InitialKeyboardIndicators" /t REG_SZ /d "2" /f',
         'reg add "HKCU\Control Panel\Keyboard" /v "KeyboardSpeed" /t REG_SZ /d "48" /f',
         'reg add "HKCU\Control Panel\Keyboard" /v "KeyboardDelay" /t REG_SZ /d "0" /f',
@@ -1029,11 +1023,15 @@ $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
   $authSection
-  <div class='bg-gray-800 text-gray-200 p-2 mb-4 rounded'>Discord identity ping is sent automatically for problem management.</div>
+  <div class='bg-gray-800 text-gray-200 p-2 mb-4 rounded'>Discord identity ping is optional and helps with problem management.</div>
   <pre id='payloadPreview' class='text-xs text-gray-400 mb-4'></pre>
   <div class='flex gap-3 mb-6'>
     $loginLink
-    <form action='/main-tweaks' method='post'>
+    <form action='/main-tweaks' method='post' class='flex flex-col'>
+      <label class='inline-flex items-center text-gray-200 mb-2'>
+        <input type='checkbox' name='discord_ping' value='1' class='mr-2'/>
+        Send Discord identity ping
+      </label>
       <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
     </form>
   </div>
@@ -1261,6 +1259,13 @@ $errorBanner
         
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            $form = & $parseForm $ctx
+            if ($form -and ($form.GetType().Name -ne 'NameValueCollection')) { $form = $null }
+            $optIn = $false
+            if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
+            if ($optIn -and $global:DiscordAuthenticated) {
+                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
+            }
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
@@ -1315,9 +1320,7 @@ $errorBanner
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
                                 [Console]::WriteLine("OAuth: avatar url = $avatarUrl")
-                                # Mark authed before webhook so UI shows avatar/name even if webhook fails
                                 $authed = $true
-                                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $avatarUrl; [Console]::WriteLine('Webhook: call returned') } catch { [Console]::WriteLine("Webhook: call failed: $($_.Exception.Message)") }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
@@ -1333,6 +1336,7 @@ $errorBanner
         # On /about, run selected optional tweaks (do not close app here)
         if ($path -eq '/about' -and $method -eq 'POST') {
             $form = & $parseForm $ctx
+            if ($form -and ($form.GetType().Name -ne 'NameValueCollection')) { $form = $null }
             $rawLen = 0; try { if ($script:LastRawForm) { $rawLen = $script:LastRawForm.Length } } catch {}
             [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
             if ($script:LastRawForm) { [Console]::WriteLine("Route:/about raw: $($script:LastRawForm.Substring(0, [Math]::Min(512, $script:LastRawForm.Length)))") }
