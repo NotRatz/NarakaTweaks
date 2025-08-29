@@ -209,11 +209,10 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
             $featureIds = @(39145991, 39146010, 39281392, 41655236, 42105254)
             foreach ($id in $featureIds) {
                 $cmd = '"' + $viveToolPath + '" /disable /id:' + $id
-                $fullCmd = "/c, $cmd"
-                Add-Log "Running: cmd.exe $fullCmd"
+                Add-Log "Running: cmd.exe /c $cmd"
                 try {
-                    Add-Log "CMD: cmd.exe $fullCmd"
-                    $proc = Start-Process -FilePath cmd.exe -ArgumentList @($fullCmd) -Wait -NoNewWindow -PassThru
+                    Add-Log "CMD: cmd.exe /c $cmd"
+                    $proc = Start-Process -FilePath cmd.exe -ArgumentList @('/c', $cmd) -Wait -NoNewWindow -PassThru
                     if ($proc.ExitCode -ne 0) {
                         Add-Log "ViVeTool exited with code $($proc.ExitCode) for id $id"
                     }
