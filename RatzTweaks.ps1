@@ -952,6 +952,16 @@ function Find-NarakaDataPath {
             return $global:DetectedNarakaPath
         }
     }
+    # Prompt user for folder if not found
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = "Please select your NarakaBladepoint_Data folder."
+    $dialog.ShowNewFolderButton = $false
+    $result = $dialog.ShowDialog()
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and (Test-Path $dialog.SelectedPath)) {
+        $global:DetectedNarakaPath = $dialog.SelectedPath
+        return $global:DetectedNarakaPath
+    }
     return $null
 }
 
