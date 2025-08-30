@@ -33,7 +33,16 @@ Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
 Write-Host ''
 Write-Host 'Proceeding to next UI & WebUI' -ForegroundColor DarkGray
 Write-Host ''
-Start-Sleep -Milliseconds 1200
+# Spinner: Loading Resources, please wait ...
+$spinnerText = 'Loading Resources, please wait'
+$spinnerFrames = @('.  ','.. ','...')
+for ($i=0; $i -lt 12; $i++) {
+    $frame = $spinnerFrames[$i % $spinnerFrames.Length]
+    Write-Host ("$spinnerText$frame") -NoNewline
+    Start-Sleep -Milliseconds 250
+    Write-Host "`r" -NoNewline
+}
+Write-Host ''
 function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
 function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
 $InformationPreference = 'SilentlyContinue'
@@ -1577,6 +1586,21 @@ $errorBanner
     }
 }
 
+$progressActivity = "RatzTweaks Initializing..."
+$progressId = 1
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Loading..." -PercentComplete 0
+Start-Sleep -Milliseconds 500
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Checking system..." -PercentComplete 20
+Start-Sleep -Milliseconds 500
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Preparing environment..." -PercentComplete 40
+Start-Sleep -Milliseconds 500
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Loading modules..." -PercentComplete 60
+Start-Sleep -Milliseconds 500
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Almost ready..." -PercentComplete 80
+Start-Sleep -Milliseconds 500
+Write-Progress -Id $progressId -Activity $progressActivity -Status "Done!" -PercentComplete 100
+Start-Sleep -Milliseconds 300
+Write-Progress -Id $progressId -Completed -Activity $progressActivity
 Add-Log "================="
 Add-Log "Script Started!"
 Add-Log "================="
