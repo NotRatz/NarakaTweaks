@@ -952,15 +952,14 @@ function Find-NarakaDataPath {
             return $global:DetectedNarakaPath
         }
     }
-    # Prompt user for folder if not found
-    Add-Type -AssemblyName System.Windows.Forms
-    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dialog.Description = "Please select your NarakaBladepoint_Data folder."
-    $dialog.ShowNewFolderButton = $false
-    $result = $dialog.ShowDialog()
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and (Test-Path $dialog.SelectedPath)) {
-        $global:DetectedNarakaPath = $dialog.SelectedPath
+    # Prompt user for folder if not found (console input)
+    Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
+    $userPath = Read-Host "NarakaBladepoint_Data path"
+    if ($userPath -and (Test-Path $userPath)) {
+        $global:DetectedNarakaPath = $userPath
         return $global:DetectedNarakaPath
+    } else {
+        Write-Host "Invalid path. Please ensure the folder exists and try again."
     }
     return $null
 }
@@ -1172,10 +1171,15 @@ $errorBanner
 </div>
 "@
                         } else {
-                                $narakaBox = @"
+                                                                $narakaBox = @"
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-    <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-    <p class='text-gray-300 text-sm mb-2'>NarakaBladepoint_Data folder not found. Please install the game or select manually in a future version.</p>
+        <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
+        <p class='text-gray-300 text-sm mb-2'>NarakaBladepoint_Data folder not found.</p>
+        <form method='post' action='/set-naraka-path'>
+            <label for='narakaPathInput' class='block text-white mb-2'>Set your NarakaBladepoint_Data folder path:</label>
+            <input type='text' id='narakaPathInput' name='narakaPath' class='w-full px-2 py-1 rounded bg-gray-800 text-white mb-2' placeholder='C:\Path\To\NarakaBladepoint_Data'>
+            <button type='submit' class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-1 px-4 rounded'>Set Path</button>
+        </form>
 </div>
 "@
                         }
