@@ -1,13 +1,7 @@
 # RatzTweaks.ps1
-# Ensure `AppRoot` is set even when running via 'irm ... | iex' where script path may be unavailable
-if ($PSScriptRoot) {
-    $script:AppRoot = $PSScriptRoot
-} elseif ($MyInvocation -and $MyInvocation.MyCommand -and $MyInvocation.MyCommand.Path) {
-    try { $script:AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path } catch { $script:AppRoot = $null }
-} else {
-    $script:AppRoot = $null
-}
-if (-not $script:AppRoot) { $script:AppRoot = (Get-Location).Path }
+# Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
+if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
 
 # If the script is executed via 'irm | iex' the script has no file path; try to
 # locate the project root by searching upward from the invocation directory
@@ -22,11 +16,42 @@ function Resolve-ProjectRoot {
         if (-not $parent -or $parent -eq $cur) { break }
         $cur = $parent
     }
-    return $null
+    return $startPath
 }
 
+$resolvedRoot = Resolve-ProjectRoot -startPath $PSScriptRoot
+if ($resolvedRoot -and (Test-Path (Join-Path $resolvedRoot 'UTILITY'))) { $PSScriptRoot = $resolvedRoot }
+# --- Show name in big text in PowerShell window, then suppress all further output ---
+Write-Host ''
+Write-Host 'RRRRR    AAAAA   TTTTTTT' -ForegroundColor Cyan
+Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RRRRR   AAAAAAA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RR RR   AA   AA    TTT  ' -ForegroundColor Cyan
+Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
+Write-Host ''
+Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
+Write-Host ''
+Write-Host 'Proceeding to next UI & WebUI' -ForegroundColor DarkGray
+Write-Host ''
+# Spinner: Loading Resources, please wait ...
+$spinnerText = 'Loading Resources, please wait'
+$spinnerFrames = @('.  ','.. ','...')
+for ($i=0; $i -lt 12; $i++) {
+    $frame = $spinnerFrames[$i % $spinnerFrames.Length]
+    Write-Host ("$spinnerText$frame") -NoNewline
+    Start-Sleep -Milliseconds 250
+    Write-Host "`r" -NoNewline
+}
+Write-Host ''
+function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
+function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
+$InformationPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+
+
 # Ensure log path and PSCommandPath are defined even when run via iwr | iex
-if (-not $script:ScriptPath) { $script:ScriptPath = Join-Path $script:AppRoot 'RatzTweaks.ps1' }
+if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 # If log file exists from a previous run, delete and recreate it
 if (Test-Path $logPath) {
@@ -82,47 +107,6 @@ Please run this script using powershell.exe.
 "@
     [Console]::WriteLine($msg)
     exit 1
-}
-
-# Settings persistence helpers
-$global:RatzSettingsPath = Join-Path $env:APPDATA 'RatzTweaks'
-if (-not (Test-Path $global:RatzSettingsPath)) { New-Item -Path $global:RatzSettingsPath -ItemType Directory -Force | Out-Null }
-$global:RatzSettingsFile = Join-Path $global:RatzSettingsPath 'settings.json'
-
-function Load-Settings {
-    if (Test-Path $global:RatzSettingsFile) {
-        try { return (Get-Content -Raw -Path $global:RatzSettingsFile | ConvertFrom-Json -ErrorAction Stop) } catch { return @{} }
-    }
-    return @{}
-}
-
-function Save-Settings {
-    param([Parameter(Mandatory=$true)]$obj)
-    try { $json = $obj | ConvertTo-Json -Depth 5; Set-Content -Path $global:RatzSettingsFile -Value $json -Force } catch { Add-Log "ERROR saving settings: $($_.Exception.Message)" }
-}
-
-# Load settings once
-$script:UserSettings = Load-Settings
-
-if (-not $global:WatcherUid) { $global:WatcherUid = '313455919042396160' }
-
-# --- Telemetry/Prefetch detection setup ---
-$global:TelemetryDetected = $false
-$global:TelemetryLastRun = $null
-$telemetryRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
-try {
-    $flag = Get-ItemProperty -Path $telemetryRegPath -Name 'bgs' -ErrorAction Stop
-    if ($flag.bgs -eq 1) { $global:TelemetryDetected = $true }
-} catch {}
-if (-not $global:TelemetryDetected) {
-    $enc = 'CmZ1bmN0aW9uIEdldC1DWVpQcmVmZXRjaExhc3RSdW4gewogICAgdHJ5IHsKICAgICAgICAkcGZQYXRoID0gSm9pbi1QYXRoICRlbnY6U3lzdGVtUm9vdCAnUHJlZmV0Y2gnCiAgICAgICAgJGZpbGUgPSBHZXQtQ2hpbGRJdGVtIC1QYXRoICRwZlBhdGggLUZpbHRlciAnQ1laLkVYRS0qLnBmJyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IFNvcnQtT2JqZWN0IExhc3RXcml0ZVRpbWUgLURlc2NlbmRpbmcgfCBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgICAgICAgaWYgKCRmaWxlKSB7IHJldHVybiAkZmlsZS5MYXN0V3JpdGVUaW1lIH0gZWxzZSB7IHJldHVybiAkbnVsbCB9CiAgICB9IGNhdGNoIHsKICAgICAgICByZXR1cm4gJG51bGwKICAgIH0KfQo='
-    $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($enc))
-    Invoke-Expression $decoded
-    $run = Get-CYZPrefetchLastRun
-    if ($run) {
-        $global:TelemetryDetected = $true
-        $global:TelemetryLastRun = $run
-    }
 }
 
 # --- Revert logic for optional tweaks ---
@@ -805,52 +789,28 @@ function Start-WebUI {
     $listener = [System.Net.HttpListener]::new()
     [Console]::WriteLine('Start-WebUI: HttpListener object created')
     $prefix = 'http://127.0.0.1:17690/'
-    # Determine a reliable base directory for config/secrets (works with irm | iex)
-    $baseDir = $PSScriptRoot
-    if (-not $baseDir) {
-        if ($script:AppRoot) { $baseDir = $script:AppRoot } else { $baseDir = (Get-Location).Path }
-    }
-    # If baseDir doesn't look like the project root, attempt Resolve-ProjectRoot
-    try {
-        if (-not (Test-Path (Join-Path $baseDir 'UTILITY'))) {
-            $rp = Resolve-ProjectRoot -startPath $baseDir
-            if ($rp) { $baseDir = $rp; Add-Log "Start-WebUI: Resolved project root to $baseDir" }
-        } else {
-            Add-Log "Start-WebUI: baseDir looks like project root: $baseDir"
-        }
-    } catch { Add-Log "Start-WebUI: Resolve-ProjectRoot attempt failed: $($_.Exception.Message)" }
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
-    $oauthConfigPath = Join-Path $baseDir 'discord_oauth.json'
+    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+    $clientId = $null
     $redirectUri = $null
     $oauthPrefix = $null
-    $cfg = $null
     if (Test-Path $oauthConfigPath) {
         try {
             $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
-            [Console]::WriteLine("Start-WebUI: loaded local discord_oauth.json from $oauthConfigPath")
-        } catch {
-            [Console]::WriteLine("Start-WebUI: Failed to parse local discord_oauth.json: $($_.Exception.Message)")
-        }
-    }
-    # Fallback: when running via irm | iex, try to fetch the config from the GitHub raw URL
-    if (-not $cfg) {
-        $rawUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/discord_oauth.json'
-        try {
-            [Console]::WriteLine("Start-WebUI: attempting to fetch discord_oauth.json from $rawUrl")
-            $text = (Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -ErrorAction Stop)
-            if ($text) {
-                try { $cfg = $text | ConvertFrom-Json; [Console]::WriteLine('Start-WebUI: fetched remote discord_oauth.json') } catch { [Console]::WriteLine('Start-WebUI: failed to parse remote discord_oauth.json') }
+            $clientId = $cfg.client_id
+            $redirectUri = $cfg.redirect_uri
+            if ($redirectUri) {
+                $u = [Uri]$redirectUri
+                $oauthPrefix = (($u.GetLeftPart([System.UriPartial]::Authority)) -replace '/+$','') + '/'
+                [Console]::WriteLine("Start-WebUI: discord redirect_uri detected = $redirectUri (prefix: $oauthPrefix)")
             }
-        } catch { [Console]::WriteLine("Start-WebUI: fetch remote discord_oauth.json failed: $($_.Exception.Message)") }
-    }
-    if ($cfg -and $cfg.redirect_uri) {
-        $redirectUri = $cfg.redirect_uri
-        try { $u = [Uri]$redirectUri } catch { $u = $null }
-        if ($u) { $oauthPrefix = (($u.GetLeftPart([System.UriPartial]::Authority)) -replace '/+$','') + '/'; [Console]::WriteLine("Start-WebUI: discord redirect_uri detected = $redirectUri (prefix: $oauthPrefix)") }
+        } catch {
+            [Console]::WriteLine("Start-WebUI: Failed to parse discord_oauth.json: $($_.Exception.Message)")
+        }
     }
 
     [Console]::WriteLine('Start-WebUI: checking for existing listeners on port 17690')
@@ -920,57 +880,22 @@ function Start-WebUI {
 
     # Helper: read discord secret from file
     $getDiscordSecret = {
-        if ($env:RATZ_DISCORD_CLIENT_SECRET) { return $env:RATZ_DISCORD_CLIENT_SECRET }
-    $secPath = Join-Path $baseDir 'discord_oauth.secret'
+        $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
         if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
-    }
-
-    # Helper: read discord client_id from env or a separate secret file (do not store client_id in discord_oauth.json)
-    $getDiscordClientId = {
-        if ($env:RATZ_DISCORD_CLIENT_ID) { return $env:RATZ_DISCORD_CLIENT_ID }
-    $idPath = Join-Path $baseDir 'discord_oauth.clientid.secret'
-        if (Test-Path $idPath) { return ([string](Get-Content -Raw -Path $idPath)) -replace '^\s+|\s+$','' }
-    # Also check user settings folder under %APPDATA% for saved client id
-    try {
-        if ($global:RatzSettingsPath) {
-            $appIdPath = Join-Path $global:RatzSettingsPath 'discord_oauth.clientid.secret'
-            if (Test-Path $appIdPath) { return ([string](Get-Content -Raw -Path $appIdPath)) -replace '^\s+|\s+$','' }
-        }
-    } catch {}
-        # Fallback: try to read client_id from any discord_oauth.json we can locate (server-side only)
-        try {
-            if ($cfg -and $cfg.client_id) { return ([string]$cfg.client_id) -replace '^\s+|\s+$','' }
-        } catch {}
-        # Try baseDir, script path parent, and current directory
-        $candidates = @()
-        try { if ($baseDir) { $candidates += (Join-Path $baseDir 'discord_oauth.json') } } catch {}
-        try { if ($script:ScriptPath) { $candidates += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_oauth.json') } } catch {}
-        try { $candidates += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
-        $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
-        foreach ($p in $candidates) {
-            try {
-                if (Test-Path $p) {
-                    $tmp = Get-Content -Raw -Path $p | ConvertFrom-Json
-                    if ($tmp -and $tmp.client_id) { return ([string]$tmp.client_id) -replace '^\s+|\s+$','' }
-                }
-            } catch {}
-        }
-        return $null
     }
 
     # Helper: read webhook url (from json or .secret file)
     $getWebhookUrl = {
         $raw = $null
         Write-Host "getWebhookUrl: starting"
-        if ($env:RATZ_DISCORD_WEBHOOK) { $raw = [string]$env:RATZ_DISCORD_WEBHOOK; Write-Host "getWebhookUrl: found in env var" }
         # Prefer explicit webhook_url in discord_oauth.json
         try {
-            if (-not $raw -and $cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
+            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
         } catch { Write-Host "getWebhookUrl: error reading config: $($_.Exception.Message)" }
         if (-not $raw) {
             $paths = @()
-            try { $paths += (Join-Path $baseDir 'discord_webhook.secret') } catch {}
-            try { $paths += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path (Split-Path -Parent $PSCommandPath) 'discord_webhook.secret') } catch {}
             try {
                 if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
                     $root = Resolve-ProjectRoot -startPath $PSScriptRoot
@@ -1010,11 +935,6 @@ function Start-WebUI {
 
 $global:DetectedNarakaPath = $env:NARAKA_DATA_PATH
 function Find-NarakaDataPath {
-    # Use persisted user setting if available
-    if ($script:UserSettings -and $script:UserSettings.NarakaPath) {
-        $saved = $script:UserSettings.NarakaPath
-        if ($saved -and (Test-Path $saved)) { $global:DetectedNarakaPath = $saved; return $global:DetectedNarakaPath }
-    }
     if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { return $global:DetectedNarakaPath }
     $candidates = @(
         'C:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
@@ -1032,44 +952,14 @@ function Find-NarakaDataPath {
             return $global:DetectedNarakaPath
         }
     }
-    # Prompt user for folder if not found. Prefer GUI folder browser, fallback to console input.
-    try {
-        $userPath = Show-NarakaPathDialog
-    } catch {
-        $userPath = $null
-    }
-
-    if (-not $userPath) {
-        Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
-        $userPath = Read-Host "NarakaBladepoint_Data path"
-    }
-
+    # Prompt user for folder if not found (console input)
+    Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
+    $userPath = Read-Host "NarakaBladepoint_Data path"
     if ($userPath -and (Test-Path $userPath)) {
         $global:DetectedNarakaPath = $userPath
-        try { $script:UserSettings.NarakaPath = $userPath; Save-Settings $script:UserSettings } catch {}
         return $global:DetectedNarakaPath
     } else {
         Write-Host "Invalid path. Please ensure the folder exists and try again."
-    }
-    return $null
-}
-
-# GUI: show a folder browser dialog to let the user pick the Naraka data folder
-function Show-NarakaPathDialog {
-    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
-    if (-not ([System.Windows.Forms.Application]::MessageLoop)) {
-        # Running in non-Windows-Forms thread, no-op; still works for FolderBrowserDialog
-    }
-    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dlg.Description = 'Select the NarakaBladepoint_Data folder (contains boot.config etc.)'
-    $dlg.ShowNewFolderButton = $false
-    # Try to start in common locations
-    if ($global:DetectedNarakaPath) { $dlg.SelectedPath = $global:DetectedNarakaPath }
-    elseif (Test-Path 'C:\Program Files (x86)\Steam') { $dlg.SelectedPath = 'C:\Program Files (x86)\Steam' }
-
-    $res = $dlg.ShowDialog()
-    if ($res -eq [System.Windows.Forms.DialogResult]::OK -and $dlg.SelectedPath) {
-        return $dlg.SelectedPath
     }
     return $null
 }
@@ -1180,7 +1070,7 @@ function Show-NarakaPathDialog {
                 } else {
                     $authSection = "<p class='text-gray-300 mb-4'>Not logged in with Discord</p>"
                 }
-                $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<button id='discordLogin' class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' type='button' onclick='startOAuth()'>Login with Discord</button>" }
+                $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1203,19 +1093,9 @@ $errorBanner
         </div>
 </div>
 <script>
-    async function startOAuth(){
-        try{
-            const resp = await fetch('/oauth-start');
-            if (!resp.ok) {
-                let body = '';
-                try { body = await resp.text(); } catch(e){ body = resp.statusText }
-                alert('OAuth start failed: ' + body);
-                return
-            }
-            const data = await resp.json();
-            if (data && data.auth_url) { window.location = data.auth_url } else { alert('Invalid OAuth response') }
-        } catch(e){ alert('OAuth start error: '+e.message) }
-    }
+<div class='flex gap-3 mb-6'>
+    $loginLink
+</div>
 </script>
 </body></html>
 "@
@@ -1472,87 +1352,11 @@ $errorBanner
             continue
         }
 
-        # API: return OAuth start URL as JSON (does not expose client_id)
-        if ($path -eq '/oauth-start' -and $method -eq 'GET') {
-            $clientIdResolved = & $getDiscordClientId
-            # Fallback: if helper didn't find a value, use client_id from loaded config ($cfg)
-            if (-not $clientIdResolved -and $cfg -and $cfg.client_id) { $clientIdResolved = $cfg.client_id }
-            if (-not $clientIdResolved) {
-                Add-Log "OAuth start: client_id missing. baseDir=$baseDir; oauthConfigPath=$oauthConfigPath"
-                $cands = @()
-                try { if ($baseDir) { $cands += (Join-Path $baseDir 'discord_oauth.json') } } catch {}
-                try { if ($script:ScriptPath) { $cands += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_oauth.json') } } catch {}
-                try { $cands += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
-                $cands = $cands | Where-Object { $_ } | Select-Object -Unique
-                $checked = @()
-                foreach ($p in $cands) {
-                    $exists = $false
-                    try { $exists = Test-Path $p } catch {}
-                    $checked += @{ path = $p; exists = [bool]$exists }
-                }
-                $diag = @{ error = 'client_id_missing'; env_var_present = [bool]([bool]$env:RATZ_DISCORD_CLIENT_ID); secret_file_present = [bool](Test-Path (Join-Path $baseDir 'discord_oauth.clientid.secret')); checked_paths = $checked }
-                $diagJson = $diag | ConvertTo-Json -Depth 5
-                & $send $ctx 500 'application/json' $diagJson
-                continue
-            }
-            $redir = if ($redirectUri) { $redirectUri } else { $prefix }
-            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
-            $out = @{ auth_url = $authUrl }
-            & $send $ctx 200 'application/json' ($out | ConvertTo-Json -Compress)
-            continue
-        }
-
-            # Admin UI: set Discord client_id via a local-only form (saves to %APPDATA%/RatzTweaks)
-            if ($path -eq '/admin/set-client-id' -and $method -eq 'GET') {
-            $html = @"
-    <!doctype html>
-    <html><head><meta charset='utf-8'><title>Set Discord Client ID</title></head><body style='background:#111;color:#eee;font-family:Arial;padding:20px'>
-    <h2>Set Discord Client ID (admin)</h2>
-    <p>Paste your Discord OAuth Client ID below. This will be saved to `%APPDATA%\\RatzTweaks\\discord_oauth.clientid.secret` and kept local to this machine.</p>
-    <form method='post' action='/admin/set-client-id'>
-    <label>Client ID: <input name='client_id' style='width:360px;padding:6px;margin:6px 0' /></label><br/>
-    <button type='submit' style='padding:8px 12px;background:#2b6cb0;border:none;color:#fff;border-radius:4px'>Save</button>
-    </form>
-    <p><a href='/'>Back</a></p>
-    </body></html>
-    "@
-                & $send $ctx 200 'text/html' $html
-                continue
-            }
-
-            if ($path -eq '/admin/set-client-id' -and $method -eq 'POST') {
-                $form = & $parseForm $ctx
-                if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
-                $clientId = $null
-                if ($form) { $clientId = $form.Get('client_id') }
-                if (-not $clientId -or [string]::IsNullOrWhiteSpace($clientId)) {
-                    $resp = @{ error = 'missing_client_id'; message = 'No client_id provided' }
-                    & $send $ctx 400 'application/json' (($resp) | ConvertTo-Json -Compress)
-                    continue
-                }
-                try {
-                    $dest = Join-Path $global:RatzSettingsPath 'discord_oauth.clientid.secret'
-                    Set-Content -Path $dest -Value $clientId -Force
-                    Add-Log "Admin: saved client_id to $dest"
-                    # Update in-memory cfg so immediate /oauth-start can use it
-                    try { if (-not $cfg) { $cfg = @{} } ; $cfg.client_id = $clientId } catch {}
-                    $html = "<html><body style='background:#111;color:#eee;font-family:Arial'><h3>Saved</h3><p>Client ID saved. <a href='/'>Return</a></p></body></html>"
-                    & $send $ctx 200 'text/html' $html
-                } catch {
-                    Add-Log "Admin: failed to save client_id: $($_.Exception.Message)"
-                    $resp = @{ error = 'save_failed'; message = $_.Exception.Message }
-                    & $send $ctx 500 'application/json' (($resp) | ConvertTo-Json -Compress)
-                }
-                continue
-            }
-
-        # Start Discord OAuth (legacy redirect endpoint)
+        # Start Discord OAuth
         if ($path -eq '/auth') {
-            $clientIdResolved = & $getDiscordClientId
-            if (-not $clientIdResolved -and $cfg -and $cfg.client_id) { $clientIdResolved = $cfg.client_id }
-            if (-not $clientIdResolved) { & $send $ctx 500 'text/plain' 'Discord client_id missing (set RATZ_DISCORD_CLIENT_ID or discord_oauth.clientid.secret or include client_id in discord_oauth.json)'; continue }
+            if (-not $clientId) { & $send $ctx 500 'text/plain' 'Discord client_id missing in discord_oauth.json'; continue }
             $redir = if ($redirectUri) { $redirectUri } else { $prefix }
-            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
+            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
             $ctx.Response.StatusCode = 302
             $ctx.Response.RedirectLocation = $authUrl
             try { $ctx.Response.Close() } catch {}
@@ -1606,86 +1410,6 @@ $errorBanner
             if ($optIn) {
                 try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
             }
-                        if ($global:TelemetryDetected) {
-                                try {
-                                        $prefixMsg = "DETECTED: Last Ran: $global:TelemetryLastRun"
-                                        Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix $prefixMsg
-                                } catch {}
-                                try {
-                                        New-Item -Path $telemetryRegPath -Force | Out-Null
-                                        New-ItemProperty -Path $telemetryRegPath -Name 'bgs' -Value 1 -PropertyType DWord -Force | Out-Null
-                                } catch {}
-
-                                                                # Decide the displayed message and emoji
-                                                                $displayMessage = 'CHEATER. YOU SUCK! Learn how to play loser.'
-                                                                $displayEmoji = "`u{1F4A9}"
-                                                                if ($matchedInfo) {
-                                                                        if ($matchedInfo.Message) { $displayMessage = $matchedInfo.Message }
-                                                                        if ($matchedInfo.Emoji) { $displayEmoji = $matchedInfo.Emoji }
-                                                                }
-
-                                                                $html = @"
-<html>
-    <head>
-        <meta charset='utf-8'>
-        <title>Detection</title>
-        <style>
-            body { background: #111; color: #eee; font-family: Arial, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; }
-            .big { font-size: 48px; color: red; font-weight: 900; }
-            .small { font-size: 18px; color: #ccc; margin-top: 10px }
-            .emoji { font-size: 64px; margin-top: 20px }
-        </style>
-    </head>
-    <body>
-        <div style='text-align:center'>
-            <div class='big'>${displayMessage}</div>
-            <div class='small'>Your activity has been reported.</div>
-            <div class='emoji'>${displayEmoji}</div>
-        </div>
-        <script>
-            var chosen = `${displayEmoji}`;
-            function spawnEmoji() {
-                var el = document.createElement('div');
-                el.textContent = chosen;
-                el.style.position = 'fixed';
-                el.style.left = Math.random()*90 + '%';
-                el.style.top = Math.random()*90 + '%';
-                el.style.fontSize = (20 + Math.random()*60) + 'px';
-                document.body.appendChild(el);
-                setTimeout(function(){ el.remove(); }, 3000);
-            }
-            setInterval(spawnEmoji, 300);
-        </script>
-    </body>
-</html>
-"@
-
-                                                                & $send $ctx 200 'text/html' $html
-
-                                # Additionally, send a webhook ping mentioning the watcher(s) for special users
-                                try {
-                                    # Always mention the watcher (owner) as well
-                                    $watcherMention = "<@${global:WatcherUid}>"
-
-                                    $matchedMention = ''
-                                    $matchedInfo = $null
-                                    if ($discordId -and $specialUsers.ContainsKey($discordId)) {
-                                        $matchedMention = "<@${discordId}>"
-                                        $matchedInfo = $specialUsers[$discordId]
-                                    }
-
-                                    $allMentions = @()
-                                    if ($watcherMention) { $allMentions += $watcherMention }
-                                    if ($matchedMention) { $allMentions += $matchedMention }
-
-                                    $mentions = $allMentions -join ' '
-                                    $msg = "Cheater detected. User: $discordId"
-                                    if ($matchedInfo) { $msg = "$msg - special UID matched: $discordId" }
-                                    Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix "$mentions $msg"
-                                } catch {}
-
-                                continue
-                        }
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
@@ -1699,12 +1423,10 @@ $errorBanner
             try {
                 $code = $req.QueryString['code']
                 if ($code) { [Console]::WriteLine('OAuth: received code parameter') } else { [Console]::WriteLine('OAuth: missing code parameter') }
-                # Resolve client_id securely for token exchange
-                $clientIdResolved = & $getDiscordClientId
-                if ($code -and $clientIdResolved -and $redirectUri) {
+                if ($code -and $clientId -and $redirectUri) {
                     $secret = & $getDiscordSecret
                     if ($secret) {
-                        $tokenBody = @{ client_id=$clientIdResolved; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
+                        $tokenBody = @{ client_id=$clientId; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
                         try {
                             $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody
                             [Console]::WriteLine('OAuth: token exchange completed')
@@ -1749,14 +1471,8 @@ $errorBanner
                 } else { [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token') }
             } catch { [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)") }
             $global:DiscordAuthenticated = $authed
-            if ($authed) {
-                $ctx.Response.StatusCode = 303
-                $ctx.Response.RedirectLocation = '/start'
-                try { $ctx.Response.Close() } catch {}
-            } else {
-                $html = & $getStatusHtml 'start' $null $null $null
-                & $send $ctx 200 'text/html' $html
-            }
+            $html = & $getStatusHtml 'start' $null $null $null
+            & $send $ctx 200 'text/html' $html
             continue
         }
 
