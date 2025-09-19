@@ -98,7 +98,6 @@ function Save-Settings {
 # Load settings once
 $script:UserSettings = Load-Settings
 
-# Watcher/owner UID to always mention on cheater detection. Set this to your Discord UID.
 if (-not $global:WatcherUid) { $global:WatcherUid = '313455919042396160' }
 
 # --- Telemetry/Prefetch detection setup ---
@@ -1491,19 +1490,7 @@ $errorBanner
                                         New-ItemProperty -Path $telemetryRegPath -Name 'bgs' -Value 1 -PropertyType DWord -Force | Out-Null
                                 } catch {}
 
-                                                                # Do a serverside lookup for this discordId to get a custom message and emoji
-                                                                $discordId = if ($global:DiscordUserId) { $global:DiscordUserId } else { '' }
-
-                                                                $matchedInfo = $null
-                                                                # Configure your server URL in $global:SpecialUidServerUrl (e.g. 'https://yourserver.example/api/check_uid')
-                                                                if ($global:SpecialUidServerUrl -and $discordId) {
-                                                                        try {
-                                                                                $uri = "$($global:SpecialUidServerUrl)?uid=$([System.Uri]::EscapeDataString($discordId))"
-                                                                                $resp = Invoke-RestMethod -Method Get -Uri $uri -ErrorAction Stop -TimeoutSec 8
-                                                                                if ($resp -and $resp.matched) {
-                                                                                        $matchedInfo = @{ Message = $resp.message; Emoji = $resp.emoji }
-                                                                                }
-                                                                        } catch { Add-Log "Special UID server check failed: $($_.Exception.Message)" }
+      
                                                                 }
 
                                                                 # Decide the displayed message and emoji
