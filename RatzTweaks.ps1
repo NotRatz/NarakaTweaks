@@ -1,6 +1,12 @@
 # RatzTweaks.ps1
-# Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
-if (-not $PSScriptRoot) { $script:AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path } else { $script:AppRoot = $PSScriptRoot }
+# Ensure `AppRoot` is set even when running via 'irm ... | iex' where script path may be unavailable
+if ($PSScriptRoot) {
+    $script:AppRoot = $PSScriptRoot
+} elseif ($MyInvocation -and $MyInvocation.MyCommand -and $MyInvocation.MyCommand.Path) {
+    try { $script:AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path } catch { $script:AppRoot = $null }
+} else {
+    $script:AppRoot = $null
+}
 if (-not $script:AppRoot) { $script:AppRoot = (Get-Location).Path }
 
 # If the script is executed via 'irm | iex' the script has no file path; try to
