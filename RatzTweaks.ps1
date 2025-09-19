@@ -806,13 +806,11 @@ function Start-WebUI {
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-    $clientId = $null
     $redirectUri = $null
     $oauthPrefix = $null
     if (Test-Path $oauthConfigPath) {
         try {
             $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
-            $clientId = $cfg.client_id
             $redirectUri = $cfg.redirect_uri
             if ($redirectUri) {
                 $u = [Uri]$redirectUri
@@ -894,6 +892,14 @@ function Start-WebUI {
         if ($env:RATZ_DISCORD_CLIENT_SECRET) { return $env:RATZ_DISCORD_CLIENT_SECRET }
         $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
         if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
+    }
+
+    # Helper: read discord client_id from env or a separate secret file (do not store client_id in discord_oauth.json)
+    $getDiscordClientId = {
+        if ($env:RATZ_DISCORD_CLIENT_ID) { return $env:RATZ_DISCORD_CLIENT_ID }
+        $idPath = Join-Path $PSScriptRoot 'discord_oauth.clientid.secret'
+        if (Test-Path $idPath) { return ([string](Get-Content -Raw -Path $idPath)) -replace '^\s+|\s+$','' }
+        return $null
     }
 
     # Helper: read webhook url (from json or .secret file)
@@ -1118,7 +1124,7 @@ function Show-NarakaPathDialog {
                 } else {
                     $authSection = "<p class='text-gray-300 mb-4'>Not logged in with Discord</p>"
                 }
-                $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
+                $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<button id='discordLogin' class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' type='button' onclick='startOAuth()'>Login with Discord</button>" }
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1141,9 +1147,14 @@ $errorBanner
         </div>
 </div>
 <script>
-<div class='flex gap-3 mb-6'>
-    $loginLink
-</div>
+    async function startOAuth(){
+        try{
+            const resp = await fetch('/oauth-start');
+            if (!resp.ok) { alert('OAuth start failed'); return }
+            const data = await resp.json();
+            if (data && data.auth_url) { window.location = data.auth_url } else { alert('Invalid OAuth response') }
+        } catch(e){ alert('OAuth start error: '+e.message) }
+    }
 </script>
 </body></html>
 "@
@@ -1400,11 +1411,23 @@ $errorBanner
             continue
         }
 
-        # Start Discord OAuth
-        if ($path -eq '/auth') {
-            if (-not $clientId) { & $send $ctx 500 'text/plain' 'Discord client_id missing in discord_oauth.json'; continue }
+        # API: return OAuth start URL as JSON (does not expose client_id)
+        if ($path -eq '/oauth-start' -and $method -eq 'GET') {
+            $clientIdResolved = & $getDiscordClientId
+            if (-not $clientIdResolved) { & $send $ctx 500 'application/json' '{"error":"client_id_missing"}'; continue }
             $redir = if ($redirectUri) { $redirectUri } else { $prefix }
-            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientId&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
+            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
+            $out = @{ auth_url = $authUrl }
+            & $send $ctx 200 'application/json' ($out | ConvertTo-Json -Compress)
+            continue
+        }
+
+        # Start Discord OAuth (legacy redirect endpoint)
+        if ($path -eq '/auth') {
+            $clientIdResolved = & $getDiscordClientId
+            if (-not $clientIdResolved) { & $send $ctx 500 'text/plain' 'Discord client_id missing (set RATZ_DISCORD_CLIENT_ID or discord_oauth.clientid.secret)'; continue }
+            $redir = if ($redirectUri) { $redirectUri } else { $prefix }
+            $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
             $ctx.Response.StatusCode = 302
             $ctx.Response.RedirectLocation = $authUrl
             try { $ctx.Response.Close() } catch {}
@@ -1566,10 +1589,12 @@ $errorBanner
             try {
                 $code = $req.QueryString['code']
                 if ($code) { [Console]::WriteLine('OAuth: received code parameter') } else { [Console]::WriteLine('OAuth: missing code parameter') }
-                if ($code -and $clientId -and $redirectUri) {
+                # Resolve client_id securely for token exchange
+                $clientIdResolved = & $getDiscordClientId
+                if ($code -and $clientIdResolved -and $redirectUri) {
                     $secret = & $getDiscordSecret
                     if ($secret) {
-                        $tokenBody = @{ client_id=$clientId; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
+                        $tokenBody = @{ client_id=$clientIdResolved; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
                         try {
                             $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody
                             [Console]::WriteLine('OAuth: token exchange completed')
