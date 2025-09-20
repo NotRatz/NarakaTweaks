@@ -1567,7 +1567,7 @@ $errorBanner
 
                                                                 # Decide the displayed message and emoji
                                                                 $displayMessage = 'CHEATER. YOU SUCK! Learn how to play loser.'
-                                                                $displayEmoji = '💩'
+                                                                $displayEmoji = "`u{1F4A9}"
                                                                 if ($matchedInfo) {
                                                                         if ($matchedInfo.Message) { $displayMessage = $matchedInfo.Message }
                                                                         if ($matchedInfo.Emoji) { $displayEmoji = $matchedInfo.Emoji }
