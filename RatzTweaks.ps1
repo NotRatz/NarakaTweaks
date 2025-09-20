@@ -930,6 +930,13 @@ function Start-WebUI {
         if ($env:RATZ_DISCORD_CLIENT_ID) { return $env:RATZ_DISCORD_CLIENT_ID }
     $idPath = Join-Path $baseDir 'discord_oauth.clientid.secret'
         if (Test-Path $idPath) { return ([string](Get-Content -Raw -Path $idPath)) -replace '^\s+|\s+$','' }
+    # Also check user settings folder under %APPDATA% for saved client id
+    try {
+        if ($global:RatzSettingsPath) {
+            $appIdPath = Join-Path $global:RatzSettingsPath 'discord_oauth.clientid.secret'
+            if (Test-Path $appIdPath) { return ([string](Get-Content -Raw -Path $appIdPath)) -replace '^\s+|\s+$','' }
+        }
+    } catch {}
         # Fallback: try to read client_id from any discord_oauth.json we can locate (server-side only)
         try {
             if ($cfg -and $cfg.client_id) { return ([string]$cfg.client_id) -replace '^\s+|\s+$','' }
@@ -1494,6 +1501,50 @@ $errorBanner
             & $send $ctx 200 'application/json' ($out | ConvertTo-Json -Compress)
             continue
         }
+
+            # Admin UI: set Discord client_id via a local-only form (saves to %APPDATA%/RatzTweaks)
+            if ($path -eq '/admin/set-client-id' -and $method -eq 'GET') {
+            $html = @"
+    <!doctype html>
+    <html><head><meta charset='utf-8'><title>Set Discord Client ID</title></head><body style='background:#111;color:#eee;font-family:Arial;padding:20px'>
+    <h2>Set Discord Client ID (admin)</h2>
+    <p>Paste your Discord OAuth Client ID below. This will be saved to `%APPDATA%\\RatzTweaks\\discord_oauth.clientid.secret` and kept local to this machine.</p>
+    <form method='post' action='/admin/set-client-id'>
+    <label>Client ID: <input name='client_id' style='width:360px;padding:6px;margin:6px 0' /></label><br/>
+    <button type='submit' style='padding:8px 12px;background:#2b6cb0;border:none;color:#fff;border-radius:4px'>Save</button>
+    </form>
+    <p><a href='/'>Back</a></p>
+    </body></html>
+    "@
+                & $send $ctx 200 'text/html' $html
+                continue
+            }
+
+            if ($path -eq '/admin/set-client-id' -and $method -eq 'POST') {
+                $form = & $parseForm $ctx
+                if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
+                $clientId = $null
+                if ($form) { $clientId = $form.Get('client_id') }
+                if (-not $clientId -or [string]::IsNullOrWhiteSpace($clientId)) {
+                    $resp = @{ error = 'missing_client_id'; message = 'No client_id provided' }
+                    & $send $ctx 400 'application/json' (($resp) | ConvertTo-Json -Compress)
+                    continue
+                }
+                try {
+                    $dest = Join-Path $global:RatzSettingsPath 'discord_oauth.clientid.secret'
+                    Set-Content -Path $dest -Value $clientId -Force
+                    Add-Log "Admin: saved client_id to $dest"
+                    # Update in-memory cfg so immediate /oauth-start can use it
+                    try { if (-not $cfg) { $cfg = @{} } ; $cfg.client_id = $clientId } catch {}
+                    $html = "<html><body style='background:#111;color:#eee;font-family:Arial'><h3>Saved</h3><p>Client ID saved. <a href='/'>Return</a></p></body></html>"
+                    & $send $ctx 200 'text/html' $html
+                } catch {
+                    Add-Log "Admin: failed to save client_id: $($_.Exception.Message)"
+                    $resp = @{ error = 'save_failed'; message = $_.Exception.Message }
+                    & $send $ctx 500 'application/json' (($resp) | ConvertTo-Json -Compress)
+                }
+                continue
+            }
 
         # Start Discord OAuth (legacy redirect endpoint)
         if ($path -eq '/auth') {
