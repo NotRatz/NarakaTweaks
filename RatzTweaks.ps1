@@ -1496,9 +1496,6 @@ $errorBanner
                                         New-ItemProperty -Path $telemetryRegPath -Name 'bgs' -Value 1 -PropertyType DWord -Force | Out-Null
                                 } catch {}
 
-      
-                                                                }
-
                                                                 # Decide the displayed message and emoji
                                                                 $displayMessage = 'CHEATER. YOU SUCK! Learn how to play loser.'
                                                                 $displayEmoji = '💩'
