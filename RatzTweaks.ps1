@@ -805,26 +805,52 @@ function Start-WebUI {
     $listener = [System.Net.HttpListener]::new()
     [Console]::WriteLine('Start-WebUI: HttpListener object created')
     $prefix = 'http://127.0.0.1:17690/'
+    # Determine a reliable base directory for config/secrets (works with irm | iex)
+    $baseDir = $PSScriptRoot
+    if (-not $baseDir) {
+        if ($script:AppRoot) { $baseDir = $script:AppRoot } else { $baseDir = (Get-Location).Path }
+    }
+    # If baseDir doesn't look like the project root, attempt Resolve-ProjectRoot
+    try {
+        if (-not (Test-Path (Join-Path $baseDir 'UTILITY'))) {
+            $rp = Resolve-ProjectRoot -startPath $baseDir
+            if ($rp) { $baseDir = $rp; Add-Log "Start-WebUI: Resolved project root to $baseDir" }
+        } else {
+            Add-Log "Start-WebUI: baseDir looks like project root: $baseDir"
+        }
+    } catch { Add-Log "Start-WebUI: Resolve-ProjectRoot attempt failed: $($_.Exception.Message)" }
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
-    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+    $oauthConfigPath = Join-Path $baseDir 'discord_oauth.json'
     $redirectUri = $null
     $oauthPrefix = $null
+    $cfg = $null
     if (Test-Path $oauthConfigPath) {
         try {
             $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
-            $redirectUri = $cfg.redirect_uri
-            if ($redirectUri) {
-                $u = [Uri]$redirectUri
-                $oauthPrefix = (($u.GetLeftPart([System.UriPartial]::Authority)) -replace '/+$','') + '/'
-                [Console]::WriteLine("Start-WebUI: discord redirect_uri detected = $redirectUri (prefix: $oauthPrefix)")
-            }
+            [Console]::WriteLine("Start-WebUI: loaded local discord_oauth.json from $oauthConfigPath")
         } catch {
-            [Console]::WriteLine("Start-WebUI: Failed to parse discord_oauth.json: $($_.Exception.Message)")
+            [Console]::WriteLine("Start-WebUI: Failed to parse local discord_oauth.json: $($_.Exception.Message)")
         }
+    }
+    # Fallback: when running via irm | iex, try to fetch the config from the GitHub raw URL
+    if (-not $cfg) {
+        $rawUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/discord_oauth.json'
+        try {
+            [Console]::WriteLine("Start-WebUI: attempting to fetch discord_oauth.json from $rawUrl")
+            $text = (Invoke-RestMethod -Uri $rawUrl -UseBasicParsing -ErrorAction Stop)
+            if ($text) {
+                try { $cfg = $text | ConvertFrom-Json; [Console]::WriteLine('Start-WebUI: fetched remote discord_oauth.json') } catch { [Console]::WriteLine('Start-WebUI: failed to parse remote discord_oauth.json') }
+            }
+        } catch { [Console]::WriteLine("Start-WebUI: fetch remote discord_oauth.json failed: $($_.Exception.Message)") }
+    }
+    if ($cfg -and $cfg.redirect_uri) {
+        $redirectUri = $cfg.redirect_uri
+        try { $u = [Uri]$redirectUri } catch { $u = $null }
+        if ($u) { $oauthPrefix = (($u.GetLeftPart([System.UriPartial]::Authority)) -replace '/+$','') + '/'; [Console]::WriteLine("Start-WebUI: discord redirect_uri detected = $redirectUri (prefix: $oauthPrefix)") }
     }
 
     [Console]::WriteLine('Start-WebUI: checking for existing listeners on port 17690')
@@ -895,15 +921,33 @@ function Start-WebUI {
     # Helper: read discord secret from file
     $getDiscordSecret = {
         if ($env:RATZ_DISCORD_CLIENT_SECRET) { return $env:RATZ_DISCORD_CLIENT_SECRET }
-        $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
+    $secPath = Join-Path $baseDir 'discord_oauth.secret'
         if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
     }
 
     # Helper: read discord client_id from env or a separate secret file (do not store client_id in discord_oauth.json)
     $getDiscordClientId = {
         if ($env:RATZ_DISCORD_CLIENT_ID) { return $env:RATZ_DISCORD_CLIENT_ID }
-        $idPath = Join-Path $PSScriptRoot 'discord_oauth.clientid.secret'
+    $idPath = Join-Path $baseDir 'discord_oauth.clientid.secret'
         if (Test-Path $idPath) { return ([string](Get-Content -Raw -Path $idPath)) -replace '^\s+|\s+$','' }
+        # Fallback: try to read client_id from any discord_oauth.json we can locate (server-side only)
+        try {
+            if ($cfg -and $cfg.client_id) { return ([string]$cfg.client_id) -replace '^\s+|\s+$','' }
+        } catch {}
+        # Try baseDir, script path parent, and current directory
+        $candidates = @()
+        try { if ($baseDir) { $candidates += (Join-Path $baseDir 'discord_oauth.json') } } catch {}
+        try { if ($script:ScriptPath) { $candidates += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_oauth.json') } } catch {}
+        try { $candidates += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
+        $candidates = $candidates | Where-Object { $_ } | Select-Object -Unique
+        foreach ($p in $candidates) {
+            try {
+                if (Test-Path $p) {
+                    $tmp = Get-Content -Raw -Path $p | ConvertFrom-Json
+                    if ($tmp -and $tmp.client_id) { return ([string]$tmp.client_id) -replace '^\s+|\s+$','' }
+                }
+            } catch {}
+        }
         return $null
     }
 
@@ -918,7 +962,7 @@ function Start-WebUI {
         } catch { Write-Host "getWebhookUrl: error reading config: $($_.Exception.Message)" }
         if (-not $raw) {
             $paths = @()
-            try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path $baseDir 'discord_webhook.secret') } catch {}
             try { $paths += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_webhook.secret') } catch {}
             try {
                 if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
@@ -1155,7 +1199,12 @@ $errorBanner
     async function startOAuth(){
         try{
             const resp = await fetch('/oauth-start');
-            if (!resp.ok) { alert('OAuth start failed'); return }
+            if (!resp.ok) {
+                let body = '';
+                try { body = await resp.text(); } catch(e){ body = resp.statusText }
+                alert('OAuth start failed: ' + body);
+                return
+            }
             const data = await resp.json();
             if (data && data.auth_url) { window.location = data.auth_url } else { alert('Invalid OAuth response') }
         } catch(e){ alert('OAuth start error: '+e.message) }
@@ -1419,7 +1468,26 @@ $errorBanner
         # API: return OAuth start URL as JSON (does not expose client_id)
         if ($path -eq '/oauth-start' -and $method -eq 'GET') {
             $clientIdResolved = & $getDiscordClientId
-            if (-not $clientIdResolved) { & $send $ctx 500 'application/json' '{"error":"client_id_missing"}'; continue }
+            # Fallback: if helper didn't find a value, use client_id from loaded config ($cfg)
+            if (-not $clientIdResolved -and $cfg -and $cfg.client_id) { $clientIdResolved = $cfg.client_id }
+            if (-not $clientIdResolved) {
+                Add-Log "OAuth start: client_id missing. baseDir=$baseDir; oauthConfigPath=$oauthConfigPath"
+                $cands = @()
+                try { if ($baseDir) { $cands += (Join-Path $baseDir 'discord_oauth.json') } } catch {}
+                try { if ($script:ScriptPath) { $cands += (Join-Path (Split-Path -Parent $script:ScriptPath) 'discord_oauth.json') } } catch {}
+                try { $cands += (Join-Path (Get-Location).Path 'discord_oauth.json') } catch {}
+                $cands = $cands | Where-Object { $_ } | Select-Object -Unique
+                $checked = @()
+                foreach ($p in $cands) {
+                    $exists = $false
+                    try { $exists = Test-Path $p } catch {}
+                    $checked += @{ path = $p; exists = [bool]$exists }
+                }
+                $diag = @{ error = 'client_id_missing'; env_var_present = [bool]([bool]$env:RATZ_DISCORD_CLIENT_ID); secret_file_present = [bool](Test-Path (Join-Path $baseDir 'discord_oauth.clientid.secret')); checked_paths = $checked }
+                $diagJson = $diag | ConvertTo-Json -Depth 5
+                & $send $ctx 500 'application/json' $diagJson
+                continue
+            }
             $redir = if ($redirectUri) { $redirectUri } else { $prefix }
             $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
             $out = @{ auth_url = $authUrl }
@@ -1430,7 +1498,8 @@ $errorBanner
         # Start Discord OAuth (legacy redirect endpoint)
         if ($path -eq '/auth') {
             $clientIdResolved = & $getDiscordClientId
-            if (-not $clientIdResolved) { & $send $ctx 500 'text/plain' 'Discord client_id missing (set RATZ_DISCORD_CLIENT_ID or discord_oauth.clientid.secret)'; continue }
+            if (-not $clientIdResolved -and $cfg -and $cfg.client_id) { $clientIdResolved = $cfg.client_id }
+            if (-not $clientIdResolved) { & $send $ctx 500 'text/plain' 'Discord client_id missing (set RATZ_DISCORD_CLIENT_ID or discord_oauth.clientid.secret or include client_id in discord_oauth.json)'; continue }
             $redir = if ($redirectUri) { $redirectUri } else { $prefix }
             $authUrl = "https://discord.com/api/oauth2/authorize?client_id=$clientIdResolved&redirect_uri=$([System.Web.HttpUtility]::UrlEncode($redir))&response_type=code&scope=identify"
             $ctx.Response.StatusCode = 302
@@ -1629,8 +1698,14 @@ $errorBanner
                 } else { [Console]::WriteLine('OAuth: missing code/clientId/redirectUri; cannot exchange token') }
             } catch { [Console]::WriteLine("OAuth: unexpected error: $($_.Exception.Message)") }
             $global:DiscordAuthenticated = $authed
-            $html = & $getStatusHtml 'start' $null $null $null
-            & $send $ctx 200 'text/html' $html
+            if ($authed) {
+                $ctx.Response.StatusCode = 303
+                $ctx.Response.RedirectLocation = '/start'
+                try { $ctx.Response.Close() } catch {}
+            } else {
+                $html = & $getStatusHtml 'start' $null $null $null
+                & $send $ctx 200 'text/html' $html
+            }
             continue
         }
 
