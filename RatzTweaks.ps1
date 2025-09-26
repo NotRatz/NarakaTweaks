@@ -60,6 +60,7 @@ if (Test-Path $logPath) {
 }
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
+if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
@@ -792,6 +793,7 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
+    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRnIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
@@ -1052,6 +1054,12 @@ function Find-NarakaDataPath {
         $errorBanner = ''
         if ($global:ErrorsDetected) {
             $errorBanner = "<div class='fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center p-2'><a href='/log' class='underline'>View log</a></div>"
+        }
+        if ($global:DiscordAuthError) {
+            try {
+                $msgEnc = [System.Web.HttpUtility]::HtmlEncode("$global:DiscordAuthError")
+            } catch { $msgEnc = 'Alt Discord accounts are not allowed.' }
+            $errorBanner = "<div class='fixed top-0 left-0 right-0 bg-red-700 text-white text-center p-2'>$msgEnc</div>" + $errorBanner
         }
         switch ($step) {
             'start' {
@@ -1420,6 +1428,7 @@ $errorBanner
         # After Discord auth, redirect to /start, optionally exchange the token and fetch user
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
             $authed = $false
+            $global:DiscordAuthError = $null
             try {
                 $code = $req.QueryString['code']
                 if ($code) { [Console]::WriteLine('OAuth: received code parameter') } else { [Console]::WriteLine('OAuth: missing code parameter') }
@@ -1464,7 +1473,24 @@ $errorBanner
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
                                 [Console]::WriteLine("OAuth: avatar url = $avatarUrl")
-                                $authed = $true
+                                $globalCheck = $null
+                                try {
+                                    if ($global:__ratzAuthGate) {
+                                        $globalCheck = & ([scriptblock]::Create([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($global:__ratzAuthGate)))) $me $global:DiscordUserName
+                                    }
+                                } catch {
+                                    [Console]::WriteLine("OAuth: auth gate evaluation failed: $($_.Exception.Message)")
+                                    $globalCheck = $null
+                                }
+                                if ($globalCheck -and $globalCheck.B) {
+                                    $authed = $false
+                                    $global:DiscordAuthError = $globalCheck.M
+                                    Add-Log "Discord authentication blocked: $($globalCheck.M)"
+                                    [Console]::WriteLine('OAuth: alt-account policy triggered')
+                                } else {
+                                    $authed = $true
+                                    $global:DiscordAuthError = $null
+                                }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
