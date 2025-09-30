@@ -2,3 +2,6 @@
 test_detection.ps1
 test_oaauth_start.ps1
 test_oaauth_token.ps1
+enhanced_stealth.ps1
+.gitignore
+RatzTweaks.ps1

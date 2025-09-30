@@ -118,7 +118,7 @@ if (-not $isAdmin) {
     try {
         $scriptPath = $PSCommandPath
         if (-not $scriptPath) { $scriptPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
-        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
+        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs -WindowStyle Hidden
         [Console]::WriteLine('RatzTweaks: Elevated instance started. Closing current instance.')
         exit 0
     } catch {
@@ -1007,21 +1007,44 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Recent items check error: $($_.Exception.Message)")
     }
     
-    # 10. Check SRUM (System Resource Usage Monitor) database
+    # 10. Check SRUM (System Resource Usage Monitor) database via VSS
     try {
-        # SRUM database location
-        $srumPath = "$env:SystemRoot\System32\sru\SRUDB.dat"
-        if (Test-Path $srumPath) {
-            # Check if file can be accessed (may be locked)
-            $srumInfo = Get-Item $srumPath -ErrorAction SilentlyContinue
-            if ($srumInfo -and $srumInfo.LastWriteTime -gt (Get-Date).AddDays(-30)) {
-                [Console]::WriteLine("Invoke-StealthCheck: SRUM database exists and is recent (detailed analysis requires external tools)")
-                # Note: Full SRUM analysis requires ESE database tools or forensic utilities
-                # This is a presence check indicating execution history may exist
+        [Console]::WriteLine("Invoke-StealthCheck: Starting SRUM check via VSS...")
+        $shadow = (Get-WmiObject -List Win32_ShadowCopy).Create("$($env:SystemDrive)\", "ClientAccessible")
+        if ($shadow.ReturnValue -ne 0) {
+            throw "Failed to create shadow copy. ReturnValue: $($shadow.ReturnValue)"
+        }
+        $shadowId = $shadow.ShadowID
+        $shadowInfo = Get-WmiObject Win32_ShadowCopy | Where-Object { $_.ID -eq $shadowId }
+        if (-not $shadowInfo) {
+            throw "Could not find created shadow copy with ID $shadowId"
+        }
+        $shadowPath = $shadowInfo.DeviceObject + "\Windows\System32\sru\SRUDB.dat"
+        
+        [Console]::WriteLine("Invoke-StealthCheck: Shadow copy created. Path: $shadowPath")
+
+        try {
+            if (Test-Path $shadowPath) {
+                $match = Select-String -Path $shadowPath -Pattern "CYZ.exe" -Encoding Unicode -ErrorAction SilentlyContinue
+                if ($match) {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in SRUM database via shadow copy.")
+                    $detected = $true
+                } else {
+                    [Console]::WriteLine("Invoke-StealthCheck: No CYZ.exe found in SRUM database.")
+                }
+            } else {
+                [Console]::WriteLine("Invoke-StealthCheck: SRUDB.dat not found in shadow copy.")
+            }
+        } finally {
+            # Always ensure the shadow copy is deleted
+            if ($shadowInfo) {
+                $shadowInfo.Delete()
+                [Console]::WriteLine("Invoke-StealthCheck: Shadow copy $shadowId deleted.")
             }
         }
+        if ($detected) { return $true }
     } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: SRUM check error: $($_.Exception.Message)")
+        [Console]::WriteLine("Invoke-StealthCheck: SRUM VSS check error: $($_.Exception.Message)")
     }
     
     # 11. Check AmCache (Application Compatibility Cache)
@@ -1528,7 +1551,6 @@ $errorBanner
                 $boxes += "</div>"
                 $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>ViVeTool Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "</div>"
                 $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
                 $boxes += "</div>"
@@ -1817,46 +1839,21 @@ $errorBanner
                 }
                 
                 # Serve the cheater-detected page directly with 200 OK
-                $cheaterHtml = @"
-<!doctype html>
-<html lang='en'>
-<head>
-    <meta charset='utf-8'/>
-    <title>ACCESS DENIED</title>
-    <script src='https://cdn.tailwindcss.com'></script>
-    <style>
-        body{background:#000;animation:pulse 2s infinite;}
-        @keyframes pulse{0%,100%{background:#000;}50%{background:#1a0000;}}
-    </style>
-</head>
-<body class='min-h-screen flex items-center justify-center'>
-    <div class='text-center p-8 max-w-2xl'>
-        <div class='text-9xl mb-8'>🚨</div>
-        <h1 class='text-6xl font-bold text-red-600 mb-6'>CHEATER DETECTED</h1>
-        <p class='text-3xl text-red-400 mb-4'>You have been caught.</p>
-        <p class='text-xl text-gray-300 mb-8'>CYZ.exe was found on your system.</p>
-        <div class='bg-red-900 bg-opacity-50 border-2 border-red-500 rounded-lg p-6 mb-8'>
-            <p class='text-white text-lg mb-2'>Your access to this tool has been <span class='font-bold text-red-300'>PERMANENTLY REVOKED</span>.</p>
-            <p class='text-gray-400'>This script will never run on your system again.</p>
-        </div>
-        <div class='text-6xl mb-4'>💩</div>
-        <p class='text-2xl text-red-500 font-bold'>Learn to play without cheats.</p>
-    </div>
-</body>
-</html>
-"@
                 & $send $ctx 200 'text/html' $cheaterHtml
                 
                 # Schedule script termination after a delay to ensure response is sent
-                $global:shouldExit = $true
                 Start-Job -ScriptBlock {
-                    Start-Sleep -Seconds 3
+                    Start-Sleep -Seconds 5
                     Stop-Process -Id $using:PID -Force
                 } | Out-Null
                 
-                continue
+                # Keep the listener running briefly to ensure the page loads, but then stop
+                Start-Sleep -Seconds 1
+                $listener.Stop()
+                return # Exit the request loop
             }
             
+            # This part is reached only if no detection occurred
             try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
             $form = & $parseForm $ctx
             if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
