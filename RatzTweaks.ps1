@@ -921,6 +921,168 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Security log check error: $($_.Exception.Message)")
     }
     
+    # 6. Check Windows Defender/Antimalware scan history
+    try {
+        $defenderLogs = Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 500 -ErrorAction SilentlyContinue
+        if ($defenderLogs) {
+            foreach ($log in $defenderLogs) {
+                $logMsg = $log.Message
+                if ($logMsg -and $logMsg -like "*CYZ.exe*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Windows Defender log")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: Windows Defender log check error: $($_.Exception.Message)")
+    }
+    
+    # 7. Check System event log for process-related events
+    try {
+        $systemEvents = Get-WinEvent -LogName System -MaxEvents 500 -ErrorAction SilentlyContinue
+        if ($systemEvents) {
+            foreach ($evt in $systemEvents) {
+                $evtMsg = $evt.Message
+                if ($evtMsg -and $evtMsg -like "*CYZ.exe*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in System event log")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: System event log check error: $($_.Exception.Message)")
+    }
+    
+    # 8. Check Windows Error Reporting (WER) for crash reports
+    try {
+        $werPaths = @(
+            "$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportQueue",
+            "$env:ProgramData\Microsoft\Windows\WER\ReportQueue",
+            "$env:LOCALAPPDATA\CrashDumps"
+        )
+        foreach ($werPath in $werPaths) {
+            if (Test-Path $werPath) {
+                $werReports = Get-ChildItem -Path $werPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*CYZ*" -or $_.FullName -like "*CYZ*" }
+                if ($werReports) {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in WER crash reports: $($werReports[0].FullName)")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: WER check error: $($_.Exception.Message)")
+    }
+    
+    # 9. Check Recent Items / Jump Lists
+    try {
+        $recentPaths = @(
+            "$env:APPDATA\Microsoft\Windows\Recent",
+            "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations",
+            "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations"
+        )
+        foreach ($recentPath in $recentPaths) {
+            if (Test-Path $recentPath) {
+                $recentFiles = Get-ChildItem -Path $recentPath -Recurse -File -ErrorAction SilentlyContinue
+                foreach ($file in $recentFiles) {
+                    try {
+                        $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
+                        if ($content -and $content -like "*CYZ.exe*") {
+                            [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: $($file.FullName)")
+                            $detected = $true
+                            return $detected
+                        }
+                    } catch {
+                        # Silently continue if file is locked or unreadable
+                    }
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: Recent items check error: $($_.Exception.Message)")
+    }
+    
+    # 10. Check SRUM (System Resource Usage Monitor) database
+    try {
+        # SRUM database location
+        $srumPath = "$env:SystemRoot\System32\sru\SRUDB.dat"
+        if (Test-Path $srumPath) {
+            # Check if file can be accessed (may be locked)
+            $srumInfo = Get-Item $srumPath -ErrorAction SilentlyContinue
+            if ($srumInfo -and $srumInfo.LastWriteTime -gt (Get-Date).AddDays(-30)) {
+                [Console]::WriteLine("Invoke-StealthCheck: SRUM database exists and is recent (detailed analysis requires external tools)")
+                # Note: Full SRUM analysis requires ESE database tools or forensic utilities
+                # This is a presence check indicating execution history may exist
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: SRUM check error: $($_.Exception.Message)")
+    }
+    
+    # 11. Check AmCache (Application Compatibility Cache)
+    try {
+        $amcachePath = "$env:SystemRoot\AppCompat\Programs\Amcache.hve"
+        if (Test-Path $amcachePath) {
+            # AmCache tracks program execution history
+            # Check if file was modified recently (indicates recent program execution tracking)
+            $amcacheInfo = Get-Item $amcachePath -ErrorAction SilentlyContinue
+            if ($amcacheInfo) {
+                [Console]::WriteLine("Invoke-StealthCheck: AmCache.hve exists (full analysis requires registry mounting)")
+                # Note: Full AmCache analysis requires mounting the hive and parsing
+                # This indicates execution history is tracked by Windows
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: AmCache check error: $($_.Exception.Message)")
+    }
+    
+    # 12. Check PowerShell history for suspicious commands
+    try {
+        $psHistoryPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
+        if (Test-Path $psHistoryPath) {
+            $psHistory = Get-Content -Path $psHistoryPath -ErrorAction SilentlyContinue
+            if ($psHistory) {
+                $suspicious = $psHistory | Where-Object { $_ -like "*CYZ*" }
+                if ($suspicious) {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ reference found in PowerShell history")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: PowerShell history check error: $($_.Exception.Message)")
+    }
+    
+    # 13. Check BAM/DAM (Background Activity Moderator/Desktop Activity Moderator) registry keys
+    try {
+        $bamKeys = @(
+            'HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings',
+            'HKLM:\SYSTEM\CurrentControlSet\Services\dam\State\UserSettings'
+        )
+        foreach ($bamKey in $bamKeys) {
+            if (Test-Path $bamKey) {
+                $userSids = Get-ChildItem -Path $bamKey -ErrorAction SilentlyContinue
+                foreach ($sidKey in $userSids) {
+                    $values = Get-ItemProperty -Path $sidKey.PSPath -ErrorAction SilentlyContinue
+                    if ($values) {
+                        $values.PSObject.Properties | ForEach-Object {
+                            if ($_.Name -like "*CYZ.exe*") {
+                                [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM/DAM registry: $($_.Name)")
+                                $detected = $true
+                                return $detected
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: BAM/DAM registry check error: $($_.Exception.Message)")
+    }
+    
     [Console]::WriteLine('Invoke-StealthCheck: no detection')
     return $detected
 }
