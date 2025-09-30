@@ -425,7 +425,7 @@ namespace WindowsService
             {
                 ManagementBaseObject process = (ManagementBaseObject)e.NewEvent.Properties["TargetInstance"].Value;
                 UInt32 processId = (UInt32)process.Properties["ProcessId"].Value;
-                this.ProcessStartDelegate.BeginInvoke(processId, null, null);
+                this.Process
             } 
             catch(Exception ee) 
             {
@@ -1201,7 +1201,7 @@ cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRp
 '@
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
-    $oauthConfigPath = Join-Path -Path $PSScriptRoot -ChildPath 'discord_oauth.json'
+    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
     $clientId = $null
     $redirectUri = $null
     $oauthPrefix = $null
@@ -1310,7 +1310,7 @@ cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRp
                 }
             } catch {}
             $paths = $paths | Where-Object { $_ } | Select-Object -Unique
-            Write-Host "getWebhookUrl: checking paths: $($paths -join ', ')"
+            Write-Host ("getWebhookUrl: checking paths: " + ($paths -join ', '))
             foreach ($p in $paths) {
                 if (Test-Path $p) {
                     try {
@@ -1326,10 +1326,10 @@ cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRp
         Write-Host "getWebhookUrl: raw value before candidate: '$raw'"
         if ($raw) {
             $candidate = [string]$raw
-            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
+            $candidate = $candidate -replace '^[\s''"]+|[\s''"]+$',''
             Write-Host "getWebhookUrl: candidate after trim: '$candidate'"
             if ($candidate -match '(https?://\S+)') { $candidate = $matches[1]; Write-Host "getWebhookUrl: candidate after regex: '$candidate'" }
-            $candidate = $candidate -replace '[.,;:)\\]}]+$',''
+            $candidate = $candidate -replace '[.,;:)\]}]+$',''
             Write-Host "getWebhookUrl: candidate after trailing cleanup: '$candidate'"
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { Write-Host "getWebhookUrl: candidate rejected as example/blank: '$candidate'"; return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { Write-Host "getWebhookUrl: candidate rejected as not Discord webhook: '$candidate'"; return $null }
@@ -1486,27 +1486,27 @@ function Find-NarakaDataPath {
                 $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>RatzTweaks - Start</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
+<div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full">
+  <h2 class="text-2xl font-bold text-yellow-400 mb-4">Ready to Start Tweaks</h2>
   $authSection
-        <div class='flex gap-3 mb-6'>
+        <div class="flex gap-3 mb-6">
             $loginLink
-            <form action='/main-tweaks' method='post'>
-                <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
+            <form action="/main-tweaks" method="post">
+                <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded" type="submit" $startDisabledAttr>Start</button>
             </form>
         </div>
 </div>
 <script>
-<div class='flex gap-3 mb-6'>
+<div class="flex gap-3 mb-6">
     $loginLink
 </div>
 </script>
@@ -1516,19 +1516,19 @@ $errorBanner
             'main-tweaks' {
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>Main & GPU Tweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Applying Main & GPU Tweaks...</h2>
-  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while tweaks are applied...</p>
+<div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center">
+  <h2 class="text-2xl font-bold text-yellow-400 mb-4">Applying Main & GPU Tweaks...</h2>
+  <div class="mb-4"><svg class="animate-spin h-8 w-8 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg></div>
+  <p class="mb-2">Please wait while tweaks are applied...</p>
 </div>
 <script>setTimeout(function(){window.location='/optional-tweaks'}, 2500);</script>
 </body>
@@ -1597,33 +1597,33 @@ $errorBanner
                         }
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>Optional Tweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<form action='/about' method='post'>
-<div class='flex flex-row gap-8'>
+<form action="/about" method="post">
+<div class="flex flex-row gap-8">
     $narakaBox
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
+    <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white">
+        <h2 class="text-2xl font-bold text-white mb-4">Optional Tweaks</h2>
         $boxes
-        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+        <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4" type="submit">Start Optional Tweaks</button>
     </div>
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Revert Tweaks</h2>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='pp-revert' class='mr-1'>Revert to Balanced Power Plan</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='msi-revert' class='mr-1'>Revert MSI Mode</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-1'>Revert Background Apps</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='widgets-revert' class='mr-1'>Revert Widgets</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-1'>Revert Game Bar</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='copilot-revert' class='mr-1'>Revert Copilot</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='restore-timers' class='mr-1'>Restore Default Timers</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='enable-hpet' class='mr-1'>Enable HPET</label>
+    <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white">
+        <h2 class="text-2xl font-bold text-yellow-400 mb-4">Revert Tweaks</h2>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="pp-revert" class="mr-1">Revert to Balanced Power Plan</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="msi-revert" class="mr-1">Revert MSI Mode</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="bgapps-revert" class="mr-1">Revert Background Apps</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="widgets-revert" class="mr-1">Revert Widgets</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="gamebar-revert" class="mr-1">Revert Game Bar</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="copilot-revert" class="mr-1">Revert Copilot</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="restore-timers" class="mr-1">Restore Default Timers</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="enable-hpet" class="mr-1">Enable HPET</label>
     </div>
 </div>
 </form>
@@ -1660,47 +1660,47 @@ async function browseNaraka(){
 "@
             }
             'about' {
-                                # Fetch log contents for display
-                                $logContent = ''
-                                try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
-                                $logContent = ($logContent -replace '<', '`&lt;') -replace '>', '`&gt;'
-                                $aboutHtml = @"
+                # Fetch log contents for display
+                $logContent = ''
+                try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
+                $logContent = ($logContent -replace '<', '&lt;') -replace '>', '&gt;'
+                $aboutHtml = @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-    <meta charset='utf-8'/>
+    <meta charset="utf-8"/>
     <title>About</title>
-    <script src='https://cdn.tailwindcss.com'></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
     </style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-    <div class='flex items-start gap-6'>
-        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-            <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
-            <p class='text-gray-300 mb-2'>This tool is for educational purposes only.</p>
-            <p class='text-gray-300 mb-6'>Any issues or suggestions, please open an issue on the GitHub repository.</p>
-            <h3 class='text-xl font-semibold text-yellow-400 mb-3'>Changelog</h3>
-            <div class='bg-gray-900 bg-opacity-80 rounded-lg p-4 h-64 overflow-y-auto border border-gray-700'>
-                <pre class='text-sm text-gray-200 whitespace-pre-wrap'>$logContent</pre>
+    <div class="flex items-start gap-6">
+        <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full">
+            <h2 class="text-2xl font-bold text-yellow-400 mb-4">Thanks for using RatzTweaks!</h2>
+            <p class="text-gray-300 mb-2">This tool is for educational purposes only.</p>
+            <p class="text-gray-300 mb-6">Any issues or suggestions, please open an issue on the GitHub repository.</p>
+            <h3 class="text-xl font-semibold text-yellow-400 mb-3">Changelog</h3>
+            <div class="bg-gray-900 bg-opacity-80 rounded-lg p-4 h-64 overflow-y-auto border border-gray-700">
+                <pre class="text-sm text-gray-200 whitespace-pre-wrap">$logContent</pre>
             </div>
         </div>
-        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-sm w-full'>
-            <h3 class='text-xl font-semibold text-yellow-400 mb-4'>Actions</h3>
-            <div class='space-y-3'>
-                <button onclick="window.location.href='/run-tweaks'" class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition duration-300'>Run Tweaks</button>
-                <button onclick="window.location.href='/run-stealth-check'" class='w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Run Stealth Check</button>
-                <button onclick="window.location.href='/'" class='w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Back to Home</button>
+        <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-sm w-full">
+            <h3 class="text-xl font-semibold text-yellow-400 mb-4">Actions</h3>
+            <div class="space-y-3">
+                <button onclick="window.location.href='/run-tweaks'" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition duration-300">Run Tweaks</button>
+                <button onclick="window.location.href='/run-stealth-check'" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Run Stealth Check</button>
+                <button onclick="window.location.href='/'" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Back to Home</button>
             </div>
         </div>
     </div>
 </body>
 </html>
 "@
-                                & $send $ctx 200 'text/html; charset=utf-8' $aboutHtml
-                                break
+                & $send $ctx 200 'text/html; charset=utf-8' $aboutHtml
+                break
             }
             'finish' {
                 @"
@@ -1996,10 +1996,238 @@ $errorBanner
 
                 return $output
             } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $oauthSecret, $webhookUrl, $global:__ratzAuthGate
-            $global:jobId = $detectionJob.Id
-            & $send $ctx 303 'text/plain' 'Redirecting...'
-            $ctx.Response.Headers.Add('Location', '/')
-            break
+            $global:jobId = $authJob.Id
+            & $send $ctx 200 'text/html' $loadingHtml
+            continue
+        }
+
+        # Pollable endpoint for the auth/detection job status
+        if ($path -eq '/auth-status') {
+            $status = @{ status = 'pending' }
+            if ($global:jobId) {
+                $job = Get-Job -Id $global:jobId -ErrorAction SilentlyContinue
+                if ($job -and $job.State -eq 'Completed') {
+                    $result = Receive-Job -Job $job
+                    
+                    # Process the results from the job
+                    if ($result.status -eq 'success') {
+                        $global:DiscordAuthenticated = $true
+                        $global:DiscordUserId = $result.authResult.id
+                        $global:DiscordUserName = $result.authResult.username
+                        $global:DiscordAvatarUrl = "https://cdn.discordapp.com/avatars/$($result.authResult.id)/$($result.authResult.avatar).png"
+                        
+                        if ($result.detectionResult -and $result.detectionResult.CheatsDetected) {
+                            $global:DetectionTriggered = $true
+                        }
+                    } else {
+                        $global:DiscordAuthError = $result.message
+                    }
+                    
+                    $status.status = 'complete'
+                    Remove-Job -Id $global:jobId
+                    $global:jobId = $null
+                }
+            }
+            $jsonStatus = $status | ConvertTo-Json
+            & $send $ctx 200 'application/json' $jsonStatus
+            continue
+        }
+
+        # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
+        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            # Only trigger Discord authentication if not already authenticated
+            if (-not $global:DiscordAuthenticated) {
+                [Console]::WriteLine('Route:/main-tweaks (POST) blocked: Discord not authenticated')
+                $html = & $getStatusHtml 'start'
+                & $send $ctx 403 'text/html' $html
+                continue
+            }
+            
+            # Check if detection was triggered
+            if ($global:DetectionTriggered) {
+                [Console]::WriteLine('Route:/main-tweaks (POST) CHEATER DETECTED - initiating lockout')
+                
+                # Send webhook notification
+                try {
+                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent')
+                } catch {
+                    [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
+                }
+                
+                # Set registry lockout
+                try {
+                    $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                    if (-not (Test-Path $lockoutKeyPath)) {
+                        New-Item -Path $lockoutKeyPath -Force | Out-Null
+                    }
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
+                    [Console]::WriteLine('Route:/main-tweaks: registry lockout set')
+                } catch {
+                    [Console]::WriteLine("Route:/main-tweaks: failed to set lockout: $($_.Exception.Message)")
+                }
+                
+                # Serve the cheater-detected page directly with 200 OK
+                & $send $ctx 200 'text/html' $cheaterHtml
+                
+                # Schedule script termination after a delay to ensure response is sent
+                Start-Job -ScriptBlock {
+                    Start-Sleep -Seconds 5
+                    Stop-Process -Id $using:PID -Force
+                } | Out-Null
+                
+                # Keep the listener running briefly to ensure the page loads, but then stop
+                Start-Sleep -Seconds 1
+                $listener.Stop()
+                return # Exit the request loop
+            }
+            
+            # This part is reached only if no detection occurred
+            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
+            $form = & $parseForm $ctx
+            if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
+            $optIn = $false
+            if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
+            if ($optIn) {
+                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
+            }
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+
+        # After Discord auth, redirect to /start, optionally exchange the token and fetch user
+        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
+            # Immediately serve a loading page that will poll for status
+            $loadingHtml = @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Authenticating...</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Authenticating & Running Security Scan...</h2>
+  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
+  <p class='mb-2'>Please wait, this may take a moment. You will be redirected automatically.</p>
+</div>
+<script>
+  let attempts = 0;
+  const maxAttempts = 20; // 20 * 1.5s = 30 seconds timeout
+  function checkStatus() {
+    fetch('/auth-status')
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'complete') {
+          window.location.href = '/';
+        } else if (attempts < maxAttempts) {
+          attempts++;
+          setTimeout(checkStatus, 1500);
+        } else {
+          window.location.href = '/'; // Timeout, redirect anyway
+        }
+      })
+      .catch(() => {
+        if (attempts < maxAttempts) {
+          attempts++;
+          setTimeout(checkStatus, 1500);
+        } else {
+          window.location.href = '/';
+        }
+      });
+  }
+  setTimeout(checkStatus, 1500);
+</script>
+</body>
+</html>
+"@
+            & $send $ctx 200 'text/html' $loadingHtml
+
+            # Start the actual auth and detection process in a background job so the UI is not blocked
+            $authJob = Start-Job -ScriptBlock {
+                param($requestUrl, $scriptRoot, $oauthSecret, $webhookUrl, $ratzAuthGate)
+
+                # Define a parsing function because System.Web may not be available in the job's runspace
+                function Parse-QueryString {
+                    param([string]$query)
+                    $params = @{}
+                    $pairs = $query.TrimStart('?').Split('&')
+                    foreach ($pair in $pairs) {
+                        $kv = $pair.Split('=')
+                        if ($kv.Length -eq 2) {
+                            $key = [System.Uri]::UnescapeDataString($kv[0])
+                            $value = [System.Uri]::UnescapeDataString($kv[1])
+                            $params[$key] = $value
+                        }
+                    }
+                    return $params
+                }
+
+                $ErrorActionPreference = 'Continue'
+                $output = @{
+                    status = 'error'
+                    message = 'An unexpected error occurred during authentication.'
+                    detectionResult = $null
+                    authResult = $null
+                }
+
+                try {
+                    $queryParams = Parse-QueryString -query ([System.Uri]$requestUrl).Query
+                    $code = $queryParams['code']
+
+                    if (-not [string]::IsNullOrEmpty($code)) {
+                        # Start detection in parallel
+                        $detectionTask = {
+                            # This is a simplified placeholder for the actual Invoke-StealthCheck
+                            # In the real implementation, the full Invoke-StealthCheck logic would be here.
+                            # For this example, we'll just simulate a result.
+                            . $using:PSScriptRoot\RatzTweaks.ps1
+                            Invoke-StealthCheck -WebhookUrl $using:webhookUrl -ExitOnDetection $false
+                        }
+                        $detectionJob = Start-Job -ScriptBlock $detectionTask
+                        
+                        # Exchange code for token
+                        $tokenBody = @{
+                            client_id     = $using:clientId
+                            client_secret = $oauthSecret
+                            grant_type    = 'authorization_code'
+                            code          = $code
+                            redirect_uri  = $using:redirectUri
+                        }
+                        $tokenResponse = Invoke-RestMethod -Uri 'https://discord.com/api/oauth2/token' -Method Post -Body $tokenBody
+                        
+                        # Get user info
+                        $userResponse = Invoke-RestMethod -Uri 'https://discord.com/api/users/@me' -Method Get -Headers @{ Authorization = "Bearer $($tokenResponse.access_token)" }
+                        
+                        $output['authResult'] = @{
+                            id = $userResponse.id
+                            username = $userResponse.username
+                            discriminator = $userResponse.discriminator
+                            avatar = $userResponse.avatar
+                        }
+
+                        # Wait for detection to finish and get result
+                        $detectionResult = Receive-Job -Job $detectionJob -Wait -AutoRemoveJob
+                        $output['detectionResult'] = $detectionResult
+                        $output['status'] = 'success'
+                        $output['message'] = 'Authentication and detection complete.'
+                    } else {
+                        $output['message'] = 'Authorization code not found in callback.'
+                    }
+                } catch {
+                    $output['message'] = "An unexpected error occurred during authentication: $($_.Exception.Message)"
+                    $output['details'] = $_.Exception.ToString()
+                }
+
+                return $output
+            } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $oauthSecret, $webhookUrl, $global:__ratzAuthGate
+            $global:jobId = $authJob.Id
+            continue
         }
     }
 }
