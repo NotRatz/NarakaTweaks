@@ -275,6 +275,13 @@ function Invoke-AllTweaks {
         Add-Log 'Discord authentication required — aborting tweaks.'
         return
     }
+    
+    # Block tweaks if detection was triggered
+    if ($global:DetectionTriggered) {
+        Add-Log 'Detection positive — tweaks aborted.'
+        [Console]::WriteLine('Invoke-AllTweaks: blocked due to detection')
+        return
+    }
 
     # Main registry and system tweaks from RatzTweak.bat
     Write-Host "Applying main registry and system tweaks..."
@@ -814,6 +821,17 @@ function Invoke-SelectedOptionalTweaks {
 }
 
 # --- Detection Functions ---
+# Detection Workflow:
+# 1. At startup: Check for registry lockout (HKLM:\System\GameConfigStore\Lockout) - if set, exit immediately
+# 2. After Discord OAuth: Run Invoke-StealthCheck to detect CYZ.exe
+# 3. If detected: Set $global:DetectionTriggered flag, but allow user to continue to Start button
+# 4. When Start button clicked: Check flag, and if positive:
+#    - Send webhook notification
+#    - Set permanent registry lockout
+#    - Display cheater-detected page
+#    - Terminate script after 3 seconds
+# 5. Next run: Lockout check at startup prevents script from running
+
 function Invoke-StealthCheck {
     [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
     $detected = $false
