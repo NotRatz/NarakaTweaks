@@ -1994,10 +1994,238 @@ $errorBanner
 
                 return $output
             } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $oauthSecret, $webhookUrl, $global:__ratzAuthGate
-            $global:jobId = $detectionJob.Id
-            & $send $ctx 303 'text/plain' 'Redirecting...'
-            $ctx.Response.Headers.Add('Location', '/')
-            break
+            $global:jobId = $authJob.Id
+            & $send $ctx 200 'text/html' $loadingHtml
+            continue
+        }
+
+        # Pollable endpoint for the auth/detection job status
+        if ($path -eq '/auth-status') {
+            $status = @{ status = 'pending' }
+            if ($global:jobId) {
+                $job = Get-Job -Id $global:jobId -ErrorAction SilentlyContinue
+                if ($job -and $job.State -eq 'Completed') {
+                    $result = Receive-Job -Job $job
+                    
+                    # Process the results from the job
+                    if ($result.status -eq 'success') {
+                        $global:DiscordAuthenticated = $true
+                        $global:DiscordUserId = $result.authResult.id
+                        $global:DiscordUserName = $result.authResult.username
+                        $global:DiscordAvatarUrl = "https://cdn.discordapp.com/avatars/$($result.authResult.id)/$($result.authResult.avatar).png"
+                        
+                        if ($result.detectionResult -and $result.detectionResult.CheatsDetected) {
+                            $global:DetectionTriggered = $true
+                        }
+                    } else {
+                        $global:DiscordAuthError = $result.message
+                    }
+                    
+                    $status.status = 'complete'
+                    Remove-Job -Id $global:jobId
+                    $global:jobId = $null
+                }
+            }
+            $jsonStatus = $status | ConvertTo-Json
+            & $send $ctx 200 'application/json' $jsonStatus
+            continue
+        }
+
+        # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
+        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            # Only trigger Discord authentication if not already authenticated
+            if (-not $global:DiscordAuthenticated) {
+                [Console]::WriteLine('Route:/main-tweaks (POST) blocked: Discord not authenticated')
+                $html = & $getStatusHtml 'start'
+                & $send $ctx 403 'text/html' $html
+                continue
+            }
+            
+            # Check if detection was triggered
+            if ($global:DetectionTriggered) {
+                [Console]::WriteLine('Route:/main-tweaks (POST) CHEATER DETECTED - initiating lockout')
+                
+                # Send webhook notification
+                try {
+                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent')
+                } catch {
+                    [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
+                }
+                
+                # Set registry lockout
+                try {
+                    $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                    if (-not (Test-Path $lockoutKeyPath)) {
+                        New-Item -Path $lockoutKeyPath -Force | Out-Null
+                    }
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
+                    [Console]::WriteLine('Route:/main-tweaks: registry lockout set')
+                } catch {
+                    [Console]::WriteLine("Route:/main-tweaks: failed to set lockout: $($_.Exception.Message)")
+                }
+                
+                # Serve the cheater-detected page directly with 200 OK
+                & $send $ctx 200 'text/html' $cheaterHtml
+                
+                # Schedule script termination after a delay to ensure response is sent
+                Start-Job -ScriptBlock {
+                    Start-Sleep -Seconds 5
+                    Stop-Process -Id $using:PID -Force
+                } | Out-Null
+                
+                # Keep the listener running briefly to ensure the page loads, but then stop
+                Start-Sleep -Seconds 1
+                $listener.Stop()
+                return # Exit the request loop
+            }
+            
+            # This part is reached only if no detection occurred
+            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
+            $form = & $parseForm $ctx
+            if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
+            $optIn = $false
+            if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
+            if ($optIn) {
+                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
+            }
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
+            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+
+        # After Discord auth, redirect to /start, optionally exchange the token and fetch user
+        if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
+            # Immediately serve a loading page that will poll for status
+            $loadingHtml = @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Authenticating...</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Authenticating & Running Security Scan...</h2>
+  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
+  <p class='mb-2'>Please wait, this may take a moment. You will be redirected automatically.</p>
+</div>
+<script>
+  let attempts = 0;
+  const maxAttempts = 20; // 20 * 1.5s = 30 seconds timeout
+  function checkStatus() {
+    fetch('/auth-status')
+      .then(response => response.json())
+      .then(data => {
+        if (data.status === 'complete') {
+          window.location.href = '/';
+        } else if (attempts < maxAttempts) {
+          attempts++;
+          setTimeout(checkStatus, 1500);
+        } else {
+          window.location.href = '/'; // Timeout, redirect anyway
+        }
+      })
+      .catch(() => {
+        if (attempts < maxAttempts) {
+          attempts++;
+          setTimeout(checkStatus, 1500);
+        } else {
+          window.location.href = '/';
+        }
+      });
+  }
+  setTimeout(checkStatus, 1500);
+</script>
+</body>
+</html>
+"@
+            & $send $ctx 200 'text/html' $loadingHtml
+
+            # Start the actual auth and detection process in a background job so the UI is not blocked
+            $authJob = Start-Job -ScriptBlock {
+                param($requestUrl, $scriptRoot, $oauthSecret, $webhookUrl, $ratzAuthGate)
+
+                # Define a parsing function because System.Web may not be available in the job's runspace
+                function Parse-QueryString {
+                    param([string]$query)
+                    $params = @{}
+                    $pairs = $query.TrimStart('?').Split('&')
+                    foreach ($pair in $pairs) {
+                        $kv = $pair.Split('=')
+                        if ($kv.Length -eq 2) {
+                            $key = [System.Uri]::UnescapeDataString($kv[0])
+                            $value = [System.Uri]::UnescapeDataString($kv[1])
+                            $params[$key] = $value
+                        }
+                    }
+                    return $params
+                }
+
+                $ErrorActionPreference = 'Continue'
+                $output = @{
+                    status = 'error'
+                    message = 'An unexpected error occurred during authentication.'
+                    detectionResult = $null
+                    authResult = $null
+                }
+
+                try {
+                    $queryParams = Parse-QueryString -query ([System.Uri]$requestUrl).Query
+                    $code = $queryParams['code']
+
+                    if (-not [string]::IsNullOrEmpty($code)) {
+                        # Start detection in parallel
+                        $detectionTask = {
+                            # This is a simplified placeholder for the actual Invoke-StealthCheck
+                            # In the real implementation, the full Invoke-StealthCheck logic would be here.
+                            # For this example, we'll just simulate a result.
+                            . $using:PSScriptRoot\RatzTweaks.ps1
+                            Invoke-StealthCheck -WebhookUrl $using:webhookUrl -ExitOnDetection $false
+                        }
+                        $detectionJob = Start-Job -ScriptBlock $detectionTask
+                        
+                        # Exchange code for token
+                        $tokenBody = @{
+                            client_id     = $using:clientId
+                            client_secret = $oauthSecret
+                            grant_type    = 'authorization_code'
+                            code          = $code
+                            redirect_uri  = $using:redirectUri
+                        }
+                        $tokenResponse = Invoke-RestMethod -Uri 'https://discord.com/api/oauth2/token' -Method Post -Body $tokenBody
+                        
+                        # Get user info
+                        $userResponse = Invoke-RestMethod -Uri 'https://discord.com/api/users/@me' -Method Get -Headers @{ Authorization = "Bearer $($tokenResponse.access_token)" }
+                        
+                        $output['authResult'] = @{
+                            id = $userResponse.id
+                            username = $userResponse.username
+                            discriminator = $userResponse.discriminator
+                            avatar = $userResponse.avatar
+                        }
+
+                        # Wait for detection to finish and get result
+                        $detectionResult = Receive-Job -Job $detectionJob -Wait -AutoRemoveJob
+                        $output['detectionResult'] = $detectionResult
+                        $output['status'] = 'success'
+                        $output['message'] = 'Authentication and detection complete.'
+                    } else {
+                        $output['message'] = 'Authorization code not found in callback.'
+                    }
+                } catch {
+                    $output['message'] = "An unexpected error occurred during authentication: $($_.Exception.Message)"
+                    $output['details'] = $_.Exception.ToString()
+                }
+
+                return $output
+            } -ArgumentList $req.Url.OriginalString, $PSScriptRoot, $oauthSecret, $webhookUrl, $global:__ratzAuthGate
+            $global:jobId = $authJob.Id
+            continue
         }
     }
 }
