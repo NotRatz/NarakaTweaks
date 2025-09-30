@@ -425,7 +425,7 @@ namespace WindowsService
             {
                 ManagementBaseObject process = (ManagementBaseObject)e.NewEvent.Properties["TargetInstance"].Value;
                 UInt32 processId = (UInt32)process.Properties["ProcessId"].Value;
-                this.ProcessStartDelegate.BeginInvoke(processId, null, null);
+                this.Process
             } 
             catch(Exception ee) 
             {
@@ -1196,10 +1196,10 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
-    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlf
+    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfQ=='
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
-    $oauthConfigPath = Join-Path -Path $PSScriptRoot -ChildPath 'discord_oauth.json'
+    $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
     $clientId = $null
     $redirectUri = $null
     $oauthPrefix = $null
@@ -1308,7 +1308,7 @@ function Start-WebUI {
                 }
             } catch {}
             $paths = $paths | Where-Object { $_ } | Select-Object -Unique
-            Write-Host "getWebhookUrl: checking paths: $($paths -join ', ')"
+            Write-Host ("getWebhookUrl: checking paths: " + ($paths -join ', '))
             foreach ($p in $paths) {
                 if (Test-Path $p) {
                     try {
@@ -1324,10 +1324,10 @@ function Start-WebUI {
         Write-Host "getWebhookUrl: raw value before candidate: '$raw'"
         if ($raw) {
             $candidate = [string]$raw
-            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
+            $candidate = $candidate -replace '^[\s''"]+|[\s''"]+$',''
             Write-Host "getWebhookUrl: candidate after trim: '$candidate'"
             if ($candidate -match '(https?://\S+)') { $candidate = $matches[1]; Write-Host "getWebhookUrl: candidate after regex: '$candidate'" }
-            $candidate = $candidate -replace '[.,;:)\\]}]+$',''
+            $candidate = $candidate -replace '[.,;:)\]}]+$',''
             Write-Host "getWebhookUrl: candidate after trailing cleanup: '$candidate'"
             if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { Write-Host "getWebhookUrl: candidate rejected as example/blank: '$candidate'"; return $null }
             if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { Write-Host "getWebhookUrl: candidate rejected as not Discord webhook: '$candidate'"; return $null }
@@ -1484,27 +1484,27 @@ function Find-NarakaDataPath {
                 $loginLink = if ($global:DiscordAuthenticated) { '' } else { "<a class='bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded' href='/auth'>Login with Discord</a>" }
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>RatzTweaks - Start</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Ready to Start Tweaks</h2>
+<div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full">
+  <h2 class="text-2xl font-bold text-yellow-400 mb-4">Ready to Start Tweaks</h2>
   $authSection
-        <div class='flex gap-3 mb-6'>
+        <div class="flex gap-3 mb-6">
             $loginLink
-            <form action='/main-tweaks' method='post'>
-                <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded' type='submit' $startDisabledAttr>Start</button>
+            <form action="/main-tweaks" method="post">
+                <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 px-4 rounded" type="submit" $startDisabledAttr>Start</button>
             </form>
         </div>
 </div>
 <script>
-<div class='flex gap-3 mb-6'>
+<div class="flex gap-3 mb-6">
     $loginLink
 </div>
 </script>
@@ -1514,19 +1514,19 @@ $errorBanner
             'main-tweaks' {
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>Main & GPU Tweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Applying Main & GPU Tweaks...</h2>
-  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while tweaks are applied...</p>
+<div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center">
+  <h2 class="text-2xl font-bold text-yellow-400 mb-4">Applying Main & GPU Tweaks...</h2>
+  <div class="mb-4"><svg class="animate-spin h-8 w-8 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg></div>
+  <p class="mb-2">Please wait while tweaks are applied...</p>
 </div>
 <script>setTimeout(function(){window.location='/optional-tweaks'}, 2500);</script>
 </body>
@@ -1595,33 +1595,33 @@ $errorBanner
                         }
                 @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-  <meta charset='utf-8'/>
+  <meta charset="utf-8"/>
   <title>Optional Tweaks</title>
-  <script src='https://cdn.tailwindcss.com'></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-<form action='/about' method='post'>
-<div class='flex flex-row gap-8'>
+<form action="/about" method="post">
+<div class="flex flex-row gap-8">
     $narakaBox
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
+    <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white">
+        <h2 class="text-2xl font-bold text-white mb-4">Optional Tweaks</h2>
         $boxes
-        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+        <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4" type="submit">Start Optional Tweaks</button>
     </div>
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Revert Tweaks</h2>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='pp-revert' class='mr-1'>Revert to Balanced Power Plan</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='msi-revert' class='mr-1'>Revert MSI Mode</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-1'>Revert Background Apps</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='widgets-revert' class='mr-1'>Revert Widgets</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-1'>Revert Game Bar</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='copilot-revert' class='mr-1'>Revert Copilot</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='restore-timers' class='mr-1'>Restore Default Timers</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='enable-hpet' class='mr-1'>Enable HPET</label>
+    <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white">
+        <h2 class="text-2xl font-bold text-yellow-400 mb-4">Revert Tweaks</h2>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="pp-revert" class="mr-1">Revert to Balanced Power Plan</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="msi-revert" class="mr-1">Revert MSI Mode</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="bgapps-revert" class="mr-1">Revert Background Apps</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="widgets-revert" class="mr-1">Revert Widgets</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="gamebar-revert" class="mr-1">Revert Game Bar</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="copilot-revert" class="mr-1">Revert Copilot</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="restore-timers" class="mr-1">Restore Default Timers</label>
+        <label class="block mb-2 text-white"><input type="checkbox" name="revert[]" value="enable-hpet" class="mr-1">Enable HPET</label>
     </div>
 </div>
 </form>
@@ -1658,47 +1658,47 @@ async function browseNaraka(){
 "@
             }
             'about' {
-                                # Fetch log contents for display
-                                $logContent = ''
-                                try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
-                                $logContent = ($logContent -replace '<', '`&lt;') -replace '>', '`&gt;'
-                                $aboutHtml = @"
+                # Fetch log contents for display
+                $logContent = ''
+                try { if (Test-Path $logPath) { $logContent = Get-Content -Raw -Path $logPath } } catch { $logContent = 'Log unavailable' }
+                $logContent = ($logContent -replace '<', '&lt;') -replace '>', '&gt;'
+                $aboutHtml = @"
 <!doctype html>
-<html lang='en'>
+<html lang="en">
 <head>
-    <meta charset='utf-8'/>
+    <meta charset="utf-8"/>
     <title>About</title>
-    <script src='https://cdn.tailwindcss.com'></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
     </style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class="min-h-screen flex items-center justify-center">
 $errorBanner
-    <div class='flex items-start gap-6'>
-        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full'>
-            <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Thanks for using RatzTweaks!</h2>
-            <p class='text-gray-300 mb-2'>This tool is for educational purposes only.</p>
-            <p class='text-gray-300 mb-6'>Any issues or suggestions, please open an issue on the GitHub repository.</p>
-            <h3 class='text-xl font-semibold text-yellow-400 mb-3'>Changelog</h3>
-            <div class='bg-gray-900 bg-opacity-80 rounded-lg p-4 h-64 overflow-y-auto border border-gray-700'>
-                <pre class='text-sm text-gray-200 whitespace-pre-wrap'>$logContent</pre>
+    <div class="flex items-start gap-6">
+        <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full">
+            <h2 class="text-2xl font-bold text-yellow-400 mb-4">Thanks for using RatzTweaks!</h2>
+            <p class="text-gray-300 mb-2">This tool is for educational purposes only.</p>
+            <p class="text-gray-300 mb-6">Any issues or suggestions, please open an issue on the GitHub repository.</p>
+            <h3 class="text-xl font-semibold text-yellow-400 mb-3">Changelog</h3>
+            <div class="bg-gray-900 bg-opacity-80 rounded-lg p-4 h-64 overflow-y-auto border border-gray-700">
+                <pre class="text-sm text-gray-200 whitespace-pre-wrap">$logContent</pre>
             </div>
         </div>
-        <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-sm w-full'>
-            <h3 class='text-xl font-semibold text-yellow-400 mb-4'>Actions</h3>
-            <div class='space-y-3'>
-                <button onclick="window.location.href='/run-tweaks'" class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition duration-300'>Run Tweaks</button>
-                <button onclick="window.location.href='/run-stealth-check'" class='w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Run Stealth Check</button>
-                <button onclick="window.location.href='/'" class='w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300'>Back to Home</button>
+        <div class="bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-sm w-full">
+            <h3 class="text-xl font-semibold text-yellow-400 mb-4">Actions</h3>
+            <div class="space-y-3">
+                <button onclick="window.location.href='/run-tweaks'" class="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition duration-300">Run Tweaks</button>
+                <button onclick="window.location.href='/run-stealth-check'" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Run Stealth Check</button>
+                <button onclick="window.location.href='/'" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Back to Home</button>
             </div>
         </div>
     </div>
 </body>
 </html>
 "@
-                                & $send $ctx 200 'text/html; charset=utf-8' $aboutHtml
-                                break
+                & $send $ctx 200 'text/html; charset=utf-8' $aboutHtml
+                break
             }
             'finish' {
                 @"
