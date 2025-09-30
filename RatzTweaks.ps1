@@ -988,11 +988,14 @@ function Invoke-StealthCheck {
                 $recentFiles = Get-ChildItem -Path $recentPath -Recurse -File -ErrorAction SilentlyContinue
                 foreach ($file in $recentFiles) {
                     try {
-                        $content = Get-Content -Path $file.FullName -Raw -ErrorAction SilentlyContinue
-                        if ($content -and $content -like "*CYZ.exe*") {
-                            [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: $($file.FullName)")
-                            $detected = $true
-                            return $detected
+                        # Skip files larger than 1MB (1048576 bytes)
+                        if ($file.Length -le 1048576) {
+                            $match = Select-String -Path $file.FullName -Pattern "CYZ\.exe" -ErrorAction SilentlyContinue
+                            if ($match) {
+                                [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: $($file.FullName)")
+                                $detected = $true
+                                return $detected
+                            }
                         }
                     } catch {
                         # Silently continue if file is locked or unreadable
