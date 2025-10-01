@@ -1862,21 +1862,34 @@ $errorBanner
                 $viveTweaks = @('Disable ViVeTool Features')
                 $msiTweaks = @('Enable MSI Mode for all PCI devices')
                 $boxes = ""
-                $boxes += "<div class='flex flex-row gap-8'>"
-                $boxes += "<div class='flex-1'>"
-                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>System Tweaks</h3>"
-                $boxes += ($optionalTweaks | Where-Object { $systemTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "</div>"
-                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>Power Tweaks</h3>"
-                $boxes += ($optionalTweaks | Where-Object { $powerTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "</div>"
-                $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>ViVeTool Tweaks</h3>"
-                $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
-                $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "</div>"
-                $boxes += "</div>"
-                $boxes += "</div>"
+                
+                # System Tweaks
+                $boxes += "<div class='mb-4 pb-4 border-b border-gray-700'><h3 class='font-bold text-lg mb-3 text-yellow-300'>System Tweaks</h3><div class='space-y-2'>"
+                $boxes += ($optionalTweaks | Where-Object { $systemTweaks -contains $_.label } | ForEach-Object { 
+                    "<label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-3 w-4 h-4'><span>$($_.label)</span></label>" 
+                }) -join ""
+                $boxes += "</div></div>"
+                
+                # Power Tweaks
+                $boxes += "<div class='mb-4 pb-4 border-b border-gray-700'><h3 class='font-bold text-lg mb-3 text-yellow-300'>Power Tweaks</h3><div class='space-y-2'>"
+                $boxes += ($optionalTweaks | Where-Object { $powerTweaks -contains $_.label } | ForEach-Object { 
+                    "<label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-3 w-4 h-4'><span>$($_.label)</span></label>" 
+                }) -join ""
+                $boxes += "</div></div>"
+                
+                # ViVeTool Tweaks
+                $boxes += "<div class='mb-4 pb-4 border-b border-gray-700'><h3 class='font-bold text-lg mb-3 text-yellow-300'>ViVeTool Tweaks</h3><div class='space-y-2'>"
+                $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { 
+                    "<label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-3 w-4 h-4'><span>$($_.label)</span></label>" 
+                }) -join ""
+                $boxes += "</div></div>"
+                
+                # MSI Tweaks
+                $boxes += "<div class='mb-4'><h3 class='font-bold text-lg mb-3 text-yellow-300'>MSI Tweaks</h3><div class='space-y-2'>"
+                $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { 
+                    "<label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-3 w-4 h-4'><span>$($_.label)</span></label>" 
+                }) -join ""
+                $boxes += "</div></div>"
 
                 # Render Revert Tweaks as a separate main container outside the Optional Tweaks container
                 $revertBox = "<div class='flex flex-row gap-8 mt-8'>"
@@ -1894,24 +1907,36 @@ $errorBanner
                         $detectedNaraka = Find-NarakaDataPath
                         if ($detectedNaraka) {
                                 $narakaBox = @"
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-    <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-    <p class='text-gray-300 text-sm mb-2'>Detected path:</p>
-    <p class='text-gray-400 text-xs break-all mb-4'>$detectedNaraka</p>
-    <label class='block mb-2 text-white'><input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-1'>Enable Jiggle Physics</label>
-    <label class='block mb-2 text-white'><input type='checkbox' name='naraka_boot' value='1' checked class='mr-1'>Recommended Boot Config</label>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
+    <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Naraka In-Game Tweaks</h2>
+    <div class='mb-4'>
+        <p class='text-gray-300 text-sm mb-1'>Detected path:</p>
+        <p class='text-yellow-400 text-xs break-all bg-gray-900 bg-opacity-50 p-2 rounded'>$detectedNaraka</p>
+    </div>
+    <div class='space-y-3'>
+        <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+            <input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-3 w-4 h-4'>
+            <span>Enable Jiggle Physics</span>
+        </label>
+        <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+            <input type='checkbox' name='naraka_boot' value='1' checked class='mr-3 w-4 h-4'>
+            <span>Recommended Boot Config</span>
+        </label>
+    </div>
 </div>
 "@
                         } else {
                                                                 $narakaBox = @"
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 w-96 text-white mr-8'>
-        <h2 class='text-xl font-bold text-white mb-4'>Naraka In-Game Tweaks</h2>
-        <p class='text-gray-300 text-sm mb-2'>NarakaBladepoint_Data folder not found.</p>
-        <form method='post' action='/set-naraka-path'>
-            <label for='narakaPathInput' class='block text-white mb-2'>Set your NarakaBladepoint_Data folder path:</label>
-            <input type='text' id='narakaPathInput' name='narakaPath' class='w-full px-2 py-1 rounded bg-gray-800 text-white mb-2' placeholder='C:\Path\To\NarakaBladepoint_Data'>
-            <button type='submit' class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-1 px-4 rounded'>Set Path</button>
-        </form>
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
+    <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Naraka In-Game Tweaks</h2>
+    <div class='bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4 mb-4'>
+        <p class='text-red-300 text-sm'>NarakaBladepoint_Data folder not found.</p>
+    </div>
+    <form method='post' action='/set-naraka-path'>
+        <label for='narakaPathInput' class='block text-gray-300 mb-2 font-semibold'>Set your NarakaBladepoint_Data folder path:</label>
+        <input type='text' id='narakaPathInput' name='narakaPath' class='w-full px-3 py-2 rounded bg-gray-800 text-white mb-3 border border-gray-600 focus:border-yellow-400 focus:outline-none' placeholder='C:\Path\To\NarakaBladepoint_Data'>
+        <button type='submit' class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded-lg transition-colors'>Set Path</button>
+    </form>
 </div>
 "@
                         }
@@ -1924,26 +1949,54 @@ $errorBanner
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
 </head>
-<body class='min-h-screen flex items-center justify-center'>
+<body class='min-h-screen flex items-center justify-center p-4'>
 $errorBanner
-<form action='/about' method='post'>
-<div class='flex flex-row gap-8'>
+<form action='/about' method='post' class='w-full max-w-7xl'>
+<div class='flex flex-col lg:flex-row gap-6 items-start'>
     $narakaBox
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-white mb-4'>Optional Tweaks</h2>
-        $boxes
-        <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded mt-4' type='submit'>Start Optional Tweaks</button>
+    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
+        <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Optional Tweaks</h2>
+        <div class='space-y-3 mb-6'>
+            $boxes
+        </div>
+        <button class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded-lg transition-colors' type='submit'>Start Optional Tweaks</button>
     </div>
-    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white'>
-        <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Revert Tweaks</h2>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='pp-revert' class='mr-1'>Revert to Balanced Power Plan</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='msi-revert' class='mr-1'>Revert MSI Mode</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-1'>Revert Background Apps</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='widgets-revert' class='mr-1'>Revert Widgets</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-1'>Revert Game Bar</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='copilot-revert' class='mr-1'>Revert Copilot</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='restore-timers' class='mr-1'>Restore Default Timers</label>
-        <label class='block mb-2 text-white'><input type='checkbox' name='revert[]' value='enable-hpet' class='mr-1'>Enable HPET</label>
+    <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
+        <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Revert Tweaks</h2>
+        <div class='space-y-3'>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='pp-revert' class='mr-3 w-4 h-4'>
+                <span>Revert to Balanced Power Plan</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='msi-revert' class='mr-3 w-4 h-4'>
+                <span>Revert MSI Mode</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='bgapps-revert' class='mr-3 w-4 h-4'>
+                <span>Revert Background Apps</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='widgets-revert' class='mr-3 w-4 h-4'>
+                <span>Revert Widgets</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='gamebar-revert' class='mr-3 w-4 h-4'>
+                <span>Revert Game Bar</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='copilot-revert' class='mr-3 w-4 h-4'>
+                <span>Revert Copilot</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='restore-timers' class='mr-3 w-4 h-4'>
+                <span>Restore Default Timers</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors'>
+                <input type='checkbox' name='revert[]' value='enable-hpet' class='mr-3 w-4 h-4'>
+                <span>Enable HPET</span>
+            </label>
+        </div>
     </div>
 </div>
 </form>
@@ -2390,10 +2443,13 @@ setTimeout(checkStatus, 2000);
         }
 
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
-        if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+        # Accept both GET (from redirect) and POST (from form submission)
+        if ($path -eq '/main-tweaks' -and ($method -eq 'POST' -or $method -eq 'GET')) {
+            [Console]::WriteLine("Route:/main-tweaks ($method) - processing tweaks request")
+            
             # Only trigger Discord authentication if not already authenticated
             if (-not $global:DiscordAuthenticated) {
-                [Console]::WriteLine('Route:/main-tweaks (POST) blocked: Discord not authenticated')
+                [Console]::WriteLine("Route:/main-tweaks ($method) blocked: Discord not authenticated")
                 $html = & $getStatusHtml 'main-tweaks' $null $null $null
                 & $send $ctx 200 'text/html' $html
                 continue
@@ -2401,7 +2457,7 @@ setTimeout(checkStatus, 2000);
             
             # Check if detection was triggered
             if ($global:DetectionTriggered) {
-                [Console]::WriteLine('Route:/main-tweaks (POST) CHEATER DETECTED - initiating lockout')
+                [Console]::WriteLine("Route:/main-tweaks ($method) CHEATER DETECTED - initiating lockout")
                 
                 # Send webhook notification
                 [Console]::WriteLine('Route:/main-tweaks: sending webhook notification...')
