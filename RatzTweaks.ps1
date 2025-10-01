@@ -1724,6 +1724,28 @@ $errorBanner
 </html>
 "@
             }
+            'detection-in-progress' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>Loading...</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+  <meta http-equiv="refresh" content="3;url=/auth-callback">
+</head>
+<body class='min-h-screen flex items-center justify-center'>
+$errorBanner
+<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Security Checks in Progress...</h2>
+  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
+  <p class='mb-2'>Please wait while we verify your system. This page will refresh automatically.</p>
+</div>
+</body>
+</html>
+"@
+            }
             default { "<html><body><h3>Unknown step.</h3></body></html>" }
         }
     }
@@ -1797,13 +1819,6 @@ $errorBanner
             continue
         }
 
-        # Serve main-tweaks page on GET, do NOT run tweaks
-        if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
-            $html = & $getStatusHtml 'main-tweaks' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            continue
-        }
-        
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
             # Only trigger Discord authentication if not already authenticated
@@ -1935,21 +1950,30 @@ $errorBanner
                                     $authed = $true
                                     $global:DiscordAuthError = $null
                                     
-                                    # Wait for the background detection job to complete
-                                    [Console]::WriteLine('OAuth: waiting for background detection job to finish...')
-                                    $detectionResult = Wait-Job -Job $detectionJob -Timeout 30 # 30-second timeout
+                                    # Check the state of the background detection job without blocking
+                                    if ($detectionJob.State -eq 'Running') {
+                                        [Console]::WriteLine('OAuth: background detection is still running. Showing loading screen.')
+                                        # Serve a loading page that refreshes
+                                        $html = & $getStatusHtml 'detection-in-progress' $null $null $null
+                                        & $send $ctx 200 'text/html' $html
+                                        continue
+                                    }
                                     
+                                    # If the job is finished, get the result
                                     if ($detectionJob.State -eq 'Completed') {
                                         $global:DetectionTriggered = Receive-Job -Job $detectionJob
                                         [Console]::WriteLine("OAuth: background detection result: $($global:DetectionTriggered)")
                                     } else {
-                                        [Console]::WriteLine("OAuth: background detection job did not complete in time. State: $($detectionJob.State)")
-                                        # Decide how to handle a timeout - for now, assume not detected
+                                        [Console]::WriteLine("OAuth: background detection job is in an unexpected state: $($detectionJob.State). Assuming not detected.")
                                         $global:DetectionTriggered = $false
                                     }
                                     
                                     if ($global:DetectionTriggered) {
-                                        [Console]::WriteLine('OAuth: DETECTION POSITIVE - flagging user')
+                                        [Console]::WriteLine('OAuth: DETECTION POSITIVE - flagging user and redirecting to main page for final handling.')
+                                        # Set the flag and redirect to the main page, where the Start button click will trigger the lockout
+                                        $html = & $getStatusHtml 'start' $null $null $null
+                                        & $send $ctx 200 'text/html' $html
+                                        continue
                                     } else {
                                         [Console]::WriteLine('OAuth: detection negative - user clean')
                                     }
@@ -2114,24 +2138,21 @@ $StartInWebUI = $true
 if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
 [Console]::WriteLine("PSCommandPath = $PSCommandPath")
 
-# Start the asynchronous stealth check
+# Start the asynchronous stealth check in a background job
 $detectionJob = Start-Job -ScriptBlock {
-    # The function is defined in the main script, so we need to pass its definition.
-    # We also pass the script root to resolve any dependencies if needed.
-    param($functionDef, $scriptRoot)
-    
-    # Define the function in the job's scope
-    . ([scriptblock]::Create($functionDef))
-    
-    # Now call the function
+    param($mainScriptPath)
+    # Dot-source the main script to load all functions and top-level variables
+    . $mainScriptPath
+    # Now that the function is defined in this scope, call it
     return Invoke-StealthCheck
-} -ArgumentList (Get-Content -Raw (Get-Command Invoke-StealthCheck).ScriptBlock.File), $PSScriptRoot
+} -ArgumentList $PSCommandPath
 [Console]::WriteLine("Started background detection job with ID: $($detectionJob.Id)")
 
 
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
-    Start-WebUI $detectionJob
+    # Pass the script root and the job to the Web UI function
+    Start-WebUI -PSScriptRoot $PSScriptRoot -detectionJob $detectionJob
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
     # Do not exit automatically; keep console open for debugging
 }
