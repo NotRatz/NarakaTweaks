@@ -8,3 +8,7 @@ CLEANUP_README.md
 Clear-PowerShellLogs.ps1
 Find-Lockout-Simple.ps1 
 Find-LockoutKey.ps1
+Create-CheatTest.ps1
+DETECTION_METHODS.md
+ENHANCED_DETECTION_SUMMARY.md
+Test-CheatDetection.ps1
