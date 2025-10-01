@@ -1187,8 +1187,13 @@ function Send-StealthWebhook {
 
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
-    param($detectionJob)
+    param(
+        [Parameter(Mandatory=$false)]$PSScriptRoot,
+        [Parameter(Mandatory=$false)]$detectionJob
+    )
     [Console]::WriteLine('Start-WebUI: initializing...')
+    [Console]::WriteLine("Start-WebUI: PSScriptRoot = $PSScriptRoot")
+    [Console]::WriteLine("Start-WebUI: detectionJob.Id = $($detectionJob.Id)")
     # Ensure modern TLS for Discord API on Windows PowerShell 5.1
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
     $listener = [System.Net.HttpListener]::new()
@@ -1733,7 +1738,7 @@ $errorBanner
   <title>Loading...</title>
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
-  <meta http-equiv="refresh" content="3;url=/auth-callback">
+  <meta http-equiv="refresh" content="3;url=/check-detection">
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
@@ -1881,6 +1886,33 @@ $errorBanner
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
+            continue
+        }
+
+        # New endpoint to poll for detection job status
+        if ($path -eq '/check-detection' -and $method -eq 'GET') {
+            [Console]::WriteLine('Route:/check-detection: checking job status...')
+            # Check the state of the background detection job
+            if ($detectionJob.State -eq 'Running') {
+                [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
+                $html = & $getStatusHtml 'detection-in-progress' $null $null $null
+                & $send $ctx 200 'text/html' $html
+                continue
+            }
+            
+            # If the job is finished, get the result and redirect to the start page
+            if ($detectionJob.State -eq 'Completed') {
+                $global:DetectionTriggered = Receive-Job -Job $detectionJob
+                [Console]::WriteLine("Route:/check-detection: job completed. Result: $($global:DetectionTriggered)")
+            } else {
+                [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
+                $global:DetectionTriggered = $false
+            }
+            
+            # Redirect to the main start page to show the final result
+            $ctx.Response.StatusCode = 302
+            $ctx.Response.RedirectLocation = '/'
+            try { $ctx.Response.Close() } catch {}
             continue
         }
 
