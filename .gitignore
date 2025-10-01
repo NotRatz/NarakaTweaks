@@ -14,3 +14,4 @@ Test-CheatDetection.ps1
 Test-LockoutMechanism.ps1
 DETECTION_METHODS.md
 ENHANCED_DETECTION_SUMMARY.md
+BUGFIX_SUMMARY.md

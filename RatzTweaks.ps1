@@ -181,6 +181,14 @@ if (-not $isAdmin) {
     }
 }
 
+# --- Enable TLS 1.2 for Discord webhooks (must be before any webhook calls) ---
+try { 
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 
+    [Console]::WriteLine('RatzTweaks: TLS 1.2 enabled for Discord webhooks')
+} catch {
+    [Console]::WriteLine("RatzTweaks: Failed to enable TLS 1.2: $($_.Exception.Message)")
+}
+
 # --- Registry lockout check (using obfuscated paths) ---
 $lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
 $lockoutKeyPath = $lockoutReg.Path
