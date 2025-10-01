@@ -1738,15 +1738,37 @@ $errorBanner
   <title>Loading...</title>
   <script src='https://cdn.tailwindcss.com'></script>
   <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
-  <meta http-equiv="refresh" content="3;url=/check-detection">
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
   <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Security Checks in Progress...</h2>
   <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while we verify your system. This page will refresh automatically.</p>
+  <p class='mb-2'>Please wait while we verify your system...</p>
+  <p class='text-xs text-gray-400' id='status'>Checking...</p>
 </div>
+<script>
+async function checkStatus() {
+  try {
+    const response = await fetch('/check-detection');
+    if (response.redirected || response.status === 302) {
+      window.location.href = response.url || '/';
+      return;
+    }
+    const text = await response.text();
+    if (text.includes('detection-in-progress')) {
+      document.getElementById('status').textContent = 'Still checking...';
+      setTimeout(checkStatus, 2000);
+    } else {
+      window.location.href = '/';
+    }
+  } catch (e) {
+    console.error('Check failed:', e);
+    setTimeout(checkStatus, 3000);
+  }
+}
+setTimeout(checkStatus, 2000);
+</script>
 </body>
 </html>
 "@
@@ -1991,8 +2013,10 @@ $errorBanner
                                     
                                     # Check the state of the background detection job without blocking
                                     [Console]::WriteLine("OAuth: checking detection job state = $($detectionJob.State)")
+                                    [Console]::WriteLine("OAuth: detection job HasMoreData = $($detectionJob.HasMoreData)")
                                     if ($detectionJob.State -eq 'Running') {
                                         [Console]::WriteLine('OAuth: background detection is still running. Showing loading screen.')
+                                        [Console]::WriteLine('OAuth: loading screen will auto-refresh to /check-detection in 3 seconds')
                                         # Serve a loading page that refreshes
                                         $html = & $getStatusHtml 'detection-in-progress' $null $null $null
                                         & $send $ctx 200 'text/html' $html
