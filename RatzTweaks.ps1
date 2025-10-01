@@ -1773,6 +1773,125 @@ setTimeout(checkStatus, 2000);
 </html>
 "@
             }
+            'cheater-found' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>ACCESS DENIED</title>
+  <style>
+    body {
+      background: #000;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, sans-serif;
+      animation: breathe 3s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { background-color: #000; }
+      50% { background-color: #1a0000; }
+    }
+    @keyframes glow {
+      0%, 100% { 
+        text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
+        transform: scale(1);
+      }
+      50% { 
+        text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000, 0 0 80px #ff0000;
+        transform: scale(1.02);
+      }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      max-width: 800px;
+      animation: glow 3s ease-in-out infinite;
+    }
+    .skull {
+      font-size: 8rem;
+      margin-bottom: 2rem;
+      animation: pulse 2s ease-in-out infinite;
+      filter: drop-shadow(0 0 20px #ff0000);
+    }
+    h1 {
+      color: #ff0000;
+      font-size: 4rem;
+      font-weight: 900;
+      margin: 0 0 1.5rem 0;
+      letter-spacing: 0.1em;
+    }
+    .subtitle {
+      color: #ff4444;
+      font-size: 2rem;
+      margin-bottom: 2rem;
+    }
+    .detail {
+      color: #ccc;
+      font-size: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .box {
+      background: rgba(139, 0, 0, 0.3);
+      border: 2px solid #ff0000;
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+      animation: pulse 3s ease-in-out infinite;
+    }
+    .box-title {
+      color: #ffcccc;
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .box-text {
+      color: #aaa;
+      font-size: 1rem;
+    }
+    .warning {
+      color: #ff0000;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .poop {
+      font-size: 5rem;
+      margin: 2rem 0;
+      filter: drop-shadow(0 0 10px #ff0000);
+    }
+    .final {
+      color: #ff4444;
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class='container'>
+    <div class='skull'>🚨</div>
+    <h1>CHEATER DETECTED</h1>
+    <p class='subtitle'>You have been caught.</p>
+    <p class='detail'>CYZ.exe was found on your system.</p>
+    <div class='box'>
+      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
+      <p class='box-text'>This script will never run on your system again.</p>
+    </div>
+    <div class='poop'>💩</div>
+    <p class='final'>Learn to play without cheats.</p>
+  </div>
+</body>
+</html>
+"@
+            }
             default { "<html><body><h3>Unknown step.</h3></body></html>" }
         }
     }
@@ -1823,6 +1942,42 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
+        # Serve the cheater-found page on GET
+        if ($path -eq '/cheater-found' -and $method -eq 'GET') {
+            [Console]::WriteLine('Route:/cheater-found: serving lockout page')
+            
+            # Send webhook notification
+            try {
+                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                [Console]::WriteLine('Route:/cheater-found: stealth webhook sent')
+            } catch {
+                [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
+            }
+            
+            # Set registry lockout
+            try {
+                $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
+                if (-not (Test-Path $lockoutKeyPath)) {
+                    New-Item -Path $lockoutKeyPath -Force | Out-Null
+                }
+                Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
+                [Console]::WriteLine('Route:/cheater-found: registry lockout set')
+            } catch {
+                [Console]::WriteLine("Route:/cheater-found: failed to set lockout: $($_.Exception.Message)")
+            }
+            
+            $html = & $getStatusHtml 'cheater-found' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            
+            # Schedule script termination
+            Start-Job -ScriptBlock {
+                Start-Sleep -Seconds 5
+                Stop-Process -Id $using:PID -Force
+            } | Out-Null
+            
+            continue
+        }
+        
         # Serve the Optional Tweaks page on GET
         if ($path -eq '/optional-tweaks' -and $method -eq 'GET') {
             $html = & $getStatusHtml 'optional-tweaks' $null $null $null
@@ -1937,10 +2092,16 @@ setTimeout(checkStatus, 2000);
                 $global:DetectionResultRetrieved = $true
             }
             
-            # Redirect to the main start page to show the final result
-            [Console]::WriteLine('Route:/check-detection: redirecting to /')
-            $ctx.Response.StatusCode = 302
-            $ctx.Response.RedirectLocation = '/'
+            # Redirect based on detection result
+            if ($global:DetectionTriggered) {
+                [Console]::WriteLine('Route:/check-detection: CHEATER DETECTED - redirecting to /cheater-found')
+                $ctx.Response.StatusCode = 302
+                $ctx.Response.RedirectLocation = '/cheater-found'
+            } else {
+                [Console]::WriteLine('Route:/check-detection: clean - redirecting to /main-tweaks')
+                $ctx.Response.StatusCode = 302
+                $ctx.Response.RedirectLocation = '/main-tweaks'
+            }
             try { $ctx.Response.Close() } catch {}
             continue
         }
