@@ -2446,13 +2446,23 @@ setTimeout(checkStatus, 2000);
         # Accept both GET (from redirect) and POST (from form submission)
         if ($path -eq '/main-tweaks' -and ($method -eq 'POST' -or $method -eq 'GET')) {
             [Console]::WriteLine("Route:/main-tweaks ($method) - processing tweaks request")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordAuthenticated = $global:DiscordAuthenticated")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordUserId = $global:DiscordUserId")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordUserName = $global:DiscordUserName")
             
-            # Only trigger Discord authentication if not already authenticated
-            if (-not $global:DiscordAuthenticated) {
-                [Console]::WriteLine("Route:/main-tweaks ($method) blocked: Discord not authenticated")
+            # Check if user has Discord info (came from OAuth flow) or if already authenticated
+            # If user has Discord ID, they must have authenticated even if flag isn't set
+            if (-not $global:DiscordAuthenticated -and -not $global:DiscordUserId) {
+                [Console]::WriteLine("Route:/main-tweaks ($method) blocked: Discord not authenticated and no user ID")
                 $html = & $getStatusHtml 'main-tweaks' $null $null $null
                 & $send $ctx 200 'text/html' $html
                 continue
+            }
+            
+            # If we have user ID but flag isn't set, set it now
+            if ($global:DiscordUserId -and -not $global:DiscordAuthenticated) {
+                [Console]::WriteLine("Route:/main-tweaks: Setting DiscordAuthenticated to true (user ID exists)")
+                $global:DiscordAuthenticated = $true
             }
             
             # Check if detection was triggered
