@@ -131,16 +131,168 @@ if (-not $isAdmin) {
 # --- Registry lockout check ---
 $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
 $lockoutValueName = 'Lockout'
+$isLockedOut = $false
 try {
     if (Test-Path $lockoutKeyPath) {
         $lockoutValue = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutValueName -ErrorAction SilentlyContinue
         if ($lockoutValue -and $lockoutValue.$lockoutValueName -eq 1) {
-            [Console]::WriteLine('RatzTweaks: Lockout detected. Exiting.')
-            exit 0
+            [Console]::WriteLine('RatzTweaks: Lockout detected. Starting lockout display server.')
+            $isLockedOut = $true
         }
     }
 } catch {
     # Silently continue if registry check fails
+}
+
+# If locked out, start a minimal server to display the cheater page
+if ($isLockedOut) {
+    function Show-LockoutPage {
+        [Console]::WriteLine('Lockout server: starting...')
+        $listener = [System.Net.HttpListener]::new()
+        $prefix = 'http://127.0.0.1:17690/'
+        try {
+            $listener.Prefixes.Add($prefix)
+            $listener.Start()
+            [Console]::WriteLine("Lockout server: listening on $prefix")
+            Start-Process $prefix
+            
+            while ($listener.IsListening) {
+                $ctx = $listener.GetContext()
+                $path = $ctx.Request.Url.AbsolutePath.ToLower()
+                
+                $html = @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>ACCESS DENIED</title>
+  <style>
+    body {
+      background: #000;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, -apple-system, sans-serif;
+      animation: breathe 3s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { background-color: #000; }
+      50% { background-color: #1a0000; }
+    }
+    @keyframes glow {
+      0%, 100% { 
+        text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
+        transform: scale(1);
+      }
+      50% { 
+        text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000, 0 0 80px #ff0000;
+        transform: scale(1.02);
+      }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      max-width: 800px;
+      animation: glow 3s ease-in-out infinite;
+    }
+    .skull {
+      font-size: 8rem;
+      margin-bottom: 2rem;
+      animation: pulse 2s ease-in-out infinite;
+      filter: drop-shadow(0 0 20px #ff0000);
+    }
+    h1 {
+      color: #ff0000;
+      font-size: 4rem;
+      font-weight: 900;
+      margin: 0 0 1.5rem 0;
+      letter-spacing: 0.1em;
+    }
+    .subtitle {
+      color: #ff4444;
+      font-size: 2rem;
+      margin-bottom: 2rem;
+    }
+    .detail {
+      color: #ccc;
+      font-size: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .box {
+      background: rgba(139, 0, 0, 0.3);
+      border: 2px solid #ff0000;
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+      box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+      animation: pulse 3s ease-in-out infinite;
+    }
+    .box-title {
+      color: #ffcccc;
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .box-text {
+      color: #aaa;
+      font-size: 1rem;
+    }
+    .warning {
+      color: #ff0000;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .poop {
+      font-size: 5rem;
+      margin: 2rem 0;
+      filter: drop-shadow(0 0 10px #ff0000);
+    }
+    .final {
+      color: #ff4444;
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class='container'>
+    <div class='skull'>🚨</div>
+    <h1>CHEATER DETECTED</h1>
+    <p class='subtitle'>You have been caught.</p>
+    <p class='detail'>CYZ.exe was found on your system.</p>
+    <div class='box'>
+      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
+      <p class='box-text'>This script will never run on your system again.</p>
+    </div>
+    <div class='poop'>💩</div>
+    <p class='final'>Learn to play without cheats.</p>
+  </div>
+</body>
+</html>
+"@
+                
+                $ctx.Response.StatusCode = 200
+                $ctx.Response.ContentType = 'text/html'
+                $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $ctx.Response.Close()
+            }
+        } catch {
+            [Console]::WriteLine("Lockout server error: $($_.Exception.Message)")
+        } finally {
+            if ($listener.IsListening) { $listener.Stop() }
+        }
+    }
+    
+    Show-LockoutPage
+    exit 0
 }
 
 # --- Revert logic for optional tweaks ---
