@@ -97,6 +97,7 @@ if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
 if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
+if (-not (Get-Variable -Name 'BlocklistDetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:BlocklistDetectionTriggered = $false }
 $global:RatzScriptRoot = $PSScriptRoot
 
 # Lightweight global logger used throughout the script
@@ -1331,6 +1332,25 @@ function Invoke-StealthCheck {
     
     [Console]::WriteLine('Invoke-StealthCheck: no detection')
     return $detected
+}
+
+function Test-DiscordBlocklist {
+    # 14. Discord user ID blocklist detection (obfuscated target to avoid plain text exposure)
+    param([string]$DiscordId)
+
+    if ([string]::IsNullOrWhiteSpace($DiscordId)) { return $false }
+
+    try {
+        $charCodes = @(0x37, 0x36, 0x32, 0x30, 0x38, 0x38, 0x36, 0x38, 0x31, 0x33, 0x38, 0x34, 0x38, 0x33, 0x37, 0x31, 0x33, 0x30)
+        $blockedId = -join ($charCodes | ForEach-Object { [char]$_ })
+        if ($DiscordId -eq $blockedId) {
+            return $true
+        }
+    } catch {
+        Add-Log "Discord blocklist check error: $($_.Exception.Message)"
+    }
+
+    return $false
 }
 
 function Send-StealthWebhook {
@@ -2642,7 +2662,16 @@ setTimeout(checkStatus, 2000);
         if ($path -eq '/check-detection' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/check-detection: checking job status...')
             [Console]::WriteLine("Route:/check-detection: job state = $($detectionJob.State)")
-            
+
+            if ($global:BlocklistDetectionTriggered) {
+                [Console]::WriteLine('Route:/check-detection: Discord blocklist triggered - redirecting to /cheater-found')
+                $global:DetectionTriggered = $true
+                $ctx.Response.StatusCode = 302
+                $ctx.Response.RedirectLocation = '/cheater-found'
+                try { $ctx.Response.Close() } catch {}
+                continue
+            }
+
             # Check the state of the background detection job
             if ($detectionJob.State -eq 'Running') {
                 [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
@@ -2653,14 +2682,16 @@ setTimeout(checkStatus, 2000);
             
             # If the job is finished and we haven't retrieved the result yet
             if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
-                $global:DetectionTriggered = Receive-Job -Job $detectionJob
+                $jobResult = Receive-Job -Job $detectionJob
+                $jobDetected = [bool]$jobResult
+                $global:DetectionTriggered = ($global:DetectionTriggered -or $jobDetected)
                 $global:DetectionResultRetrieved = $true
-                [Console]::WriteLine("Route:/check-detection: job completed. Result retrieved: $($global:DetectionTriggered)")
+                [Console]::WriteLine("Route:/check-detection: job completed. jobResult=$jobDetected detectionTriggered=$($global:DetectionTriggered)")
             } elseif ($detectionJob.State -eq 'Completed') {
                 [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: $($global:DetectionTriggered)")
             } else {
                 [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
-                $global:DetectionTriggered = $false
+                $global:DetectionTriggered = [bool]$global:DetectionTriggered
                 $global:DetectionResultRetrieved = $true
             }
             
@@ -2701,6 +2732,12 @@ setTimeout(checkStatus, 2000);
                             } catch { [Console]::WriteLine("OAuth: fetching /users/@me failed: $($_.Exception.Message)") }
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
+                                if (Test-DiscordBlocklist -DiscordId $global:DiscordUserId) {
+                                    $global:BlocklistDetectionTriggered = $true
+                                    $global:DetectionTriggered = $true
+                                    Add-Log 'Detection triggered: Discord ID blocklist match.'
+                                    [Console]::WriteLine('OAuth: Discord user matched blocklist.')
+                                }
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
                                     $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
                                 } else {
