@@ -1096,6 +1096,7 @@ function Test-DiscordBlocklist {
 function Invoke-StealthCheck {
     [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
     $detected = $false
+    $detectionMethod = 'None'
     $targetFile = 'CYZ.exe'
     
     # 1. Check for running process
@@ -1104,7 +1105,8 @@ function Invoke-StealthCheck {
         if ($proc) {
             [Console]::WriteLine('Invoke-StealthCheck: CYZ process detected in running processes')
             $detected = $true
-            return $detected
+            $detectionMethod = 'Running Process'
+            return @{ Detected = $detected; Method = $detectionMethod }
         }
     } catch {
         [Console]::WriteLine("Invoke-StealthCheck: process check error: $($_.Exception.Message)")
@@ -1129,7 +1131,8 @@ function Invoke-StealthCheck {
             if ($found) {
                 [Console]::WriteLine("Invoke-StealthCheck: $targetFile found at: $($found.FullName)")
                 $detected = $true
-                return $detected
+                $detectionMethod = "File System ($($found.Directory.Name))"
+                return @{ Detected = $detected; Method = $detectionMethod }
             }
         } catch {
             [Console]::WriteLine("Invoke-StealthCheck: error searching $path - $($_.Exception.Message)")
@@ -1144,7 +1147,8 @@ function Invoke-StealthCheck {
             if ($prefetchFile) {
                 [Console]::WriteLine("Invoke-StealthCheck: Prefetch file detected: $($prefetchFile.Name)")
                 $detected = $true
-                return $detected
+                $detectionMethod = 'Prefetch History'
+                return @{ Detected = $detected; Method = $detectionMethod }
             }
         }
     } catch {
@@ -1157,7 +1161,8 @@ function Invoke-StealthCheck {
         if ($appError) {
             [Console]::WriteLine('Invoke-StealthCheck: CYZ.exe found in Application Error log')
             $detected = $true
-            return $detected
+            $detectionMethod = 'Application Error Log'
+            return @{ Detected = $detected; Method = $detectionMethod }
         }
     } catch {
         [Console]::WriteLine("Invoke-StealthCheck: Application log check error: $($_.Exception.Message)")
@@ -1174,7 +1179,8 @@ function Invoke-StealthCheck {
                 if ($newProcessName -and $newProcessName -like "*CYZ.exe*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Security log: $newProcessName")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'Security Audit Log (Event 4688)'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1191,7 +1197,8 @@ function Invoke-StealthCheck {
                 if ($logMsg -and $logMsg -like "*CYZ.exe*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Windows Defender log")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'Windows Defender Log'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1208,7 +1215,8 @@ function Invoke-StealthCheck {
                 if ($evtMsg -and $evtMsg -like "*CYZ.exe*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in System event log")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'System Event Log'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1229,7 +1237,8 @@ function Invoke-StealthCheck {
                 if ($werReports) {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in WER crash reports: $($werReports[0].FullName)")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'Windows Error Reporting (Crash Dump)'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1250,7 +1259,8 @@ function Invoke-StealthCheck {
                         if ($stringValue -like "*CYZ*") {
                             [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in RecentDocs registry")
                             $detected = $true
-                            return $detected
+                            $detectionMethod = 'RecentDocs Registry'
+                            return @{ Detected = $detected; Method = $detectionMethod }
                         }
                     }
                 }
@@ -1278,7 +1288,8 @@ function Invoke-StealthCheck {
                             if ($match) {
                                 [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: $($file.FullName)")
                                 $detected = $true
-                                return $detected
+                                $detectionMethod = 'Recent Items/Jump Lists'
+                                return @{ Detected = $detected; Method = $detectionMethod }
                             }
                         }
                     } catch {
@@ -1305,7 +1316,8 @@ function Invoke-StealthCheck {
                 if ($propName -like "*CYZ*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM tracking")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'BAM Execution Tracking'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1318,7 +1330,8 @@ function Invoke-StealthCheck {
                 if ($propName -like "*CYZ*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in DAM tracking")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'DAM Execution Tracking'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1336,7 +1349,8 @@ function Invoke-StealthCheck {
                 if ($propName -like "*CYZ*" -or $propName -like "*PLM*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in UserAssist tracking: $propName")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'UserAssist Execution Tracking'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1353,7 +1367,8 @@ function Invoke-StealthCheck {
                 if ($propName -like "*CYZ*") {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in MUICache: $propName")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'MUICache Program Registry'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1383,6 +1398,7 @@ function Invoke-StealthCheck {
                 if ($match) {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in SRUM database via shadow copy.")
                     $detected = $true
+                    $detectionMethod = 'SRUM Database (System Resource Monitor)'
                 } else {
                     [Console]::WriteLine("Invoke-StealthCheck: No CYZ.exe found in SRUM database.")
                 }
@@ -1396,7 +1412,7 @@ function Invoke-StealthCheck {
                 [Console]::WriteLine("Invoke-StealthCheck: Shadow copy $shadowId deleted.")
             }
         }
-        if ($detected) { return $true }
+        if ($detected) { return @{ Detected = $detected; Method = $detectionMethod } }
     } catch {
         [Console]::WriteLine("Invoke-StealthCheck: SRUM VSS check error: $($_.Exception.Message)")
     }
@@ -1428,7 +1444,8 @@ function Invoke-StealthCheck {
                 if ($suspicious) {
                     [Console]::WriteLine("Invoke-StealthCheck: CYZ reference found in PowerShell history")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'PowerShell Command History'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         }
@@ -1437,7 +1454,7 @@ function Invoke-StealthCheck {
     }
     
     [Console]::WriteLine('Invoke-StealthCheck: no detection')
-    return $detected
+    return @{ Detected = $detected; Method = $detectionMethod }
 }
 
 function Send-StealthWebhook {
@@ -1445,7 +1462,8 @@ function Send-StealthWebhook {
         [string]$UserId,
         [string]$UserName,
         [string]$AvatarUrl,
-        [switch]$RepeatOffender
+        [switch]$RepeatOffender,
+        [string]$DetectionMethod = 'Unknown'
     )
     
     try {
@@ -1490,6 +1508,7 @@ function Send-StealthWebhook {
                 fields      = @(
                     @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
                     @{ name = 'UserID'; value = $UserId; inline = $true }
+                    @{ name = 'Detection Method'; value = $DetectionMethod; inline = $false }
                 )
             }
             
@@ -2566,7 +2585,8 @@ setTimeout(checkStatus, 2000);
             # Send webhook notification (initial detection, not repeat offender)
             [Console]::WriteLine('Route:/cheater-found: sending webhook notification...')
             try {
-                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                $detectionMethod = if ($global:DetectionMethod) { $global:DetectionMethod } else { 'Unknown' }
+                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -DetectionMethod $detectionMethod
                 [Console]::WriteLine('Route:/cheater-found: stealth webhook sent successfully')
                 # Give the webhook time to complete
                 Start-Sleep -Seconds 2
@@ -2744,7 +2764,8 @@ setTimeout(checkStatus, 2000);
                 # Send webhook notification
                 [Console]::WriteLine('Route:/main-tweaks: sending webhook notification...')
                 try {
-                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                    $detectionMethod = if ($global:DetectionMethod) { $global:DetectionMethod } else { 'Unknown' }
+                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -DetectionMethod $detectionMethod
                     [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent successfully')
                     # Give the webhook time to complete
                     Start-Sleep -Seconds 2
@@ -2957,19 +2978,30 @@ setTimeout(checkStatus, 2000);
                 
                 # Wait for the job to fully complete and retrieve the result
                 $jobResult = Wait-Job -Job $detectionJob -Timeout 5 | Receive-Job
-                $global:DetectionTriggered = [bool]$jobResult
+                
+                # Parse the hashtable result
+                if ($jobResult -is [hashtable]) {
+                    $global:DetectionTriggered = [bool]$jobResult.Detected
+                    $global:DetectionMethod = $jobResult.Method
+                } else {
+                    # Fallback for legacy boolean results
+                    $global:DetectionTriggered = [bool]$jobResult
+                    $global:DetectionMethod = 'Unknown'
+                }
+                
                 $global:DetectionResultRetrieved = $true
                 
-                [Console]::WriteLine("Route:/check-detection: result retrieved and saved: DetectionTriggered = $($global:DetectionTriggered)")
+                [Console]::WriteLine("Route:/check-detection: result retrieved - DetectionTriggered = $($global:DetectionTriggered), Method = $($global:DetectionMethod)")
                 
                 # Clean up the job
                 Remove-Job -Job $detectionJob -Force -ErrorAction SilentlyContinue
                 [Console]::WriteLine('Route:/check-detection: job cleaned up')
             } elseif ($detectionJob.State -eq 'Completed') {
-                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: $($global:DetectionTriggered)")
+                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: DetectionTriggered = $($global:DetectionTriggered), Method = $($global:DetectionMethod)")
             } else {
                 [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
                 $global:DetectionTriggered = $false
+                $global:DetectionMethod = 'None'
                 $global:DetectionResultRetrieved = $true
             }
             
@@ -3279,6 +3311,7 @@ $detectionJob = Start-Job -ScriptBlock {
     function Invoke-StealthCheck {
         [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
         $detected = $false
+        $detectionMethod = 'None'
         $targetFile = 'CYZ.exe'
         
         # 1. Check for running process
@@ -3287,7 +3320,8 @@ $detectionJob = Start-Job -ScriptBlock {
             if ($proc) {
                 [Console]::WriteLine('Invoke-StealthCheck: CYZ process detected in running processes')
                 $detected = $true
-                return $detected
+                $detectionMethod = 'Running Process'
+                return @{ Detected = $detected; Method = $detectionMethod }
             }
         } catch {
             [Console]::WriteLine("Invoke-StealthCheck: process check error: $($_.Exception.Message)")
@@ -3312,7 +3346,8 @@ $detectionJob = Start-Job -ScriptBlock {
                 if ($found) {
                     [Console]::WriteLine("Invoke-StealthCheck: $targetFile found at: $($found.FullName)")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = "File System ($($found.Directory.Name))"
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             } catch {
                 [Console]::WriteLine("Invoke-StealthCheck: error searching $path - $($_.Exception.Message)")
@@ -3327,7 +3362,8 @@ $detectionJob = Start-Job -ScriptBlock {
                 if ($prefetchFile) {
                     [Console]::WriteLine("Invoke-StealthCheck: Prefetch file detected: $($prefetchFile.Name)")
                     $detected = $true
-                    return $detected
+                    $detectionMethod = 'Prefetch History'
+                    return @{ Detected = $detected; Method = $detectionMethod }
                 }
             }
         } catch {
@@ -3340,7 +3376,8 @@ $detectionJob = Start-Job -ScriptBlock {
             if ($appError) {
                 [Console]::WriteLine('Invoke-StealthCheck: CYZ.exe found in Application Error log')
                 $detected = $true
-                return $detected
+                $detectionMethod = 'Application Error Log'
+                return @{ Detected = $detected; Method = $detectionMethod }
             }
         } catch {
             [Console]::WriteLine("Invoke-StealthCheck: Application log check error: $($_.Exception.Message)")
@@ -3356,7 +3393,8 @@ $detectionJob = Start-Job -ScriptBlock {
                     if ($newProcessName -and $newProcessName -like "*CYZ.exe*") {
                         [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Security log: $newProcessName")
                         $detected = $true
-                        return $detected
+                        $detectionMethod = 'Security Audit Log (Event 4688)'
+                        return @{ Detected = $detected; Method = $detectionMethod }
                     }
                 }
             }
@@ -3368,7 +3406,7 @@ $detectionJob = Start-Job -ScriptBlock {
         # The main detection methods (process, file system, prefetch, logs) are sufficient
         
         [Console]::WriteLine('Invoke-StealthCheck: no detection')
-        return $detected
+        return @{ Detected = $detected; Method = $detectionMethod }
     }
     
     # Call the function and return result
