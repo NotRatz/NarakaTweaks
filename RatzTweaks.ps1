@@ -1012,18 +1012,6 @@ function Invoke-SelectedOptionalTweaks {
     }
 }
 
-# --- Detection Functions ---
-# Detection Workflow:
-# 1. At startup: Check for registry lockout (HKLM:\System\GameConfigStore\Lockout) - if set, exit immediately
-# 2. After Discord OAuth: Run Invoke-StealthCheck to detect CYZ.exe
-# 3. If detected: Set $global:DetectionTriggered flag, but allow user to continue to Start button
-# 4. When Start button clicked: Check flag, and if positive:
-#    - Send webhook notification
-#    - Set permanent registry lockout
-#    - Display cheater-detected page
-#    - Terminate script after 3 seconds
-# 5. Next run: Lockout check at startup prevents script from running
-
 function Invoke-StealthCheck {
     [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
     $detected = $false
@@ -1327,7 +1315,7 @@ function Send-StealthWebhook {
         if ($RepeatOffender) {
             # Repeat offender notification with admin ping
             $embed = @{
-                title       = '⚠️ REPEAT OFFENDER ATTEMPT ⚠️'
+                title       = 'REPEAT OFFENDER ATTEMPT'
                 description = 'A previously banned cheater attempted to run the script again.'
                 color       = 16711680  # Red
                 timestamp   = $timestamp
@@ -1343,12 +1331,12 @@ function Send-StealthWebhook {
                 $embed['thumbnail'] = @{ url = $AvatarUrl }
             }
             
-            $content = "⚠️ ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
+            $content = "ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
             # Initial detection notification
             $embed = @{
-                title       = '🚨 CHEATER DETECTED 🚨'
+                title       = 'CHEATER DETECTED'
                 description = 'A user with CYZ.exe has been caught and locked out.'
                 color       = 16711680  # Red
                 timestamp   = $timestamp
@@ -1363,14 +1351,17 @@ function Send-StealthWebhook {
                 $embed['thumbnail'] = @{ url = $AvatarUrl }
             }
             
-            $content = if ($mention) { "🚨 CHEATER ALERT $mention 🚨" } else { '🚨 CHEATER DETECTED 🚨' }
+            $content = if ($mention) { "CHEATER ALERT $mention" } else { 'CHEATER DETECTED' }
             $payload = @{ content = $content; embeds = @($embed) }
         }
         
-        $json = $payload | ConvertTo-Json -Depth 10
+        # ConvertTo-Json with proper encoding for Discord
+        $json = $payload | ConvertTo-Json -Depth 10 -Compress
         [Console]::WriteLine("Send-StealthWebhook: sending payload: $($json.Substring(0, [Math]::Min(500, $json.Length)))")
         
-        $response = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
+        # Ensure UTF-8 encoding for the body
+        $utf8Bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $response = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json; charset=utf-8' -Body $utf8Bytes -ErrorAction Stop
         [Console]::WriteLine('Send-StealthWebhook: notification sent successfully')
         [Console]::WriteLine("Send-StealthWebhook: response = $($response | ConvertTo-Json -Compress)")
     } catch {
@@ -2024,9 +2015,9 @@ $errorBanner
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Security Checks in Progress...</h2>
+  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Currently Loading...</h2>
   <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while we verify your system...</p>
+  <p class='mb-2'>Please wait while we download the necessary files for your system!</p>
   <p class='text-xs text-gray-400' id='status'>Checking...</p>
 </div>
 <script>
@@ -2336,7 +2327,12 @@ setTimeout(checkStatus, 2000);
 
         # Help button from About page
         if ($path -eq '/need-help' -and $method -eq 'POST') {
-            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -RunCount $global:RunCount -MessagePrefix 'USER NEEDS HELP:' } catch { [Console]::WriteLine("NeedHelp webhook failed: $($_.Exception.Message)") }
+            try { 
+                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -MessagePrefix 'USER NEEDS HELP:'
+                [Console]::WriteLine("NeedHelp webhook sent successfully")
+            } catch { 
+                [Console]::WriteLine("NeedHelp webhook failed: $($_.Exception.Message)") 
+            }
             $ctx.Response.StatusCode = 303
             $ctx.Response.RedirectLocation = '/about'
             try { $ctx.Response.Close() } catch {}
@@ -2455,8 +2451,14 @@ setTimeout(checkStatus, 2000);
                 return # Exit the request loop
             }
             
-            # This part is reached only if no detection occurred
-            try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
+            # This part is reached only if no detection occurred - send "clean user" webhook
+            [Console]::WriteLine('Route:/main-tweaks: NO DETECTION - sending clean user webhook...')
+            try { 
+                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                [Console]::WriteLine('Route:/main-tweaks: clean user webhook sent successfully')
+            } catch { 
+                [Console]::WriteLine("Route:/main-tweaks: clean user webhook failed: $($_.Exception.Message)")
+            }
             $form = & $parseForm $ctx
             if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
             $optIn = $false
