@@ -1892,6 +1892,8 @@ $errorBanner
         # New endpoint to poll for detection job status
         if ($path -eq '/check-detection' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/check-detection: checking job status...')
+            [Console]::WriteLine("Route:/check-detection: job state = $($detectionJob.State)")
+            
             # Check the state of the background detection job
             if ($detectionJob.State -eq 'Running') {
                 [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
@@ -1900,16 +1902,21 @@ $errorBanner
                 continue
             }
             
-            # If the job is finished, get the result and redirect to the start page
-            if ($detectionJob.State -eq 'Completed') {
+            # If the job is finished and we haven't retrieved the result yet
+            if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
                 $global:DetectionTriggered = Receive-Job -Job $detectionJob
-                [Console]::WriteLine("Route:/check-detection: job completed. Result: $($global:DetectionTriggered)")
+                $global:DetectionResultRetrieved = $true
+                [Console]::WriteLine("Route:/check-detection: job completed. Result retrieved: $($global:DetectionTriggered)")
+            } elseif ($detectionJob.State -eq 'Completed') {
+                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: $($global:DetectionTriggered)")
             } else {
                 [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
                 $global:DetectionTriggered = $false
+                $global:DetectionResultRetrieved = $true
             }
             
             # Redirect to the main start page to show the final result
+            [Console]::WriteLine('Route:/check-detection: redirecting to /')
             $ctx.Response.StatusCode = 302
             $ctx.Response.RedirectLocation = '/'
             try { $ctx.Response.Close() } catch {}
@@ -1983,6 +1990,7 @@ $errorBanner
                                     $global:DiscordAuthError = $null
                                     
                                     # Check the state of the background detection job without blocking
+                                    [Console]::WriteLine("OAuth: checking detection job state = $($detectionJob.State)")
                                     if ($detectionJob.State -eq 'Running') {
                                         [Console]::WriteLine('OAuth: background detection is still running. Showing loading screen.')
                                         # Serve a loading page that refreshes
@@ -1991,13 +1999,17 @@ $errorBanner
                                         continue
                                     }
                                     
-                                    # If the job is finished, get the result
-                                    if ($detectionJob.State -eq 'Completed') {
+                                    # If the job is finished and we haven't retrieved the result yet
+                                    if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
                                         $global:DetectionTriggered = Receive-Job -Job $detectionJob
-                                        [Console]::WriteLine("OAuth: background detection result: $($global:DetectionTriggered)")
+                                        $global:DetectionResultRetrieved = $true
+                                        [Console]::WriteLine("OAuth: background detection result retrieved: $($global:DetectionTriggered)")
+                                    } elseif ($detectionJob.State -eq 'Completed') {
+                                        [Console]::WriteLine("OAuth: background detection result already retrieved: $($global:DetectionTriggered)")
                                     } else {
                                         [Console]::WriteLine("OAuth: background detection job is in an unexpected state: $($detectionJob.State). Assuming not detected.")
                                         $global:DetectionTriggered = $false
+                                        $global:DetectionResultRetrieved = $true
                                     }
                                     
                                     if ($global:DetectionTriggered) {
