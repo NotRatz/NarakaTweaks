@@ -3,8 +3,8 @@ test_detection.ps1
 test_oaauth_start.ps1
 test_oaauth_token.ps1
 enhanced_stealth.ps1
-.gitignore
 RatzTweaks.ps1
 CLEANUP_README.md
-.gitignore
 Clear-PowerShellLogs.ps1
+Find-Lockout-Simple.ps1 
+Find-LockoutKey.ps1

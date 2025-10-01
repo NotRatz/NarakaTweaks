@@ -73,7 +73,11 @@ function Get-ObfuscatedRegistryPath {
     $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
     $basePath = $basePaths[$selectedIndex]
     
-    $subKey = "{{0x{0:X8}-{1:X4}-{2:X4}}" -f $seed.GetHashCode(), (Get-Date).Year, (Get-Date).Month
+    # Build subkey string without format issues
+    $hashCode = $seed.GetHashCode().ToString('X8')
+    $year = (Get-Date).Year.ToString('X4')
+    $month = (Get-Date).Month.ToString('X4')
+    $subKey = "{0x$hashCode-$year-$month}"
     
     $fullPath = Join-Path $basePath $subKey
 
@@ -2331,8 +2335,23 @@ setTimeout(checkStatus, 2000);
                 
                 # Ensure the registry key exists (create parent paths if needed)
                 if (-not (Test-Path $lockoutKeyPath)) {
-                    [Console]::WriteLine("Route:/cheater-found: Creating obfuscated registry key")
-                    New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
+                    [Console]::WriteLine("Route:/cheater-found: Creating obfuscated registry key at: $lockoutKeyPath")
+                    try {
+                        # Split the path and create each level
+                        $pathParts = $lockoutKeyPath -replace '^HKLM:\\', '' -split '\\'
+                        $currentPath = 'HKLM:'
+                        foreach ($part in $pathParts) {
+                            $currentPath = Join-Path $currentPath $part
+                            if (-not (Test-Path $currentPath)) {
+                                [Console]::WriteLine("Route:/cheater-found: Creating path segment: $currentPath")
+                                New-Item -Path $currentPath -Force -ErrorAction Stop | Out-Null
+                            }
+                        }
+                        [Console]::WriteLine("Route:/cheater-found: [OK] Registry path created successfully")
+                    } catch {
+                        [Console]::WriteLine("Route:/cheater-found: [FAIL] Failed to create registry path: $($_.Exception.Message)")
+                        throw
+                    }
                 }
                 
                 # Set lockout flag using obfuscated value name
@@ -2357,9 +2376,9 @@ setTimeout(checkStatus, 2000);
                     Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                 }
                 
-                [Console]::WriteLine('Route:/cheater-found: ✓ Registry lockout set with cached user info')
+                [Console]::WriteLine('Route:/cheater-found: [OK] Registry lockout set with cached user info')
             } catch {
-                [Console]::WriteLine("Route:/cheater-found: ✗ FAILED to set lockout: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/cheater-found: [FAIL] FAILED to set lockout: $($_.Exception.Message)")
                 [Console]::WriteLine("Route:/cheater-found: Exception type: $($_.Exception.GetType().FullName)")
                 [Console]::WriteLine("Route:/cheater-found: Stack trace: $($_.ScriptStackTrace)")
             }
@@ -2458,11 +2477,11 @@ setTimeout(checkStatus, 2000);
             
             # If we have user ID but flag isn't set, set it now
             if ($global:DiscordUserId -and -not $global:DiscordAuthenticated) {
-                [Console]::WriteLine("Route:/main-tweaks: ✓ Setting DiscordAuthenticated to true (user ID exists)")
+                [Console]::WriteLine("Route:/main-tweaks: [OK] Setting DiscordAuthenticated to true (user ID exists)")
                 $global:DiscordAuthenticated = $true
             }
             
-            [Console]::WriteLine("Route:/main-tweaks: ✓ Authentication check passed! Proceeding with tweaks...")
+            [Console]::WriteLine("Route:/main-tweaks: [OK] Authentication check passed! Proceeding with tweaks...")
             [Console]::WriteLine("========================================")
             
             # Check if detection was triggered
@@ -2492,10 +2511,25 @@ setTimeout(checkStatus, 2000);
                     
                     $lockoutKeyPath = $lockoutReg.Path
                     
-                    # Ensure the registry key exists
+                    # Ensure the registry key exists (create parent paths if needed)
                     if (-not (Test-Path $lockoutKeyPath)) {
-                        [Console]::WriteLine("Route:/main-tweaks: Creating obfuscated registry key")
-                        New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
+                        [Console]::WriteLine("Route:/main-tweaks: Creating obfuscated registry key at: $lockoutKeyPath")
+                        try {
+                            # Split the path and create each level
+                            $pathParts = $lockoutKeyPath -replace '^HKLM:\\', '' -split '\\'
+                            $currentPath = 'HKLM:'
+                            foreach ($part in $pathParts) {
+                                $currentPath = Join-Path $currentPath $part
+                                if (-not (Test-Path $currentPath)) {
+                                    [Console]::WriteLine("Route:/main-tweaks: Creating path segment: $currentPath")
+                                    New-Item -Path $currentPath -Force -ErrorAction Stop | Out-Null
+                                }
+                            }
+                            [Console]::WriteLine("Route:/main-tweaks: [OK] Registry path created successfully")
+                        } catch {
+                            [Console]::WriteLine("Route:/main-tweaks: [FAIL] Failed to create registry path: $($_.Exception.Message)")
+                            throw
+                        }
                     }
                     
                     # Set lockout flag using obfuscated value name
@@ -2520,9 +2554,9 @@ setTimeout(checkStatus, 2000);
                         Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                     }
                     
-                    [Console]::WriteLine('Route:/main-tweaks: ✓ Registry lockout set with cached user info')
+                    [Console]::WriteLine('Route:/main-tweaks: [OK] Registry lockout set with cached user info')
                 } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: ✗ FAILED to set lockout: $($_.Exception.Message)")
+                    [Console]::WriteLine("Route:/main-tweaks: [FAIL] FAILED to set lockout: $($_.Exception.Message)")
                     [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
                     [Console]::WriteLine("Route:/main-tweaks: Stack trace: $($_.ScriptStackTrace)")
                 }
@@ -2576,16 +2610,16 @@ setTimeout(checkStatus, 2000);
             
             # This part is reached only if no detection occurred - send "clean user" webhook
             [Console]::WriteLine('========================================')
-            [Console]::WriteLine('Route:/main-tweaks: ✓ NO DETECTION - User is CLEAN!')
+            [Console]::WriteLine('Route:/main-tweaks: [OK] NO DETECTION - User is CLEAN!')
             [Console]::WriteLine("Route:/main-tweaks: Sending clean user webhook...")
             [Console]::WriteLine("Route:/main-tweaks: UserId = [$global:DiscordUserId]")
             [Console]::WriteLine("Route:/main-tweaks: UserName = [$global:DiscordUserName]")
             [Console]::WriteLine("Route:/main-tweaks: AvatarUrl = [$global:DiscordAvatarUrl]")
             try { 
                 Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                [Console]::WriteLine('Route:/main-tweaks: ✓✓✓ Clean user webhook sent successfully!')
+                [Console]::WriteLine('Route:/main-tweaks: [OK][OK][OK] Clean user webhook sent successfully!')
             } catch { 
-                [Console]::WriteLine("Route:/main-tweaks: ✗✗✗ Clean user webhook FAILED: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/main-tweaks: [FAIL][FAIL][FAIL] Clean user webhook FAILED: $($_.Exception.Message)")
                 [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
             }
             [Console]::WriteLine('========================================')
