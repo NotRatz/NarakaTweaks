@@ -2236,6 +2236,15 @@ setTimeout(checkStatus, 2000);
 "@
             }
             'cheater-found' {
+                # Build personalized message with Discord username
+                $personalizedHeader = ''
+                if ($global:DiscordUserName) {
+                    $personalizedHeader = @"
+    <p class='personal-msg'>$($global:DiscordUserName).. Naughty Naughty...</p>
+    <p class='personal-msg'>Get ready to be exposed!</p>
+"@
+                }
+                
                 @"
 <!doctype html>
 <html lang='en'>
@@ -2283,6 +2292,13 @@ setTimeout(checkStatus, 2000);
       margin-bottom: 2rem;
       animation: pulse 2s ease-in-out infinite;
       filter: drop-shadow(0 0 20px #ff0000);
+    }
+    .personal-msg {
+      color: #ff9999;
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin: 0.5rem 0;
+      text-shadow: 0 0 10px #ff0000;
     }
     h1 {
       color: #ff0000;
@@ -2339,6 +2355,7 @@ setTimeout(checkStatus, 2000);
 </head>
 <body>
   <div class='container'>
+    $personalizedHeader
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>Micro-Acceleration was found on your system.</p>
