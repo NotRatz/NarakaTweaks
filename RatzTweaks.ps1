@@ -2341,9 +2341,9 @@ setTimeout(checkStatus, 2000);
   <div class='container'>
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
-    <p class='detail'>CYZ.exe was found on your system.</p>
+    <p class='detail'>Micro-Acceleration was found on your system.</p>
     <div class='box'>
-      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
+      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>. Honestly? <span class='warning'>FUCK YOU.</span></p>
       <p class='box-text'>This script will never run on your system again.</p>
     </div>
     <p class='final'>Learn to play without cheats, fucking loser.</p>
