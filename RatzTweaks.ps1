@@ -1,4 +1,32 @@
 # RatzTweaks.ps1
+
+# --- Admin Check ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    try {
+        $newProcess = @{
+            FilePath = 'powershell.exe'
+            ArgumentList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+            Verb = 'RunAs'
+            ErrorAction = 'Stop'
+        }
+        Start-Process @newProcess
+    } catch {
+        Write-Warning 'Failed to elevate. Please run as Administrator.'
+    }
+    exit
+}
+
+# --- Lockout Check ---
+try {
+    $lockoutKey = 'HKLM:\System\GameConfigStore'
+    if ((Get-ItemProperty -Path $lockoutKey -Name 'Lockout' -ErrorAction SilentlyContinue).Lockout -eq 1) {
+        # Silently exit if lockout is active
+        Stop-Process -Id $PID -Force
+    }
+} catch {
+    # Key likely doesn't exist, continue execution
+}
+
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
 if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
@@ -61,6 +89,7 @@ if (Test-Path $logPath) {
 if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
+if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
 
 # Lightweight global logger used throughout the script
 if (-not (Get-Command -Name Add-Log -ErrorAction SilentlyContinue)) {
@@ -237,6 +266,11 @@ if (-not (Get-Command -Name global:Disable-ViVeFeatures -ErrorAction SilentlyCon
 
 
 function Invoke-AllTweaks {
+    # Stop if detection was triggered
+    if ($global:DetectionTriggered) {
+        Add-Log 'Detection triggered. Aborting all tweaks.'
+        return
+    }
     # Only proceed if Discord OAuth completed before making any changes
     if (-not $global:DiscordAuthenticated) {
         Add-Log 'Discord authentication required — aborting tweaks.'
@@ -762,28 +796,159 @@ function Invoke-NVPI {
     }
 }
 
-function Invoke-SelectedOptionalTweaks {
-    # Run selected optional tweaks asynchronously and wait for all to finish
-    if ($global:selectedTweaks) {
-        $procs = @()
-        foreach ($tweak in $global:selectedTweaks) {
-            Write-Host "Running $tweak ..."
+function Send-StealthWebhook {
+    param([string]$Message, $UserObject)
+    
+    $getStealthWebhookUrl = {
+        $raw = $null
+        try {
+            $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
+            if (Test-Path $oauthConfigPath) {
+                $cfg = Get-Content -Raw -Path $oauthConfigPath | ConvertFrom-Json
+                if ($cfg -and $cfg.webhook_url) { $raw = [string]$cfg.webhook_url }
+            }
+        } catch {}
+        if (-not $raw) {
+            $secretPath = Join-Path $PSScriptRoot 'discord_webhook.secret'
+            if (Test-Path $secretPath) {
+                try {
+                    $lines = Get-Content -Path $secretPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                    if ($lines -and $lines.Count -gt 0) { $raw = [string]$lines[0] }
+                } catch {}
+            }
+        }
+        if ($raw) {
+            $candidate = [string]$raw
+            $candidate = $candidate -replace '^[\s"\x27]+|[\s"\x27]+$',''
+            if ($candidate -match '(https?://\S+)') { $candidate = $matches[1] }
+            $candidate = $candidate -replace '[\.,;:\)\]\}]+$',''
+            if ($candidate -match 'discord-webhook-link|example|your-webhook' -or [string]::IsNullOrWhiteSpace($candidate)) { return $null }
+            if ($candidate -notmatch '^https://(discord(app)?\.com)/api/webhooks/') { return $null }
             try {
-                $proc = Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$tweak`"" -WindowStyle Hidden -PassThru
-                $procs += $proc
+                if ([System.Uri]::IsWellFormedUriString($candidate, [System.UriKind]::Absolute)) {
+                    return $candidate
+                }
             } catch {}
         }
-        # Wait for all tweaks to finish
-        foreach ($proc in $procs) {
-            try { $proc.WaitForExit() } catch {}
-        }
+        return $null
     }
+
+    $ht = (& $getStealthWebhookUrl)
+    if (-not $ht) { return }
+
+    # Create a richer embed message
+    $payload = @{
+        content = "RatzTweaks Alert"
+        embeds = @(
+            @{
+                title = "Detection Alert"
+                description = $Message
+                color = 15158332 # Red
+                fields = @()
+                timestamp = (Get-Date).ToUniversalTime().ToString("o")
+            }
+        )
+    }
+
+    if ($UserObject -and $UserObject.username) {
+        $userField = @{
+            name = "Discord User"
+            value = "$($global:DiscordUserName) (<@$($UserObject.id)>)"
+            inline = $false
+        }
+        $payload.embeds[0].fields += $userField
+    }
+
+    $json = $payload | ConvertTo-Json -Depth 5
+
+    try {
+        Invoke-RestMethod -Method Post -Uri $ht -ContentType 'application/json' -Body $json -ErrorAction SilentlyContinue -TimeoutSec 5
+    } catch {}
 }
 
+function Invoke-StealthCheck {
+    Add-Log "StealthCheck: Starting..."
+    
+    try {
+        $cyzProcess = Get-Process -Name "CYZ" -ErrorAction SilentlyContinue
+        if ($cyzProcess) {
+            Add-Log "StealthCheck: CYZ.exe process detected."
+            return $true
+        }
+    } catch {
+        Add-Log "StealthCheck: Error checking for CYZ process: $($_.Exception.Message)"
+    }
+
+    try {
+        # Check for application error logs specifically from CYZ.exe
+        $appErrorEvents = Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='Application Error']]] and *[EventData[Data[1]='CYZ.exe']]" -MaxEvents 1 -ErrorAction SilentlyContinue
+        if ($appErrorEvents) {
+            Add-Log "StealthCheck: CYZ.exe related entry found in Application Error event log."
+            return $true
+        }
+
+        # Check Security log for process creation events (Event ID 4688)
+        # This requires 'Audit Process Creation' to be enabled in system policy.
+        # XPath 1.0 doesn't support 'contains', so we get recent events and filter in PowerShell.
+        $startTime = (Get-Date).AddDays(-7)
+        $securityEvents = Get-WinEvent -FilterHashtable @{ LogName='Security'; Id=4688; StartTime=$startTime } -ErrorAction SilentlyContinue
+        if ($securityEvents) {
+            foreach ($event in $securityEvents) {
+                # Property 5 is 'NewProcessName' for Event ID 4688
+                if ($event.Properties[5].Value -like '*CYZ.exe*') {
+                    Add-Log "StealthCheck: CYZ.exe execution detected in Security event log (Event ID 4688)."
+                    return $true
+                }
+            }
+        }
+    } catch {
+        Add-Log "StealthCheck: Error checking event logs: $($_.Exception.Message)"
+    }
+
+    $searchPaths = @(
+        "$env:ProgramFiles",
+        "$env:ProgramFiles(x86)",
+        "$env:LOCALAPPDATA",
+        "$env:APPDATA",
+        "$env:TEMP",
+        "$env:USERPROFILE\Downloads",
+        "$env:SystemDrive\Users"
+    )
+
+    foreach ($path in $searchPaths) {
+        try {
+            if (Test-Path -Path $path) {
+                $foundFiles = Get-ChildItem -Path $path -Filter "CYZ.exe" -Recurse -ErrorAction SilentlyContinue -Force
+                if ($foundFiles) {
+                    Add-Log "StealthCheck: CYZ.exe file found at $($foundFiles[0].FullName)."
+                    return $true
+                }
+            }
+        } catch {
+            Add-Log "StealthCheck: Error searching for CYZ.exe in '$path': $($_.Exception.Message)"
+        }
+    }
+
+    # Check the Prefetch folder specifically with a wildcard
+    try {
+        $prefetchPath = "$env:SystemRoot\Prefetch"
+        if (Test-Path -Path $prefetchPath) {
+            $prefetchFiles = Get-ChildItem -Path $prefetchPath -Filter "CYZ.EXE-*.pf" -ErrorAction SilentlyContinue
+            if ($prefetchFiles) {
+                Add-Log "StealthCheck: CYZ.exe prefetch file found at $($prefetchFiles[0].FullName)."
+                return $true
+            }
+        }
+    } catch {
+        Add-Log "StealthCheck: Error searching Prefetch folder: $($_.Exception.Message)"
+    }
+
+    Add-Log "StealthCheck: No signs of CYZ.exe detected."
+    return $false
+}
 
 # --- Lightweight Web UI to replace WinForms when needed ---
 function Start-WebUI {
-    param()
     [Console]::WriteLine('Start-WebUI: initializing...')
     # Ensure modern TLS for Discord API on Windows PowerShell 5.1
     try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
@@ -793,7 +958,7 @@ function Start-WebUI {
 
     # Enable form parsing helpers
     Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue
-    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRnIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
+    $global:__ratzAuthGate = 'cGFyYW0oJGQsJG4pCiRmPSRmYWxzZTskbT0nJwp0cnl7JGk9W2ludDY0XSRkLmlkOyR0PShbZGF0ZXRpbWVdJzE5NzAtMDEtMDEnKS5BZGRNaWxsaXNlY29uZHMoKCgkaSAtc2hyIDIyKSsxNDIwMDcwNDAwMDAwKSk7aWYoKFtkYXRldGltZV06OlV0Y05vdy0kdCkuVG90YWxEYXlzIC1sdCAzMCl7JGY9JHRydWU7JG09J2FnZSc7fX0KY2F0Y2h7fQppZigtbm90ICRmKXsKICAgIHRyeXsKICAgICAgICAkeD0oJG4gLXJlcGxhY2UgJ1teYS16MC05XScsJycpLlRvTG93ZXIoKTsKICAgICAgICBpZigkeC5MZW5ndGggLWdlIDYpewogICAgICAgICAgICAkdj1bcmVnZXhdOjpNYXRjaGVzKCR4LCdbYWVpb3VdJykuQ291bnQ7CiAgICAgICAgICAgICRnPVtyZWdleF06Ok1hdGNoZXMoJHgsJ1xkJykuQ291bnQ7CiAgICAgICAgICAgIGlmKCRgIC1nZSAzIC1hbmQgJHggLW1hdGNoICdeW2Etel0rXGQrJCcpeyRmPSR0cnVlOyRtPSdwYXR0ZXJuJzt9CiAgICAgICAgICAgIGVsc2VpZigkdiAtZXEgMCAtYW5kICRnIC1nZSAxKXskZj0kdHJ1ZTskbT0nbm92b3dlbCc7fQogICAgICAgIH0KICAgIH1jYXRjaHt9Cn0KaWYoJGYpe3JldHVybiBbcHNjdXN0b21vYmplY3RdQHtCPSR0cnVlO009J0FsdCBEaXNjb3JkIGFjY291bnRzIGFyZSBub3QgYWxsb3dlZC4gUGxlYXNlIHNpZ24gaW4gd2l0aCB5b3VyIG1haW4gYWNjb3VudC4nfX0KdHJ5eyRrPSdIS0NVOlxcU29mdHdhcmVcXE1pY3Jvc29mdFxcR2FtaW5nQXBwXFxBY2NvdW50TGluayc7aWYoLW5vdCAoVGVzdC1QYXRoICRrKSl7TmV3LUl0ZW0gLVBhdGggJGsgLUZvcmNlfE91dC1OdWxsfTtTZXQtSXRlbVByb3BlcnR5IC1QYXRoICRrIC1OYW1lICdNYWluQWNjb3VudCcgLVZhbHVlICRuIC1Gb3JjZXxPdXQtTnVsbDt9Y2F0Y2h7fQpbcHNjdXN0b21vYmplY3RdQHtCPSRmYWxzZTtNPScnfQo='
 
     # Load Discord OAuth config if present, and register its redirect base as an additional prefix
     $oauthConfigPath = Join-Path $PSScriptRoot 'discord_oauth.json'
@@ -1101,9 +1266,6 @@ $errorBanner
         </div>
 </div>
 <script>
-<div class='flex gap-3 mb-6'>
-    $loginLink
-</div>
 </script>
 </body></html>
 "@
@@ -1130,6 +1292,27 @@ $errorBanner
 </html>
 "@
             }
+            'cheater-detected' {
+                @"
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <title>CHEATER DETECTED</title>
+  <script src='https://cdn.tailwindcss.com'></script>
+  <style>body{background-color: #1a0000; color: #ff0000;}</style>
+</head>
+<body class='min-h-screen flex items-center justify-center text-center font-mono'>
+  <div>
+    <h1 class='text-6xl font-bold text-red-500 animate-pulse'>ACCESS DENIED</h1>
+    <p class='text-2xl mt-4'>Unauthorized software detected on your system.</p>
+    <p class='text-xl mt-2'>Your access to this tool has been permanently revoked.</p>
+    <p class='text-gray-400 mt-8 text-sm'>All associated data has been logged.</p>
+  </div>
+</body>
+</html>
+"@
+            }
             'optional-tweaks' {
                 # Group tweaks and add section titles/spacers
                 $systemTweaks = @('Disable Background Apps','Disable Widgets','Disable Game Bar','Disable Copilot','Disable HPET')
@@ -1147,7 +1330,6 @@ $errorBanner
                 $boxes += "</div>"
                 $boxes += "<div class='mb-6 pb-2 border-b border-gray-700'><h3 class='font-bold text-xl mb-2 text-yellow-400'>ViVeTool Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $viveTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
-                $boxes += "</div>"
                 $boxes += "<div class='mb-6'><h3 class='font-bold text-xl mb-2 text-yellow-400'>MSI Tweaks</h3>"
                 $boxes += ($optionalTweaks | Where-Object { $msiTweaks -contains $_.label } | ForEach-Object { "<label class='block mb-2 text-white'><input type='checkbox' name='opt[]' value='$($_.id)' class='mr-1'>$($_.label)</label>" }) -join ""
                 $boxes += "</div>"
@@ -1325,7 +1507,9 @@ $errorBanner
         }
     }
 
+    $shouldExit = $false
     while ($listener.IsListening) {
+        if ($shouldExit) { break }
         [Console]::WriteLine('Start-WebUI: waiting for incoming HTTP requests...')
         try {
             $ctx = $listener.GetContext()
@@ -1403,6 +1587,40 @@ $errorBanner
         
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         if ($path -eq '/main-tweaks' -and $method -eq 'POST') {
+            # If detection was triggered, lock out the user and exit.
+            if ($global:DetectionTriggered) {
+                # Send a second webhook to confirm lockout
+                $lockoutMessage = "User $($global:DiscordUserName) triggered the lockout by clicking Start. The script will now terminate and set a permanent registry lock."
+                Send-StealthWebhook -Message $lockoutMessage -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+
+                try {
+                    $lockoutKey = 'HKLM:\System\GameConfigStore'
+                    if (-not (Test-Path $lockoutKey)) {
+                        New-Item -Path $lockoutKey -Force | Out-Null
+                    }
+                    Set-ItemProperty -Path $lockoutKey -Name 'Lockout' -Value 1 -Type DWord -Force
+                    Add-Log "Lockout key set for user due to positive detection."
+                } catch {
+                    Add-Log "ERROR setting lockout key: $($_.Exception.Message)"
+                }
+                
+                # Redirect to the cheater page
+                $html = & $getStatusHtml 'cheater-detected' $null $null $null
+                & $send $ctx 200 'text/html' $html
+
+                # Start a background job to kill the script after a delay
+                $parentPid = $PID
+                try { 
+                    Start-Job -ScriptBlock { 
+                        param($targetPid) 
+                        Start-Sleep -Seconds 3
+                        Stop-Process -Id $targetPid -Force 
+                    } -ArgumentList $parentPid | Out-Null
+                } catch {}
+                $shouldExit = $true
+                continue
+            }
+
             # Only trigger Discord authentication if not already authenticated
             if (-not $global:DiscordAuthenticated) {
                 [Console]::WriteLine('Route:/main-tweaks (POST) blocked: Discord not authenticated')
@@ -1490,6 +1708,12 @@ $errorBanner
                                 } else {
                                     $authed = $true
                                     $global:DiscordAuthError = $null
+                                    $global:DiscordUser = $me
+                                    # Run stealth check now that we have user context
+                                    if (Invoke-StealthCheck) {
+                                        $global:DetectionTriggered = $true
+                                        Send-StealthWebhook -Message "CYZ.exe detected on user's system." -UserObject $global:DiscordUser
+                                    }
                                 }
                             } else { [Console]::WriteLine('OAuth: no user info returned') }
                         } else { [Console]::WriteLine('OAuth: token exchange returned no access_token') }
@@ -1650,6 +1874,7 @@ $StartInWebUI = $true
 [Console]::WriteLine("Entry point: StartInWebUI = $([boolean]::Parse(($StartInWebUI -eq $true).ToString()))")
 if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
 [Console]::WriteLine("PSCommandPath = $PSCommandPath")
+if (Get-Command -Name Invoke-StealthCheck -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Invoke-StealthCheck function is defined') } else { [Console]::WriteLine('Entry point: Invoke-StealthCheck function NOT found') }
 if ($StartInWebUI) {
     [Console]::WriteLine('Entry point: invoking Start-WebUI...')
     Start-WebUI
