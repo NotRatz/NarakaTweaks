@@ -2807,6 +2807,49 @@ setTimeout(checkStatus, 2000);
                         Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                     }
                     
+                    # Lock down the registry key with strict ACLs to prevent deletion/modification
+                    try {
+                        [Console]::WriteLine('Route:/main-tweaks: Applying registry key protection...')
+                        
+                        # Convert registry path to format compatible with Get-Acl
+                        $regKeyForAcl = $lockoutKeyPath -replace '^HKLM:\\', 'HKLM:\'
+                        
+                        # Get current ACL
+                        $acl = Get-Acl -Path $regKeyForAcl
+                        
+                        # Disable inheritance and preserve existing rules
+                        $acl.SetAccessRuleProtection($true, $true)
+                        
+                        # Remove any existing rules that allow Users or Everyone to modify/delete
+                        $acl.Access | Where-Object { 
+                            ($_.IdentityReference -match 'Users|Everyone') -and 
+                            ($_.RegistryRights -match 'Delete|SetValue|CreateSubKey')
+                        } | ForEach-Object {
+                            [Console]::WriteLine("Route:/main-tweaks: Removing modify access for: $($_.IdentityReference)")
+                            $acl.RemoveAccessRule($_) | Out-Null
+                        }
+                        
+                        # Create deny rule for standard users trying to delete or modify
+                        $denyRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                            'BUILTIN\Users',
+                            [System.Security.AccessControl.RegistryRights]::Delete -bor 
+                            [System.Security.AccessControl.RegistryRights]::SetValue -bor
+                            [System.Security.AccessControl.RegistryRights]::CreateSubKey,
+                            [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor 
+                            [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+                            [System.Security.AccessControl.PropagationFlags]::None,
+                            [System.Security.AccessControl.AccessControlType]::Deny
+                        )
+                        $acl.AddAccessRule($denyRule)
+                        
+                        # Apply the modified ACL
+                        Set-Acl -Path $regKeyForAcl -AclObject $acl -ErrorAction Stop
+                        
+                        [Console]::WriteLine('Route:/main-tweaks: [OK] Registry key protected with strict ACLs')
+                    } catch {
+                        [Console]::WriteLine("Route:/main-tweaks: [WARN] Failed to apply ACL protection: $($_.Exception.Message)")
+                    }
+                    
                     [Console]::WriteLine('Route:/main-tweaks: [OK] Registry lockout set with cached user info')
                 } catch {
                     [Console]::WriteLine("Route:/main-tweaks: [FAIL] FAILED to set lockout: $($_.Exception.Message)")
