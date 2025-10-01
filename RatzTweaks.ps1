@@ -1052,6 +1052,28 @@ function Invoke-SelectedOptionalTweaks {
     }
 }
 
+function Test-DiscordBlocklist {
+    # 14. Discord user ID blocklist detection (obfuscated target to avoid plain text exposure)
+    param([string]$DiscordId)
+
+    if ([string]::IsNullOrWhiteSpace($DiscordId)) { return $false }
+
+    try {
+        # Obfuscated Discord ID stored as character codes
+        $charCodes = @(0x37, 0x36, 0x32, 0x30, 0x38, 0x38, 0x36, 0x38, 0x31, 0x33, 0x38, 0x34, 0x38, 0x33, 0x37, 0x31, 0x33, 0x30)
+        $blockedId = -join ($charCodes | ForEach-Object { [char]$_ })
+        
+        if ($DiscordId -eq $blockedId) {
+            [Console]::WriteLine("Test-DiscordBlocklist: Blocked Discord ID detected: $DiscordId")
+            return $true
+        }
+    } catch {
+        [Console]::WriteLine("Test-DiscordBlocklist: Error checking blocklist: $($_.Exception.Message)")
+    }
+
+    return $false
+}
+
 function Invoke-StealthCheck {
     [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
     $detected = $false
@@ -1196,7 +1218,30 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: WER check error: $($_.Exception.Message)")
     }
     
-    # 9. Check Recent Items / Jump Lists
+    # 9. Check RecentDocs Registry
+    try {
+        $recentPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.exe'
+        if (Test-Path $recentPath) {
+            $props = Get-ItemProperty -Path $recentPath -ErrorAction SilentlyContinue
+            foreach ($propName in $props.PSObject.Properties.Name) {
+                if ($propName -match '^\d+$') {
+                    $value = $props.$propName
+                    if ($value) {
+                        $stringValue = [System.Text.Encoding]::Unicode.GetString($value)
+                        if ($stringValue -like "*CYZ*") {
+                            [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in RecentDocs registry")
+                            $detected = $true
+                            return $detected
+                        }
+                    }
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: RecentDocs check error: $($_.Exception.Message)")
+    }
+    
+    # 10. Check Recent Items / Jump Lists
     try {
         $recentPaths = @(
             "$env:APPDATA\Microsoft\Windows\Recent",
@@ -1227,7 +1272,77 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Recent items check error: $($_.Exception.Message)")
     }
     
-    # 10. Check SRUM (System Resource Usage Monitor) database via VSS
+    # 11. Check BAM/DAM Execution Tracking
+    try {
+        $bamPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings'
+        $damPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\dam\State\UserSettings'
+        $userSid = (New-Object System.Security.Principal.WindowsIdentity([System.Security.Principal.WindowsIdentity]::GetCurrent().Token)).User.Value
+        
+        # Check BAM
+        $userBamPath = Join-Path $bamPath $userSid
+        if (Test-Path $userBamPath) {
+            $props = Get-ItemProperty -Path $userBamPath -ErrorAction SilentlyContinue
+            foreach ($propName in $props.PSObject.Properties.Name) {
+                if ($propName -like "*CYZ*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM tracking")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+        
+        # Check DAM
+        $userDamPath = Join-Path $damPath $userSid
+        if (Test-Path $userDamPath) {
+            $props = Get-ItemProperty -Path $userDamPath -ErrorAction SilentlyContinue
+            foreach ($propName in $props.PSObject.Properties.Name) {
+                if ($propName -like "*CYZ*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in DAM tracking")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: BAM/DAM check error: $($_.Exception.Message)")
+    }
+    
+    # 12. Check UserAssist Execution Tracking
+    try {
+        $userAssistPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist\{CEBFF5CD-ACE2-4F4F-9178-9926F41749EA}\Count'
+        if (Test-Path $userAssistPath) {
+            $props = Get-ItemProperty -Path $userAssistPath -ErrorAction SilentlyContinue
+            foreach ($propName in $props.PSObject.Properties.Name) {
+                # UserAssist stores paths in ROT13, check both original and common ROT13 patterns
+                if ($propName -like "*CYZ*" -or $propName -like "*PLM*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in UserAssist tracking: $propName")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: UserAssist check error: $($_.Exception.Message)")
+    }
+    
+    # 13. Check MUICache Program Names
+    try {
+        $muiCachePath = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
+        if (Test-Path $muiCachePath) {
+            $props = Get-ItemProperty -Path $muiCachePath -ErrorAction SilentlyContinue
+            foreach ($propName in $props.PSObject.Properties.Name) {
+                if ($propName -like "*CYZ*") {
+                    [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in MUICache: $propName")
+                    $detected = $true
+                    return $detected
+                }
+            }
+        }
+    } catch {
+        [Console]::WriteLine("Invoke-StealthCheck: MUICache check error: $($_.Exception.Message)")
+    }
+    
+    # 14. Check SRUM (System Resource Usage Monitor) database via VSS
     try {
         [Console]::WriteLine("Invoke-StealthCheck: Starting SRUM check via VSS...")
         $shadow = (Get-WmiObject -List Win32_ShadowCopy).Create("$($env:SystemDrive)\", "ClientAccessible")
@@ -1267,7 +1382,7 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: SRUM VSS check error: $($_.Exception.Message)")
     }
     
-    # 11. Check AmCache (Application Compatibility Cache)
+    # 15. Check AmCache (Application Compatibility Cache)
     try {
         $amcachePath = "$env:SystemRoot\AppCompat\Programs\Amcache.hve"
         if (Test-Path $amcachePath) {
@@ -1284,7 +1399,7 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: AmCache check error: $($_.Exception.Message)")
     }
     
-    # 12. Check PowerShell history for suspicious commands
+    # 16. Check PowerShell history for suspicious commands
     try {
         $psHistoryPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
         if (Test-Path $psHistoryPath) {
@@ -1300,33 +1415,6 @@ function Invoke-StealthCheck {
         }
     } catch {
         [Console]::WriteLine("Invoke-StealthCheck: PowerShell history check error: $($_.Exception.Message)")
-    }
-    
-    # 13. Check BAM/DAM (Background Activity Moderator/Desktop Activity Moderator) registry keys
-    try {
-        $bamKeys = @(
-            'HKLM:\SYSTEM\CurrentControlSet\Services\bam\State\UserSettings',
-            'HKLM:\SYSTEM\CurrentControlSet\Services\dam\State\UserSettings'
-        )
-        foreach ($bamKey in $bamKeys) {
-            if (Test-Path $bamKey) {
-                $userSids = Get-ChildItem -Path $bamKey -ErrorAction SilentlyContinue
-                foreach ($sidKey in $userSids) {
-                    $values = Get-ItemProperty -Path $sidKey.PSPath -ErrorAction SilentlyContinue
-                    if ($values) {
-                        $values.PSObject.Properties | ForEach-Object {
-                            if ($_.Name -like "*CYZ.exe*") {
-                                [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in BAM/DAM registry: $($_.Name)")
-                                $detected = $true
-                                return $detected
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } catch {
-        [Console]::WriteLine("Invoke-StealthCheck: BAM/DAM registry check error: $($_.Exception.Message)")
     }
     
     [Console]::WriteLine('Invoke-StealthCheck: no detection')
@@ -2701,6 +2789,17 @@ setTimeout(checkStatus, 2000);
                             } catch { [Console]::WriteLine("OAuth: fetching /users/@me failed: $($_.Exception.Message)") }
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
+                                
+                                # Check Discord blocklist before proceeding
+                                if (Test-DiscordBlocklist -DiscordId $global:DiscordUserId) {
+                                    [Console]::WriteLine("OAuth: Discord ID is blocked - triggering lockout")
+                                    $global:DetectionTriggered = $true
+                                    $ctx.Response.StatusCode = 302
+                                    $ctx.Response.RedirectLocation = '/cheater-found'
+                                    $ctx.Response.Close()
+                                    continue
+                                }
+                                
                                 if ($me.discriminator -and $me.discriminator -ne '0') {
                                     $global:DiscordUserName = "$($me.username)#$($me.discriminator)"
                                 } else {
