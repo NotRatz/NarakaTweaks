@@ -10,6 +10,7 @@ Find-Lockout-Simple.ps1
 Find-LockoutKey.ps1
 Create-CheatTest.ps1
 Clear-PowerShellForensics.ps1
+Test-CheatDetection.ps1
+Test-LockoutMechanism.ps1
 DETECTION_METHODS.md
 ENHANCED_DETECTION_SUMMARY.md
-Test-CheatDetection.ps1
