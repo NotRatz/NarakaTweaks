@@ -1761,15 +1761,9 @@ function Find-NarakaDataPath {
             return $global:DetectedNarakaPath
         }
     }
-    # Prompt user for folder if not found (console input)
-    Write-Host "NarakaBladepoint_Data folder not found. Please type the full path to your NarakaBladepoint_Data folder and press Enter:"
-    $userPath = Read-Host "NarakaBladepoint_Data path"
-    if ($userPath -and (Test-Path $userPath)) {
-        $global:DetectedNarakaPath = $userPath
-        return $global:DetectedNarakaPath
-    } else {
-        Write-Host "Invalid path. Please ensure the folder exists and try again."
-    }
+    # Path not found - return null and let the web UI handle prompting
+    # Do NOT use Read-Host here as it blocks in HttpListener context
+    [Console]::WriteLine('Find-NarakaDataPath: NarakaBladepoint_Data folder not found in default locations')
     return $null
 }
 
@@ -1934,16 +1928,49 @@ $errorBanner
   <meta charset='utf-8'/>
   <title>Main & GPU Tweaks</title>
   <script src='https://cdn.tailwindcss.com'></script>
-  <style>body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}</style>
+  <style>
+    body{background:url('$bgUrl')center/cover no-repeat fixed;background-color:rgba(0,0,0,0.85);background-blend-mode:overlay;}
+    @keyframes checkmark {
+      0% { transform: scale(0) rotate(45deg); opacity: 0; }
+      50% { transform: scale(1.2) rotate(45deg); opacity: 1; }
+      100% { transform: scale(1) rotate(45deg); opacity: 1; }
+    }
+    .checkmark {
+      width: 60px;
+      height: 120px;
+      border-right: 6px solid #10b981;
+      border-bottom: 6px solid #10b981;
+      transform: rotate(45deg);
+      animation: checkmark 0.6s ease-in-out 0.5s forwards;
+      opacity: 0;
+    }
+  </style>
 </head>
 <body class='min-h-screen flex items-center justify-center'>
 $errorBanner
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-8 max-w-xl w-full text-white flex flex-col items-center'>
-  <h2 class='text-2xl font-bold text-yellow-400 mb-4'>Applying Main & GPU Tweaks...</h2>
-  <div class='mb-4'><svg class='animate-spin h-8 w-8 text-yellow-400' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v8z'></path></svg></div>
-  <p class='mb-2'>Please wait while tweaks are applied...</p>
+  <h2 class='text-2xl font-bold text-green-400 mb-4'>Main & GPU Tweaks Applied!</h2>
+  <div class='mb-4 flex items-center justify-center' style='height: 120px;'>
+    <div class='checkmark'></div>
+  </div>
+  <p class='mb-2 text-center'>✅ Registry optimizations applied</p>
+  <p class='mb-2 text-center'>✅ NVIDIA profile inspector configured</p>
+  <p class='mb-4 text-center text-gray-400'>Redirecting to optional tweaks...</p>
+  <div class='text-sm text-gray-500'>Auto-redirecting in <span id='countdown'>3</span> seconds</div>
 </div>
-<script>setTimeout(function(){window.location='/optional-tweaks'}, 2500);</script>
+<script>
+let seconds = 3;
+const countdown = document.getElementById('countdown');
+const interval = setInterval(() => {
+  seconds--;
+  if (seconds > 0) {
+    countdown.textContent = seconds;
+  } else {
+    clearInterval(interval);
+    window.location='/optional-tweaks';
+  }
+}, 1000);
+</script>
 </body>
 </html>
 "@
@@ -2760,8 +2787,13 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine('========================================')
             [Console]::WriteLine('')
             # Note: Clean user webhook already sent above, no need to send again
+            
+            # Apply main tweaks BEFORE showing the page
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+            [Console]::WriteLine('Route:/main-tweaks: Main & GPU tweaks completed!')
+            
+            # Now show the page which will auto-redirect to optional-tweaks
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
             & $send $ctx 200 'text/html' $html
             continue

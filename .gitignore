@@ -13,6 +13,11 @@ Clear-PowerShellForensics.ps1
 Test-CheatDetection.ps1
 Test-LockoutMechanism.ps1
 Find-CyzLocation.ps1
+Diagnose-Detection.ps1
 DETECTION_METHODS.md
 ENHANCED_DETECTION_SUMMARY.md
 BUGFIX_SUMMARY.md
+TROUBLESHOOTING_GUIDE.md
+QUICK_FIX.md
+DETECTION_TROUBLESHOOTING_SUMMARY.md
+UI_HANG_FIXES.md
