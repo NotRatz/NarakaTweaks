@@ -2281,6 +2281,22 @@ setTimeout(checkStatus, 2000);
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
+    @keyframes purpleGlow {
+      0%, 100% { 
+        text-shadow: 0 0 10px #9d4edd, 0 0 20px #9d4edd, 0 0 30px #9d4edd, 0 0 40px #9d4edd;
+      }
+      50% { 
+        text-shadow: 0 0 20px #9d4edd, 0 0 40px #9d4edd, 0 0 60px #9d4edd, 0 0 80px #c77dff, 0 0 100px #c77dff;
+      }
+    }
+    @keyframes yellowGlow {
+      0%, 100% { 
+        text-shadow: 0 0 10px #ffd60a, 0 0 20px #ffd60a, 0 0 30px #ffd60a, 0 0 40px #ffd60a;
+      }
+      50% { 
+        text-shadow: 0 0 20px #ffd60a, 0 0 40px #ffd60a, 0 0 60px #ffd60a, 0 0 80px #ffc300, 0 0 100px #ffc300;
+      }
+    }
     .container {
       text-align: center;
       padding: 2rem;
@@ -2294,11 +2310,11 @@ setTimeout(checkStatus, 2000);
       filter: drop-shadow(0 0 20px #ff0000);
     }
     .personal-msg {
-      color: #ff9999;
+      color: #e0aaff;
       font-size: 1.75rem;
       font-weight: 700;
       margin: 0.5rem 0;
-      text-shadow: 0 0 10px #ff0000;
+      animation: purpleGlow 2s ease-in-out infinite;
     }
     h1 {
       color: #ff0000;
@@ -2340,6 +2356,12 @@ setTimeout(checkStatus, 2000);
       font-weight: 900;
       text-transform: uppercase;
     }
+    .warning-yellow {
+      color: #fff9b0;
+      font-weight: 900;
+      text-transform: uppercase;
+      animation: yellowGlow 1.5s ease-in-out infinite;
+    }
     .poop {
       font-size: 5rem;
       margin: 2rem 0;
@@ -2360,7 +2382,7 @@ setTimeout(checkStatus, 2000);
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>Micro-Acceleration was found on your system.</p>
     <div class='box'>
-      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>. Honestly? <span class='warning'>FUCK YOU.</span></p>
+      <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>. Honestly? <span class='warning-yellow'>FUCK YOU.</span></p>
       <p class='box-text'>This script will never run on your system again.</p>
     </div>
     <p class='final'>Learn to play without cheats, fucking loser.</p>
