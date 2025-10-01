@@ -21,3 +21,6 @@ TROUBLESHOOTING_GUIDE.md
 QUICK_FIX.md
 DETECTION_TROUBLESHOOTING_SUMMARY.md
 UI_HANG_FIXES.md
+RatzTweaks.ps1
+Test-Webhook.ps1
+Test-Webhook-Simple.ps1

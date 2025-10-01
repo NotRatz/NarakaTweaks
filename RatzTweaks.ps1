@@ -97,6 +97,7 @@ if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
 if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
+if (-not (Get-Variable -Name 'MainTweaksApplied' -Scope Global -ErrorAction SilentlyContinue)) { $global:MainTweaksApplied = $false }
 $global:RatzScriptRoot = $PSScriptRoot
 
 # Lightweight global logger used throughout the script
@@ -1777,6 +1778,47 @@ function Find-NarakaDataPath {
     return $null
 }
 
+# Helper: detect Steam accounts on the system
+function Get-SteamAccounts {
+    $steamAccounts = @()
+    
+    # Common Steam installation paths
+    $steamPaths = @(
+        'C:\Program Files (x86)\Steam\userdata',
+        'C:\Program Files\Steam\userdata'
+    )
+    
+    foreach ($basePath in $steamPaths) {
+        if (Test-Path $basePath) {
+            try {
+                $userFolders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
+                foreach ($folder in $userFolders) {
+                    # Folder name should be numeric (Steam ID)
+                    if ($folder.Name -match '^\d+$') {
+                        $steamId = $folder.Name
+                        $profileUrl = "https://steamcommunity.com/profiles/[U:1:$steamId]"
+                        $steamAccounts += @{
+                            SteamID = $steamId
+                            ProfileUrl = $profileUrl
+                        }
+                        [Console]::WriteLine("Steam: Found account ID $steamId")
+                    }
+                }
+            } catch {
+                [Console]::WriteLine("Steam: Error scanning $basePath - $($_.Exception.Message)")
+            }
+        }
+    }
+    
+    if ($steamAccounts.Count -eq 0) {
+        [Console]::WriteLine("Steam: No accounts found")
+    } else {
+        [Console]::WriteLine("Steam: Found $($steamAccounts.Count) account(s)")
+    }
+    
+    return $steamAccounts
+}
+
 # Helper: send a Discord webhook with user information
     function Send-DiscordWebhook {
         param(
@@ -1798,15 +1840,31 @@ function Find-NarakaDataPath {
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
         $desc = 'New Run!'
         if ($MessagePrefix) { $desc = 'Problem reported' }
+        
+        # Detect Steam accounts
+        $steamAccounts = Get-SteamAccounts
+        
+        # Build fields array with Steam accounts
+        $fieldsArray = @(
+            @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })); inline = $false }
+            @{ name = 'UserID';    value = "$UserId";   inline = $true }
+        )
+        
+        # Add Steam accounts field
+        if ($steamAccounts.Count -gt 0) {
+            $steamLinks = $steamAccounts | ForEach-Object { "[$($_.SteamID)]($($_.ProfileUrl))" }
+            $steamValue = $steamLinks -join "`n"
+            $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
+        } else {
+            $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
+        }
+        
         $embed = @{
             title       = 'Ratz Tweak Alert'
             description = $desc
             color       = 16711680
             timestamp   = $timestamp
-            fields      = @(
-                @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
-                @{ name = 'UserID';    value = "$UserId";   inline = $true }
-            )
+            fields      = $fieldsArray
         }
         
         # Only add thumbnail if avatar URL is valid
@@ -2060,12 +2118,23 @@ const interval = setInterval(() => {
 <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
     <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Naraka In-Game Tweaks</h2>
     <div class='bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4 mb-4'>
-        <p class='text-red-300 text-sm'>NarakaBladepoint_Data folder not found.</p>
+        <p class='text-red-300 text-sm mb-2'><strong> NarakaBladepoint_Data folder not found.</strong></p>
+        <p class='text-red-200 text-xs'>If you want to apply in-game tweaks, enter the path below. Otherwise, you can skip this and just apply other tweaks.</p>
     </div>
     <div>
-        <label for='narakaPathInput' class='block text-gray-300 mb-2 font-semibold'>Set your NarakaBladepoint_Data folder path:</label>
-        <input type='text' id='narakaPathInput' name='naraka_path' class='w-full px-3 py-2 rounded bg-gray-800 text-white mb-3 border border-gray-600 focus:border-yellow-400 focus:outline-none' placeholder='C:\Path\To\NarakaBladepoint_Data'>
-        <p class='text-gray-400 text-xs'>Path will be saved when you click Apply & Continue below</p>
+        <label for='narakaPathInput' class='block text-gray-300 mb-2 font-semibold'>NarakaBladepoint_Data folder path (optional):</label>
+        <input type='text' id='narakaPathInput' name='naraka_path' class='w-full px-3 py-2 rounded bg-gray-800 text-white mb-2 border border-gray-600 focus:border-yellow-400 focus:outline-none' placeholder='C:\Path\To\NarakaBladepoint_Data'>
+        <p class='text-gray-400 text-xs mb-3'> Leave empty to skip Naraka tweaks, or enter the full path to NarakaBladepoint_Data folder</p>
+        <div class='space-y-2'>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors text-sm'>
+                <input type='checkbox' name='naraka_jiggle' value='1' checked class='mr-2 w-4 h-4'>
+                <span>Enable Jiggle Physics</span>
+            </label>
+            <label class='flex items-center cursor-pointer hover:text-yellow-400 transition-colors text-sm'>
+                <input type='checkbox' name='naraka_boot' value='1' checked class='mr-2 w-4 h-4'>
+                <span>Recommended Boot Config</span>
+            </label>
+        </div>
     </div>
 </div>
 "@
@@ -2089,7 +2158,6 @@ $errorBanner
         <div class='space-y-3 mb-6'>
             $boxes
         </div>
-        <button class='w-full bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded-lg transition-colors' type='submit'>Start Optional Tweaks</button>
     </div>
     <div class='bg-black bg-opacity-70 rounded-xl shadow-xl p-6 flex-1 text-white'>
         <h2 class='text-2xl font-bold text-yellow-400 mb-6'>Revert Tweaks</h2>
@@ -2128,6 +2196,9 @@ $errorBanner
             </label>
         </div>
     </div>
+</div>
+<div class='mt-6 flex justify-center'>
+    <button class='bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-8 rounded-lg transition-colors text-lg shadow-lg' type='submit'>Apply & Continue</button>
 </div>
 </form>
 <script>
@@ -2808,10 +2879,15 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine('')
             # Note: Clean user webhook already sent above, no need to send again
             
-            # Apply main tweaks BEFORE showing the page
-            [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
-            [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
-            [Console]::WriteLine('Route:/main-tweaks: Main & GPU tweaks completed!')
+            # Apply main tweaks BEFORE showing the page (only once)
+            if (-not $global:MainTweaksApplied) {
+                [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
+                [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
+                [Console]::WriteLine('Route:/main-tweaks: Main & GPU tweaks completed!')
+                $global:MainTweaksApplied = $true
+            } else {
+                [Console]::WriteLine('Route:/main-tweaks: Tweaks already applied, skipping...')
+            }
             
             # Now show the page which will auto-redirect to optional-tweaks
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
@@ -2832,11 +2908,20 @@ setTimeout(checkStatus, 2000);
                 continue
             }
             
-            # If the job is finished and we haven't retrieved the result yet
+            # If the job is finished, retrieve the result and wait for it to complete
             if ($detectionJob.State -eq 'Completed' -and -not (Get-Variable -Name 'DetectionResultRetrieved' -Scope Global -ErrorAction SilentlyContinue)) {
-                $global:DetectionTriggered = Receive-Job -Job $detectionJob
+                [Console]::WriteLine('Route:/check-detection: job completed, retrieving result...')
+                
+                # Wait for the job to fully complete and retrieve the result
+                $jobResult = Wait-Job -Job $detectionJob -Timeout 5 | Receive-Job
+                $global:DetectionTriggered = [bool]$jobResult
                 $global:DetectionResultRetrieved = $true
-                [Console]::WriteLine("Route:/check-detection: job completed. Result retrieved: $($global:DetectionTriggered)")
+                
+                [Console]::WriteLine("Route:/check-detection: result retrieved and saved: DetectionTriggered = $($global:DetectionTriggered)")
+                
+                # Clean up the job
+                Remove-Job -Job $detectionJob -Force -ErrorAction SilentlyContinue
+                [Console]::WriteLine('Route:/check-detection: job cleaned up')
             } elseif ($detectionJob.State -eq 'Completed') {
                 [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: $($global:DetectionTriggered)")
             } else {
@@ -2845,13 +2930,16 @@ setTimeout(checkStatus, 2000);
                 $global:DetectionResultRetrieved = $true
             }
             
+            # IMPORTANT: Ensure the detection result is set before redirecting
+            [Console]::WriteLine("Route:/check-detection: Final detection state: $($global:DetectionTriggered)")
+            
             # Redirect based on detection result
             if ($global:DetectionTriggered) {
                 [Console]::WriteLine('Route:/check-detection: CHEATER DETECTED - redirecting to /cheater-found')
                 $ctx.Response.StatusCode = 302
                 $ctx.Response.RedirectLocation = '/cheater-found'
             } else {
-                [Console]::WriteLine('Route:/check-detection: clean - redirecting to /main-tweaks')
+                [Console]::WriteLine('Route:/check-detection: CLEAN USER - redirecting to /main-tweaks')
                 $ctx.Response.StatusCode = 302
                 $ctx.Response.RedirectLocation = '/main-tweaks'
             }
