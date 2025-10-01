@@ -1331,7 +1331,6 @@ function Send-StealthWebhook {
                 description = 'A previously banned cheater attempted to run the script again.'
                 color       = 16711680  # Red
                 timestamp   = $timestamp
-                thumbnail   = @{ url = $AvatarUrl }
                 fields      = @(
                     @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
                     @{ name = 'UserID'; value = $UserId; inline = $true }
@@ -1339,20 +1338,29 @@ function Send-StealthWebhook {
                 )
             }
             
+            # Only add thumbnail if avatar URL is valid
+            if ($AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
+                $embed['thumbnail'] = @{ url = $AvatarUrl }
+            }
+            
             $content = "⚠️ ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
             # Initial detection notification
             $embed = @{
-                title       = '🚨CHEATER DETECTED 🚨'
+                title       = '🚨 CHEATER DETECTED 🚨'
                 description = 'A user with CYZ.exe has been caught and locked out.'
                 color       = 16711680  # Red
                 timestamp   = $timestamp
-                thumbnail   = @{ url = $AvatarUrl }
                 fields      = @(
                     @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
                     @{ name = 'UserID'; value = $UserId; inline = $true }
                 )
+            }
+            
+            # Only add thumbnail if avatar URL is valid
+            if ($AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
+                $embed['thumbnail'] = @{ url = $AvatarUrl }
             }
             
             $content = if ($mention) { "🚨 CHEATER ALERT $mention 🚨" } else { '🚨 CHEATER DETECTED 🚨' }
@@ -1360,11 +1368,23 @@ function Send-StealthWebhook {
         }
         
         $json = $payload | ConvertTo-Json -Depth 10
+        [Console]::WriteLine("Send-StealthWebhook: sending payload: $($json.Substring(0, [Math]::Min(500, $json.Length)))")
         
-        Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
+        $response = Invoke-RestMethod -Method Post -Uri $wh -ContentType 'application/json' -Body $json -ErrorAction Stop
         [Console]::WriteLine('Send-StealthWebhook: notification sent successfully')
+        [Console]::WriteLine("Send-StealthWebhook: response = $($response | ConvertTo-Json -Compress)")
     } catch {
         [Console]::WriteLine("Send-StealthWebhook: failed to send webhook: $($_.Exception.Message)")
+        if ($_.Exception.Response) {
+            try {
+                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $responseBody = $reader.ReadToEnd()
+                $reader.Close()
+                [Console]::WriteLine("Send-StealthWebhook: Discord error response: $responseBody")
+            } catch {
+                [Console]::WriteLine("Send-StealthWebhook: could not read error response")
+            }
+        }
     }
 }
 
@@ -1652,12 +1672,17 @@ function Find-NarakaDataPath {
             description = $desc
             color       = 16711680
             timestamp   = $timestamp
-            thumbnail   = @{ url = $AvatarUrl }
             fields      = @(
                 @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })) }
                 @{ name = 'UserID';    value = "$UserId";   inline = $true }
             )
         }
+        
+        # Only add thumbnail if avatar URL is valid
+        if ($AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
+            $embed['thumbnail'] = @{ url = $AvatarUrl }
+        }
+        
         if ($MessagePrefix) {
             $content = if ($mention) { "$MessagePrefix $mention" } else { $MessagePrefix }
         } else {
@@ -1673,9 +1698,15 @@ function Find-NarakaDataPath {
             return
         } catch {
             [Console]::WriteLine("Webhook: Invoke-RestMethod failed: $($_.Exception.Message)")
-            if ($_.Exception.Response -and $_.Exception.Response.Content) {
-                $errContent = $_.Exception.Response.Content | Out-String
-                [Console]::WriteLine("Webhook error response: $errContent")
+            if ($_.Exception.Response) {
+                try {
+                    $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                    $responseBody = $reader.ReadToEnd()
+                    $reader.Close()
+                    [Console]::WriteLine("Webhook: Discord error response: $responseBody")
+                } catch {
+                    [Console]::WriteLine("Webhook: could not read error response")
+                }
             }
         }
         [Console]::WriteLine('Webhook: all methods failed, no notification sent.')
