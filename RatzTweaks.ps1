@@ -2712,13 +2712,7 @@ setTimeout(checkStatus, 2000);
             }
             [Console]::WriteLine('========================================')
             [Console]::WriteLine('')
-            $form = & $parseForm $ctx
-            if ($form -isnot [System.Collections.Specialized.NameValueCollection]) { $form = $null }
-            $optIn = $false
-            if ($form) { $optIn = $form.Get('discord_ping') -eq '1' -or $form.Get('discord_ping') -eq 'on' }
-            if ($optIn) {
-                try { Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl } catch { [Console]::WriteLine("Webhook: opt-in send failed: $($_.Exception.Message)") }
-            }
+            # Note: Clean user webhook already sent above, no need to send again
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-AllTweaks'); Invoke-AllTweaks
             [Console]::WriteLine('Route:/main-tweaks -> Invoke-NVPI'); Invoke-NVPI
             $html = & $getStatusHtml 'main-tweaks' $null $null $null
