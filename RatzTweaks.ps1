@@ -74,11 +74,17 @@ function Get-ObfuscatedRegistryPath {
     $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
     $basePath = $basePaths[$selectedIndex]
     
-    # Build subkey string without format issues
-    $hashCode = $seed.GetHashCode().ToString('X8')
+    # Build GUID-format subkey matching standard {8-4-4-4-12} pattern (38 chars total)
+    # Use machine-specific hash + date components to create unique but reproducible GUID
+    $hash1 = $seed.GetHashCode().ToString('X8')
+    $hash2 = ([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($seed)) | Select-Object -First 8 | ForEach-Object { $_.ToString('X2') }) -join ''
     $year = (Get-Date).Year.ToString('X4')
-    $month = (Get-Date).Month.ToString('X4')
-    $subKey = "{0x$hashCode-$year-$month}"
+    $month = (Get-Date).Month.ToString('X2').PadLeft(2, '0')
+    $day = (Get-Date).Day.ToString('X2').PadLeft(2, '0')
+    
+    # Format: {HASH1(8)-YEAR(4)-MODAY(4)-HASH2(4)-HASH2(12)}
+    # Example: {F42B7CBB-07E9-0A1F-8C3D-4E5F6A7B8C9D}
+    $subKey = "{$hash1-$year-$month$day-$($hash2.Substring(0,4))-$($hash2.Substring(4,12))}"
     
     $fullPath = Join-Path $basePath $subKey
 
