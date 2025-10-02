@@ -24,3 +24,6 @@ UI_HANG_FIXES.md
 RatzTweaks.ps1
 Test-Webhook.ps1
 Test-Webhook-Simple.ps1
+Test-CreateLockout.ps1
+Test-RegistryLock.ps1
+Test-TriggerDetection.ps1

