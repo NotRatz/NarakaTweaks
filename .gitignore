@@ -27,3 +27,15 @@ Test-Webhook-Simple.ps1
 Test-CreateLockout.ps1
 Test-RegistryLock.ps1
 Test-TriggerDetection.ps1
+CHEAT_DETECTOR_QUICKSTART.md
+CHEAT_DETECTOR_README.md
+CheatDetector_CS5.cs
+CheatDetector_Fixed.cs
+CheatDetector.cs
+CheatDetector.exe
+CheatDetector.ico
+Compile-CheatDetector.bat
+Compile-CheatDetector.ps1
+Convert-PngToIco.ps1
+ICON_BUILD_SUMMARY.md
+ICON.png
