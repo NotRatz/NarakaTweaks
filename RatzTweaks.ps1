@@ -1,7 +1,12 @@
 # RatzTweaks.ps1
 # Ensure $PSScriptRoot is set even when running via 'irm ... | iex'
-if (-not $PSScriptRoot) { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
-if (-not $PSScriptRoot) { $PSScriptRoot = (Get-Location).Path }
+if (-not $PSScriptRoot) { 
+    if ($MyInvocation.MyCommand.Path) {
+        $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path 
+    } else {
+        $PSScriptRoot = (Get-Location).Path 
+    }
+}
 
 # If the script is executed via 'irm | iex' the script has no file path; try to
 # locate the project root by searching upward from the invocation directory
@@ -365,7 +370,7 @@ if ($isLockedOut) {
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>CYZ.exe was found on your system.</p>
-    <img src='case1.png' alt='Evidence' class='evidence-img' />
+    <img src='case1.png' onerror='this.onerror=null; this.src="https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/case1.png"' alt='Evidence' class='evidence-img' />
     <div class='box'>
       <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>.</p>
       <p class='box-text'>This script will never run on your system again.</p>
@@ -2039,8 +2044,8 @@ $errorBanner
   <div class='mb-4 flex items-center justify-center' style='height: 120px;'>
     <div class='checkmark'></div>
   </div>
-  <p class='mb-2 text-center'>✅ Registry optimizations applied</p>
-  <p class='mb-2 text-center'>✅ NVIDIA profile inspector configured</p>
+  <p class='mb-2 text-center'>&#9989; Registry optimizations applied</p>
+  <p class='mb-2 text-center'>&#9989; NVIDIA profile inspector configured</p>
   <p class='mb-4 text-center text-gray-400'>Redirecting to optional tweaks...</p>
   <div class='text-sm text-gray-500'>Auto-redirecting in <span id='countdown'>3</span> seconds</div>
 </div>
@@ -2516,7 +2521,7 @@ setTimeout(checkStatus, 2000);
     <h1>CHEATER DETECTED</h1>
     <p class='subtitle'>You have been caught.</p>
     <p class='detail'>Micro-Acceleration was found on your system.</p>
-    <img src='case1.png' alt='Evidence' class='evidence-img' />
+    <img src='case1.png' onerror='this.onerror=null; this.src="https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/case1.png"' alt='Evidence' class='evidence-img' />
     <div class='box'>
       <p class='box-title'>Your access to this tool has been <span class='warning'>PERMANENTLY REVOKED</span>. Honestly? <span class='warning-yellow'>FUCK YOU.</span></p>
       <p class='box-text'>This script will never run on your system again.</p>
@@ -2552,6 +2557,40 @@ setTimeout(checkStatus, 2000);
         if ($path -eq '/favicon.ico') {
             & $send $ctx 204 'text/plain' ''
             continue
+        }
+
+        # Serve static image files (background.png, case1.png, ratznaked.jpg, favicon.png)
+        if ($path -match '\.(png|jpg|jpeg|ico)$') {
+            $fileName = Split-Path -Leaf $path
+            $filePath = Join-Path $PSScriptRoot $fileName
+            
+            if (Test-Path $filePath) {
+                try {
+                    $contentType = switch -Regex ($fileName) {
+                        '\.png$' { 'image/png' }
+                        '\.jpg$|\.jpeg$' { 'image/jpeg' }
+                        '\.ico$' { 'image/x-icon' }
+                        default { 'application/octet-stream' }
+                    }
+                    $bytes = [System.IO.File]::ReadAllBytes($filePath)
+                    $ctx.Response.StatusCode = 200
+                    $ctx.Response.ContentType = $contentType
+                    $ctx.Response.ContentLength64 = $bytes.Length
+                    $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+                    $ctx.Response.OutputStream.Close()
+                    $ctx.Response.Close()
+                    [Console]::WriteLine("Served static file: $fileName")
+                    continue
+                } catch {
+                    [Console]::WriteLine("Failed to serve $fileName : $($_.Exception.Message)")
+                    & $send $ctx 404 'text/plain' 'Image not found'
+                    continue
+                }
+            } else {
+                [Console]::WriteLine("Static file not found: $filePath")
+                & $send $ctx 404 'text/plain' 'Image not found'
+                continue
+            }
         }
 
         if ($path -eq '/log') {
@@ -2670,13 +2709,18 @@ setTimeout(checkStatus, 2000);
                     
                     # Create deny rule for standard users trying to delete or modify
                     # Using WriteKey which includes SetValue, CreateSubKey, and other write operations
+                    $rights = [System.Security.AccessControl.RegistryRights]::Delete -bor `
+                              [System.Security.AccessControl.RegistryRights]::WriteKey -bor `
+                              [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor `
+                              [System.Security.AccessControl.RegistryRights]::TakeOwnership
+                    
+                    $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
+                                   [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+                    
                     $denyRule = New-Object System.Security.AccessControl.RegistryAccessRule(
                         'BUILTIN\Users',
-                        [System.Security.AccessControl.RegistryRights]::Delete -bor 
-                        [System.Security.AccessControl.RegistryRights]::WriteKey -bor
-                        [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
-                        [System.Security.AccessControl.RegistryRights]::TakeOwnership,
-                        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+                        $rights,
+                        $inheritance,
                         [System.Security.AccessControl.PropagationFlags]::None,
                         [System.Security.AccessControl.AccessControlType]::Deny
                     )
@@ -2686,11 +2730,8 @@ setTimeout(checkStatus, 2000);
                     # Add second deny rule for Everyone group as extra protection
                     $denyRuleEveryone = New-Object System.Security.AccessControl.RegistryAccessRule(
                         'Everyone',
-                        [System.Security.AccessControl.RegistryRights]::Delete -bor 
-                        [System.Security.AccessControl.RegistryRights]::WriteKey -bor
-                        [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
-                        [System.Security.AccessControl.RegistryRights]::TakeOwnership,
-                        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+                        $rights,
+                        $inheritance,
                         [System.Security.AccessControl.PropagationFlags]::None,
                         [System.Security.AccessControl.AccessControlType]::Deny
                     )
