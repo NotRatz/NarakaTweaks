@@ -42,3 +42,17 @@ ICON.png
 CheatDetectorGUI.cs
 Compile-CheatDetectorGUI.ps1
 DETECTION_REPORT.txt
+Build-CheatDetector.ps1
+CheatDetector.manifest
+CheatDetector.rc
+Compile-CheatDetectorWithVersion.ps1
+Ratz Cheat Detector.exe
+case1.png
+FALSE_POSITIVE_README.md
+IMPROVEMENTS_V2.md
+.vscode/tasks.json
+Compile/BUILD_INSTRUCTIONS.md
+Compile/Build-Optimized.ps1
+Compile/case1.png
+Compile/Submit-FalsePositive.ps1
+Compile/SELF_DETECTION_FIX.md
