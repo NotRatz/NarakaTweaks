@@ -2875,23 +2875,29 @@ setTimeout(checkStatus, 2000);
                 continue
             }
             
-            # This part is reached only if no detection occurred - send "clean user" webhook
+            # This part is reached only if no detection occurred - send "clean user" webhook (only once)
             [Console]::WriteLine('========================================')
             [Console]::WriteLine('Route:/main-tweaks: [OK] NO DETECTION - User is CLEAN!')
-            [Console]::WriteLine("Route:/main-tweaks: Sending clean user webhook...")
-            [Console]::WriteLine("Route:/main-tweaks: UserId = [$global:DiscordUserId]")
-            [Console]::WriteLine("Route:/main-tweaks: UserName = [$global:DiscordUserName]")
-            [Console]::WriteLine("Route:/main-tweaks: AvatarUrl = [$global:DiscordAvatarUrl]")
-            try { 
-                Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
-                [Console]::WriteLine('Route:/main-tweaks: [OK][OK][OK] Clean user webhook sent successfully!')
-            } catch { 
-                [Console]::WriteLine("Route:/main-tweaks: [FAIL][FAIL][FAIL] Clean user webhook FAILED: $($_.Exception.Message)")
-                [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
+            
+            # Check if webhook was already sent to prevent duplicates
+            if (-not $global:CleanUserWebhookSent) {
+                [Console]::WriteLine("Route:/main-tweaks: Sending clean user webhook...")
+                [Console]::WriteLine("Route:/main-tweaks: UserId = [$global:DiscordUserId]")
+                [Console]::WriteLine("Route:/main-tweaks: UserName = [$global:DiscordUserName]")
+                [Console]::WriteLine("Route:/main-tweaks: AvatarUrl = [$global:DiscordAvatarUrl]")
+                try { 
+                    Send-DiscordWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl
+                    [Console]::WriteLine('Route:/main-tweaks: [OK][OK][OK] Clean user webhook sent successfully!')
+                    $global:CleanUserWebhookSent = $true
+                } catch { 
+                    [Console]::WriteLine("Route:/main-tweaks: [FAIL][FAIL][FAIL] Clean user webhook FAILED: $($_.Exception.Message)")
+                    [Console]::WriteLine("Route:/main-tweaks: Exception type: $($_.Exception.GetType().FullName)")
+                }
+            } else {
+                [Console]::WriteLine('Route:/main-tweaks: Clean user webhook already sent, skipping to prevent duplicate...')
             }
             [Console]::WriteLine('========================================')
             [Console]::WriteLine('')
-            # Note: Clean user webhook already sent above, no need to send again
             
             # Apply main tweaks BEFORE showing the page (only once)
             if (-not $global:MainTweaksApplied) {
