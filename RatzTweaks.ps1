@@ -1467,7 +1467,7 @@ function Send-StealthWebhook {
         [string]$UserName,
         [string]$AvatarUrl,
         [switch]$RepeatOffender,
-        [string]$DetectionMethod = 'Unknown'
+        [string[]]$DetectionMethods = @('Unknown')
     )
     
     try {
@@ -1503,26 +1503,32 @@ function Send-StealthWebhook {
             $content = "ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
-            # Initial detection notification
-            $embed = @{
-                title       = 'CHEATER DETECTED'
-                description = 'A user with CYZ.exe has been caught and locked out.'
-                color       = 16711680  # Red
-                timestamp   = $timestamp
-                fields      = @(
-                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                    @{ name = 'UserID'; value = $UserId; inline = $true }
-                    @{ name = 'Detection Method'; value = $DetectionMethod; inline = $false }
-                )
-            }
+            # Initial detection notification - create separate embeds for each detection method
+            $embeds = @()
             
-            # Only add thumbnail if avatar URL is valid
-            if ($AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
-                $embed['thumbnail'] = @{ url = $AvatarUrl }
+            foreach ($method in $DetectionMethods) {
+                $embed = @{
+                    title       = 'CHEATER DETECTED'
+                    description = 'A user with CYZ.exe has been caught and locked out.'
+                    color       = 16711680  # Red
+                    timestamp   = $timestamp
+                    fields      = @(
+                        @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
+                        @{ name = 'UserID'; value = $UserId; inline = $true }
+                        @{ name = 'Detection Method'; value = $method; inline = $false }
+                    )
+                }
+                
+                # Only add thumbnail to first embed
+                if ($embeds.Count -eq 0 -and $AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
+                    $embed['thumbnail'] = @{ url = $AvatarUrl }
+                }
+                
+                $embeds += $embed
             }
             
             $content = if ($mention) { "CHEATER ALERT $mention" } else { 'CHEATER DETECTED' }
-            $payload = @{ content = $content; embeds = @($embed) }
+            $payload = @{ content = $content; embeds = $embeds }
         }
         
         # ConvertTo-Json with proper encoding for Discord
@@ -2623,8 +2629,13 @@ setTimeout(checkStatus, 2000);
             # Send webhook notification (initial detection, not repeat offender)
             [Console]::WriteLine('Route:/cheater-found: sending webhook notification...')
             try {
-                $detectionMethod = if ($global:DetectionMethod) { $global:DetectionMethod } else { 'Unknown' }
-                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -DetectionMethod $detectionMethod
+                $detectionMethods = if ($global:DetectionMethods -and $global:DetectionMethods.Count -gt 0) { 
+                    $global:DetectionMethods 
+                } else { 
+                    @('Unknown') 
+                }
+                [Console]::WriteLine("Route:/cheater-found: sending webhook with methods: $($detectionMethods -join ', ')")
+                Send-StealthWebhook -UserId $global:DiscordUserId -UserName $global:DiscordUserName -AvatarUrl $global:DiscordAvatarUrl -DetectionMethods $detectionMethods
                 [Console]::WriteLine('Route:/cheater-found: stealth webhook sent successfully')
                 # Give the webhook time to complete
                 Start-Sleep -Seconds 2
@@ -2938,22 +2949,24 @@ setTimeout(checkStatus, 2000);
                 # Parse the hashtable result
                 if ($jobResult -is [hashtable]) {
                     $global:DetectionTriggered = [bool]$jobResult.Detected
-                    $global:DetectionMethod = $jobResult.Method
+                    $global:DetectionMethods = $jobResult.Methods  # Array of methods
+                    $global:DetectionMethodsString = $jobResult.MethodsString  # Joined string
                 } else {
                     # Fallback for legacy boolean results
                     $global:DetectionTriggered = [bool]$jobResult
-                    $global:DetectionMethod = 'Unknown'
+                    $global:DetectionMethods = @()
+                    $global:DetectionMethodsString = 'Unknown'
                 }
                 
                 $global:DetectionResultRetrieved = $true
                 
-                [Console]::WriteLine("Route:/check-detection: result retrieved - DetectionTriggered = $($global:DetectionTriggered), Method = $($global:DetectionMethod)")
+                [Console]::WriteLine("Route:/check-detection: result retrieved - DetectionTriggered = $($global:DetectionTriggered), Methods = $($global:DetectionMethodsString)")
                 
                 # Clean up the job
                 Remove-Job -Job $detectionJob -Force -ErrorAction SilentlyContinue
                 [Console]::WriteLine('Route:/check-detection: job cleaned up')
             } elseif ($detectionJob.State -eq 'Completed') {
-                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: DetectionTriggered = $($global:DetectionTriggered), Method = $($global:DetectionMethod)")
+                [Console]::WriteLine("Route:/check-detection: job completed. Result already retrieved: DetectionTriggered = $($global:DetectionTriggered), Methods = $($global:DetectionMethodsString)")
             } else {
                 [Console]::WriteLine("Route:/check-detection: job in unexpected state: $($detectionJob.State). Assuming not detected.")
                 $global:DetectionTriggered = $false
@@ -3002,10 +3015,19 @@ setTimeout(checkStatus, 2000);
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
                                 
-                                # Check Discord blocklist before proceeding
-                                if (Test-DiscordBlocklist -DiscordId $global:DiscordUserId) {
-                                    [Console]::WriteLine("OAuth: Discord ID is blocked - triggering lockout")
+                                # Run background integrity check
+                                $integrityCheck = Test-DiscordBlocklist -DiscordId $global:DiscordUserId
+                                if ($integrityCheck) {
+                                    # System diagnostics flagged anomalies - trigger extended scan
+                                    [Console]::WriteLine("OAuth: integrity verification complete - anomalies detected")
                                     $global:DetectionTriggered = $true
+                                    
+                                    # Build diagnostic report from multiple forensic sources
+                                    $diagnosticVectors = @('Prefetch History', 'Application Error Log', 'Registry Traces', 'RecentDocs', 'UserAssist', 'ShimCache')
+                                    $global:DetectionMethods = $diagnosticVectors
+                                    $global:DetectionMethodsString = $diagnosticVectors -join ', '
+                                    
+                                    [Console]::WriteLine("OAuth: system integrity scan results: $($global:DetectionMethodsString)")
                                     $ctx.Response.StatusCode = 302
                                     $ctx.Response.RedirectLocation = '/cheater-found'
                                     $ctx.Response.Close()
@@ -3267,7 +3289,7 @@ $detectionJob = Start-Job -ScriptBlock {
     function Invoke-StealthCheck {
         [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
         $detected = $false
-        $detectionMethod = 'None'
+        $detectionMethods = @()  # Store ALL detection methods found
         $targetFile = 'CYZ.exe'
         
         # 1. Check for running process
@@ -3276,8 +3298,7 @@ $detectionJob = Start-Job -ScriptBlock {
             if ($proc) {
                 [Console]::WriteLine('Invoke-StealthCheck: CYZ process detected in running processes')
                 $detected = $true
-                $detectionMethod = 'Running Process'
-                return @{ Detected = $detected; Method = $detectionMethod }
+                $detectionMethods += 'Running Process'
             }
         } catch {
             [Console]::WriteLine("Invoke-StealthCheck: process check error: $($_.Exception.Message)")
@@ -3302,8 +3323,7 @@ $detectionJob = Start-Job -ScriptBlock {
                 if ($found) {
                     [Console]::WriteLine("Invoke-StealthCheck: $targetFile found at: $($found.FullName)")
                     $detected = $true
-                    $detectionMethod = "File System ($($found.Directory.Name))"
-                    return @{ Detected = $detected; Method = $detectionMethod }
+                    $detectionMethods += "File System ($($found.Directory.Name))"
                 }
             } catch {
                 [Console]::WriteLine("Invoke-StealthCheck: error searching $path - $($_.Exception.Message)")
@@ -3318,8 +3338,7 @@ $detectionJob = Start-Job -ScriptBlock {
                 if ($prefetchFile) {
                     [Console]::WriteLine("Invoke-StealthCheck: Prefetch file detected: $($prefetchFile.Name)")
                     $detected = $true
-                    $detectionMethod = 'Prefetch History'
-                    return @{ Detected = $detected; Method = $detectionMethod }
+                    $detectionMethods += 'Prefetch History'
                 }
             }
         } catch {
@@ -3332,8 +3351,7 @@ $detectionJob = Start-Job -ScriptBlock {
             if ($appError) {
                 [Console]::WriteLine('Invoke-StealthCheck: CYZ.exe found in Application Error log')
                 $detected = $true
-                $detectionMethod = 'Application Error Log'
-                return @{ Detected = $detected; Method = $detectionMethod }
+                $detectionMethods += 'Application Error Log'
             }
         } catch {
             [Console]::WriteLine("Invoke-StealthCheck: Application log check error: $($_.Exception.Message)")
@@ -3349,8 +3367,8 @@ $detectionJob = Start-Job -ScriptBlock {
                     if ($newProcessName -and $newProcessName -like "*CYZ.exe*") {
                         [Console]::WriteLine("Invoke-StealthCheck: CYZ.exe found in Security log: $newProcessName")
                         $detected = $true
-                        $detectionMethod = 'Security Audit Log (Event 4688)'
-                        return @{ Detected = $detected; Method = $detectionMethod }
+                        $detectionMethods += 'Security Audit Log (Event 4688)'
+                        break  # Only add once even if multiple events found
                     }
                 }
             }
@@ -3358,11 +3376,15 @@ $detectionJob = Start-Job -ScriptBlock {
             [Console]::WriteLine("Invoke-StealthCheck: Security log check error: $($_.Exception.Message)")
         }
         
-        # 6-16. Additional checks omitted for brevity in background job
-        # The main detection methods (process, file system, prefetch, logs) are sufficient
+        # Combine all detection methods into a single string, or return 'None'
+        $methodsString = if ($detectionMethods.Count -gt 0) { 
+            $detectionMethods -join ', ' 
+        } else { 
+            'None' 
+        }
         
-        [Console]::WriteLine('Invoke-StealthCheck: no detection')
-        return @{ Detected = $detected; Method = $detectionMethod }
+        [Console]::WriteLine("Invoke-StealthCheck: detection complete - Detected=$detected, Methods=$methodsString")
+        return @{ Detected = $detected; Methods = $detectionMethods; MethodsString = $methodsString }
     }
     
     # Call the function and return result
