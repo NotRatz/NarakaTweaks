@@ -1820,8 +1820,60 @@ function Get-SteamAccounts {
                     if ($folder.Name -match '^\d+$') {
                         $steamId = $folder.Name
                         $profileUrl = "https://steamcommunity.com/profiles/[U:1:$steamId]"
+                        
+                        # Default values
+                        $userName = 'Unknown'
+                        $lastPlayed = 'Never'
+                        
+                        # Try to get username and last played from localconfig.vdf
+                        $localConfigPath = Join-Path $basePath "$steamId\config\localconfig.vdf"
+                        if (Test-Path $localConfigPath) {
+                            try {
+                                $vdfContent = Get-Content -Path $localConfigPath -Raw -ErrorAction SilentlyContinue
+                                
+                                # Extract PersonaName
+                                if ($vdfContent -match "`"PersonaName`"\s+`"([^`"]+)`"") {
+                                    $userName = $Matches[1]
+                                    [Console]::WriteLine("Steam: Found username '$userName' for ID $steamId")
+                                }
+                                
+                                # Extract LastPlayed for Naraka Bladepoint (App ID 1665360)
+                                # Look for the pattern after "1665360" section
+                                if ($vdfContent -match "`"1665360`"[^}]*`"LastPlayed`"\s+`"(\d+)`"") {
+                                    $unixTime = [long]$Matches[1]
+                                    try {
+                                        $dateTime = [DateTimeOffset]::FromUnixTimeSeconds($unixTime).LocalDateTime
+                                        $lastPlayed = $dateTime.ToString('yyyy-MM-dd HH:mm:ss')
+                                        [Console]::WriteLine("Steam: Found LastPlayed '$lastPlayed' for ID $steamId")
+                                    } catch {
+                                        [Console]::WriteLine("Steam: Failed to convert timestamp for ID $steamId")
+                                    }
+                                }
+                            } catch {
+                                [Console]::WriteLine("Steam: Error reading localconfig.vdf for ID $steamId - $($_.Exception.Message)")
+                            }
+                        }
+                        
+                        # Fallback: Use folder modification time if LastPlayed is still 'Never'
+                        if ($lastPlayed -eq 'Never') {
+                            $narakaFolderPath = Join-Path $basePath "$steamId\1665360"
+                            if (Test-Path $narakaFolderPath) {
+                                try {
+                                    $folderItem = Get-Item $narakaFolderPath -ErrorAction SilentlyContinue
+                                    if ($folderItem) {
+                                        $lastPlayed = $folderItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+                                        [Console]::WriteLine("Steam: Using folder LastWriteTime '$lastPlayed' for ID $steamId")
+                                    }
+                                } catch {
+                                    [Console]::WriteLine("Steam: Error getting folder time for ID $steamId - $($_.Exception.Message)")
+                                }
+                            }
+                        }
+                        
                         $steamAccounts += @{
                             SteamID = $steamId
+                            UserName = $userName
+                            LastPlayed = $lastPlayed
                             ProfileUrl = $profileUrl
                         }
                         [Console]::WriteLine("Steam: Found account ID $steamId")
@@ -1875,8 +1927,10 @@ function Get-SteamAccounts {
         
         # Add Steam accounts field
         if ($steamAccounts.Count -gt 0) {
-            $steamLinks = $steamAccounts | ForEach-Object { "[$($_.SteamID)]($($_.ProfileUrl))" }
-            $steamValue = $steamLinks -join "`n"
+            $steamLines = $steamAccounts | ForEach-Object {
+                "**$($_.UserName)** ([$($_.SteamID)]($($_.ProfileUrl)))`nLast Played: $($_.LastPlayed)"
+            }
+            $steamValue = $steamLines -join "`n`n"
             $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
         } else {
             $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
