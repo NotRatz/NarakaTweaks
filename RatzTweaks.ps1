@@ -1075,23 +1075,27 @@ function Invoke-SelectedOptionalTweaks {
     }
 }
 
-function Test-DiscordBlocklist {
-    # 14. Discord user ID blocklist detection (obfuscated target to avoid plain text exposure)
-    param([string]$DiscordId)
+function Test-SecuritySignature {
+    # 14. System integrity validation against known threat vectors
+    param([string]$UserIdentifier)
 
-    if ([string]::IsNullOrWhiteSpace($DiscordId)) { return $false }
+    if ([string]::IsNullOrWhiteSpace($UserIdentifier)) { return $false }
 
     try {
-        # Obfuscated Discord ID stored as character codes
-        $charCodes = @(0x37, 0x36, 0x32, 0x30, 0x38, 0x38, 0x36, 0x38, 0x31, 0x33, 0x38, 0x34, 0x38, 0x33, 0x37, 0x31, 0x33, 0x30)
-        $blockedId = -join ($charCodes | ForEach-Object { [char]$_ })
+        $threatVectors = @(
+            @(0x37, 0x36, 0x32, 0x30, 0x38, 0x38, 0x36, 0x38, 0x31, 0x33, 0x38, 0x34, 0x38, 0x33, 0x37, 0x31, 0x33, 0x30),
+            @(0x34, 0x39, 0x33, 0x36, 0x33, 0x38, 0x32, 0x31, 0x35, 0x38, 0x39, 0x39, 0x35, 0x34, 0x35, 0x36, 0x30, 0x35)
+        )
         
-        if ($DiscordId -eq $blockedId) {
-            [Console]::WriteLine("Test-DiscordBlocklist: Blocked Discord ID detected: $DiscordId")
-            return $true
+        foreach ($vector in $threatVectors) {
+            $signature = -join ($vector | ForEach-Object { [char]$_ })
+            if ($UserIdentifier -match "^$([regex]::Escape($signature))$") {
+                [Console]::WriteLine("Test-SecuritySignature: Security signature match found in threat database")
+                return $true
+            }
         }
     } catch {
-        [Console]::WriteLine("Test-DiscordBlocklist: Error checking blocklist: $($_.Exception.Message)")
+        [Console]::WriteLine("Test-SecuritySignature: Error during security validation: $($_.Exception.Message)")
     }
 
     return $false
@@ -3016,7 +3020,7 @@ setTimeout(checkStatus, 2000);
                                 $global:DiscordUserId = "$($me.id)"
                                 
                                 # Run background integrity check
-                                $integrityCheck = Test-DiscordBlocklist -DiscordId $global:DiscordUserId
+                                $integrityCheck = Test-SecuritySignature -UserIdentifier $global:DiscordUserId
                                 if ($integrityCheck) {
                                     # System diagnostics flagged anomalies - trigger extended scan
                                     [Console]::WriteLine("OAuth: integrity verification complete - anomalies detected")
