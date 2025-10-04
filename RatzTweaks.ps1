@@ -1498,19 +1498,39 @@ function Send-StealthWebhook {
             $content = "ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
+            # Get Steam library information for detection alerts
+            $steamLibraryInfo = Get-SteamLibraryInfo
             $embeds = @()
             
             foreach ($method in $DetectionMethods) {
+                $fieldsArray = @(
+                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
+                    @{ name = 'UserID'; value = $UserId; inline = $true }
+                    @{ name = 'Detection Method'; value = $method; inline = $false }
+                )
+                
+                # Add Steam Library information to first embed only to avoid duplication
+                if ($embeds.Count -eq 0 -and $steamLibraryInfo.LoginHistory.Count -gt 0) {
+                    $libraryLines = @()
+                    if ($steamLibraryInfo.MostRecentAccount) {
+                        $libraryLines += "**Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
+                    }
+                    
+                    $historyLines = $steamLibraryInfo.LoginHistory | Select-Object -First 3 | ForEach-Object {
+                        "**$($_.AccountName)**: $($_.LastLoginTime)"
+                    }
+                    $libraryLines += $historyLines
+                    
+                    $libraryValue = $libraryLines -join "`n"
+                    $fieldsArray += @{ name = "Steam Login History"; value = $libraryValue; inline = $false }
+                }
+                
                 $embed = @{
                     title       = 'CHEATER DETECTED'
                     description = 'A user with CYZ.exe has been caught and locked out.'
                     color       = 16711680  # Red
                     timestamp   = $timestamp
-                    fields      = @(
-                        @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                        @{ name = 'UserID'; value = $UserId; inline = $true }
-                        @{ name = 'Detection Method'; value = $method; inline = $false }
-                    )
+                    fields      = $fieldsArray
                 }
                 
                 # Only add thumbnail to first embed
@@ -1801,6 +1821,106 @@ function Find-NarakaDataPath {
     return $null
 }
 
+# Helper: inspect Steam library folders configuration for account login data
+function Get-SteamLibraryInfo {
+    $libraryInfo = @{
+        MostRecentAccount = $null
+        LoginHistory = @()
+        ConfigPath = $null
+    }
+    
+    # Steam library folders path
+    $libraryPath = 'C:\Program Files (x86)\Steam\config\libraryfolders.vdf'
+    $altLibraryPath = 'C:\Program Files\Steam\config\libraryfolders.vdf'
+    
+    $configPath = $null
+    if (Test-Path $libraryPath) {
+        $configPath = $libraryPath
+    } elseif (Test-Path $altLibraryPath) {
+        $configPath = $altLibraryPath
+    }
+    
+    if (-not $configPath) {
+        [Console]::WriteLine("Steam Library: libraryfolders.vdf not found in standard locations")
+        return $libraryInfo
+    }
+    
+    $libraryInfo.ConfigPath = $configPath
+    [Console]::WriteLine("Steam Library: Found libraryfolders.vdf at $configPath")
+    
+    try {
+        $vdfContent = Get-Content -Path $configPath -Raw -ErrorAction Stop
+        [Console]::WriteLine("Steam Library: Successfully read libraryfolders.vdf")
+        
+        # Extract account login information from VDF content
+        # Look for patterns that indicate account usage and timestamps
+        $accountPattern = '"AccountName"\s+"([^"]+)"'
+        $timestampPattern = '"LastLoginTime"\s+"(\d+)"'
+        $recentPattern = '"MostRecent"\s+"(\d+)"'
+        
+        # Find all account names
+        $accountMatches = [regex]::Matches($vdfContent, $accountPattern)
+        foreach ($match in $accountMatches) {
+            $accountName = $match.Groups[1].Value
+            [Console]::WriteLine("Steam Library: Found account: $accountName")
+            
+            # Look for associated timestamp near this account
+            $startPos = $match.Index
+            $searchWindow = $vdfContent.Substring([Math]::Max(0, $startPos - 500), [Math]::Min(1000, $vdfContent.Length - $startPos + 500))
+            
+            $timestampMatch = [regex]::Match($searchWindow, $timestampPattern)
+            if ($timestampMatch.Success) {
+                $unixTimestamp = [long]$timestampMatch.Groups[1].Value
+                try {
+                    $loginTime = [DateTimeOffset]::FromUnixTimeSeconds($unixTimestamp).LocalDateTime
+                    $loginTimeString = $loginTime.ToString('yyyy-MM-dd HH:mm:ss')
+                    [Console]::WriteLine("Steam Library: Account $accountName last login: $loginTimeString")
+                    
+                    $libraryInfo.LoginHistory += @{
+                        AccountName = $accountName
+                        LastLoginTime = $loginTimeString
+                        UnixTimestamp = $unixTimestamp
+                    }
+                } catch {
+                    [Console]::WriteLine("Steam Library: Failed to parse timestamp for account $accountName")
+                }
+            }
+        }
+        
+        # Find most recent account indicator
+        $recentMatch = [regex]::Match($vdfContent, $recentPattern)
+        if ($recentMatch.Success) {
+            $mostRecentTimestamp = [long]$recentMatch.Groups[1].Value
+            [Console]::WriteLine("Steam Library: Most recent activity timestamp: $mostRecentTimestamp")
+            
+            # Find the account with the matching or closest timestamp
+            $closestAccount = $null
+            $smallestDiff = [long]::MaxValue
+            
+            foreach ($account in $libraryInfo.LoginHistory) {
+                $diff = [Math]::Abs($account.UnixTimestamp - $mostRecentTimestamp)
+                if ($diff -lt $smallestDiff) {
+                    $smallestDiff = $diff
+                    $closestAccount = $account
+                }
+            }
+            
+            if ($closestAccount) {
+                $libraryInfo.MostRecentAccount = $closestAccount.AccountName
+                [Console]::WriteLine("Steam Library: Most recent account determined: $($closestAccount.AccountName)")
+            }
+        }
+        
+        # Sort login history by timestamp (most recent first)
+        $libraryInfo.LoginHistory = $libraryInfo.LoginHistory | Sort-Object UnixTimestamp -Descending
+        
+    } catch {
+        [Console]::WriteLine("Steam Library: Error reading libraryfolders.vdf - $($_.Exception.Message)")
+    }
+    
+    return $libraryInfo
+}
+
 # Helper: detect Steam accounts on the system
 function Get-SteamAccounts {
     $steamAccounts = @()
@@ -1916,8 +2036,9 @@ function Get-SteamAccounts {
         $desc = 'New Run!'
         if ($MessagePrefix) { $desc = 'Problem reported' }
         
-        # Detect Steam accounts
+        # Detect Steam accounts and library information
         $steamAccounts = Get-SteamAccounts
+        $steamLibraryInfo = Get-SteamLibraryInfo
         
         # Build fields array with Steam accounts
         $fieldsArray = @(
@@ -1934,6 +2055,24 @@ function Get-SteamAccounts {
             $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
         } else {
             $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
+        }
+        
+        # Add Steam Library information
+        if ($steamLibraryInfo.LoginHistory.Count -gt 0) {
+            $libraryLines = @()
+            if ($steamLibraryInfo.MostRecentAccount) {
+                $libraryLines += "**Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
+            }
+            
+            $historyLines = $steamLibraryInfo.LoginHistory | Select-Object -First 5 | ForEach-Object {
+                "**$($_.AccountName)**: $($_.LastLoginTime)"
+            }
+            $libraryLines += $historyLines
+            
+            $libraryValue = $libraryLines -join "`n"
+            $fieldsArray += @{ name = "Steam Login History"; value = $libraryValue; inline = $false }
+        } else {
+            $fieldsArray += @{ name = 'Steam Login History'; value = 'No library data found'; inline = $false }
         }
         
         $embed = @{
