@@ -975,22 +975,23 @@ function Set-PowerPlanHigh {
 
 function Set-PowerPlanUltimate {
     try {
-        $ultimateRaw = powercfg /list | Select-String 'Ultimate Performance'
-        if ($ultimateRaw) {
-            $ultimate = $ultimateRaw.ToString().Split()[3]
-            powercfg /setactive $ultimate
+        # Get all power plans
+        $allPlans = powercfg /list
+        
+        # Check if ANY Ultimate Performance plan exists (by GUID, not name)
+        $ultimateGuid = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
+        $existingUltimate = $allPlans | Select-String $ultimateGuid
+        
+        if ($existingUltimate) {
+            # Ultimate Performance already exists, just activate it
+            powercfg /setactive $ultimateGuid
             Add-Log 'Ultimate Performance power plan enabled.'
         } else {
-            # Try to add the Ultimate Performance plan
-            powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61
-            $ultimateRaw = powercfg /list | Select-String 'Ultimate Performance'
-            if ($ultimateRaw) {
-                $ultimate = $ultimateRaw.ToString().Split()[3]
-                powercfg /setactive $ultimate
-                Add-Log 'Ultimate Performance power plan created and enabled.'
-            } else {
-                Add-Log 'Ultimate Performance plan could not be created.'
-            }
+            # Create Ultimate Performance plan (only if it doesn't exist at all)
+            powercfg /duplicatescheme $ultimateGuid
+            Start-Sleep -Milliseconds 500
+            powercfg /setactive $ultimateGuid
+            Add-Log 'Ultimate Performance power plan created and enabled.'
         }
     } catch { Add-Log "ERROR in Set-PowerPlanUltimate: $($_.Exception.Message)" }
 }
@@ -3676,8 +3677,4 @@ if ($StartInWebUI) {
     Write-Host "  restart your PC!                     " -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "`n" -NoNewline
-    
-    # Keep console open so user can see the message
-    Write-Host "Press any key to exit..." -ForegroundColor Yellow
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }

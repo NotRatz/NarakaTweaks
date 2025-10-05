@@ -124,3 +124,5 @@ obj/Release/net48/NarakaTweaks.AssemblyInfoInputs.cache
 obj/Release/net48/NarakaTweaks.csproj.AssemblyReference.cache
 obj/Release/net48/NarakaTweaks.exe.withSupportedRuntime.config
 obj/Release/net48/NarakaTweaks.GeneratedMSBuildEditorConfig.editorconfig
+REMOVE_TIMER_SERVICE.md
+FIX_AUDIO_ISSUES.md
