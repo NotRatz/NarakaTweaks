@@ -1798,28 +1798,108 @@ function Start-WebUI {
     }
     
 
+# Helper: Parse Steam libraryfolders.vdf to find all Steam library paths
+function Get-SteamLibraryPaths {
+    $libraryPaths = @()
+    
+    # Common Steam installation paths
+    $steamConfigPaths = @(
+        'C:\Program Files (x86)\Steam\config\libraryfolders.vdf',
+        'C:\Program Files\Steam\config\libraryfolders.vdf'
+    )
+    
+    foreach ($configPath in $steamConfigPaths) {
+        if (Test-Path $configPath) {
+            [Console]::WriteLine("Find-NarakaDataPath: Found Steam config at $configPath")
+            try {
+                $vdfContent = Get-Content -Path $configPath -Raw -ErrorAction Stop
+                
+                # Extract all "path" entries from libraryfolders.vdf
+                # Pattern: "path"		"C:\\Path\\To\\Steam"
+                $pathPattern = '"path"\s+"([^"]+)"'
+                $pathMatches = [regex]::Matches($vdfContent, $pathPattern)
+                
+                foreach ($match in $pathMatches) {
+                    $libraryPath = $match.Groups[1].Value
+                    # Normalize path separators
+                    $libraryPath = $libraryPath -replace '\\\\', '\'
+                    
+                    if (Test-Path $libraryPath) {
+                        $libraryPaths += $libraryPath
+                        [Console]::WriteLine("Find-NarakaDataPath: Found Steam library at: $libraryPath")
+                    }
+                }
+            } catch {
+                [Console]::WriteLine("Find-NarakaDataPath: Error reading libraryfolders.vdf - $($_.Exception.Message)")
+            }
+            break  # Found and processed a config file
+        }
+    }
+    
+    # Add default Steam paths if not already found
+    $defaultPaths = @(
+        'C:\Program Files (x86)\Steam',
+        'C:\Program Files\Steam'
+    )
+    
+    foreach ($defaultPath in $defaultPaths) {
+        if ((Test-Path $defaultPath) -and ($libraryPaths -notcontains $defaultPath)) {
+            $libraryPaths += $defaultPath
+            [Console]::WriteLine("Find-NarakaDataPath: Added default Steam path: $defaultPath")
+        }
+    }
+    
+    return $libraryPaths
+}
+
 $global:DetectedNarakaPath = $env:NARAKA_DATA_PATH
 function Find-NarakaDataPath {
-    if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { return $global:DetectedNarakaPath }
-    $candidates = @(
-        'C:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'D:\Program Files (x86)\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'C:\Program Files (x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'D:\Program Files (x86)\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'C:\Program Files\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'D:\Program Files\Steam\steamapps\common\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'C:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data',
-        'D:\Program Files\Epic Games\NARAKA BLADEPOINT\NarakaBladepoint_Data'
-    )
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            $global:DetectedNarakaPath = $candidate
+    if ($global:DetectedNarakaPath -and (Test-Path $global:DetectedNarakaPath)) { 
+        [Console]::WriteLine("Find-NarakaDataPath: Using cached path: $global:DetectedNarakaPath")
+        return $global:DetectedNarakaPath 
+    }
+    
+    # Naraka Bladepoint game folder name
+    $narakaGameFolder = "NARAKA BLADEPOINT"
+    $narakaDataFolder = "NarakaBladepoint_Data"
+    
+    [Console]::WriteLine("Find-NarakaDataPath: Searching for Naraka installation...")
+    
+    # 1. Check Steam libraries first (most reliable)
+    $steamLibraries = Get-SteamLibraryPaths
+    foreach ($steamPath in $steamLibraries) {
+        $narakaPath = Join-Path -Path $steamPath -ChildPath "steamapps\common\$narakaGameFolder\$narakaDataFolder"
+        if (Test-Path $narakaPath) {
+            [Console]::WriteLine("Find-NarakaDataPath: Found Naraka in Steam library: $narakaPath")
+            $global:DetectedNarakaPath = $narakaPath
             return $global:DetectedNarakaPath
         }
     }
+    
+    # 2. Check Epic Games locations
+    [Console]::WriteLine("Find-NarakaDataPath: Not found in Steam libraries, checking Epic Games...")
+    $epicCandidates = @(
+        'C:\Program Files (x86)\Epic Games',
+        'D:\Program Files (x86)\Epic Games',
+        'C:\Program Files\Epic Games',
+        'D:\Program Files\Epic Games',
+        'E:\Epic Games',
+        'F:\Epic Games'
+    )
+    
+    foreach ($epicPath in $epicCandidates) {
+        if (Test-Path $epicPath) {
+            $narakaPath = Join-Path -Path $epicPath -ChildPath "$narakaGameFolder\$narakaDataFolder"
+            if (Test-Path $narakaPath) {
+                [Console]::WriteLine("Find-NarakaDataPath: Found Naraka in Epic Games: $narakaPath")
+                $global:DetectedNarakaPath = $narakaPath
+                return $global:DetectedNarakaPath
+            }
+        }
+    }
+    
     # Path not found - return null and let the web UI handle prompting
-    # Do NOT use Read-Host here as it blocks in HttpListener context
-    [Console]::WriteLine('Find-NarakaDataPath: NarakaBladepoint_Data folder not found in default locations')
+    [Console]::WriteLine('Find-NarakaDataPath: NarakaBladepoint_Data folder not found in any Steam or Epic Games library')
     return $null
 }
 
@@ -3587,5 +3667,17 @@ if ($StartInWebUI) {
     # Pass the script root and the job to the Web UI function
     Start-WebUI -PSScriptRoot $PSScriptRoot -detectionJob $detectionJob
     [Console]::WriteLine('Entry point: returned from Start-WebUI')
-    # Do not exit automatically; keep console open for debugging
+    
+    # Display completion message
+    Write-Host "`n" -NoNewline
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  Thanks for running the tool!         " -ForegroundColor Green
+    Write-Host "  You can close this window and        " -ForegroundColor Green
+    Write-Host "  restart your PC!                     " -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "`n" -NoNewline
+    
+    # Keep console open so user can see the message
+    Write-Host "Press any key to exit..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
