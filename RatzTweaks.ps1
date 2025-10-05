@@ -3008,54 +3008,66 @@ setTimeout(checkStatus, 2000);
                     [Console]::WriteLine('Route:/cheater-found: Applying registry key protection...')
                     [Console]::WriteLine("Route:/cheater-found: Lockout key path: $lockoutKeyPath")
                     
-                    # Get current ACL (PowerShell registry paths work directly with Get-Acl)
-                    $acl = Get-Acl -Path $lockoutKeyPath
+                    # Convert PowerShell registry path to .NET format for proper ACL handling
+                    # HKLM:\SOFTWARE\... -> HKEY_LOCAL_MACHINE\SOFTWARE\...
+                    $dotNetPath = $lockoutKeyPath -replace '^HKLM:\\', 'HKEY_LOCAL_MACHINE\'
+                    [Console]::WriteLine("Route:/cheater-found: .NET registry path: $dotNetPath")
                     
-                    # Disable inheritance and preserve existing rules
-                    $acl.SetAccessRuleProtection($true, $true)
+                    # Open the registry key with full control to modify ACL
+                    $regKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+                        $dotNetPath -replace '^HKEY_LOCAL_MACHINE\\', '',
+                        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                        [System.Security.AccessControl.RegistryRights]::ChangePermissions
+                    )
                     
-                    # Remove any existing rules that allow Users or Everyone to modify/delete
-                    $acl.Access | Where-Object { 
-                        ($_.IdentityReference -match 'Users|Everyone') -and 
-                        ($_.RegistryRights -match 'Delete|SetValue|CreateSubKey')
-                    } | ForEach-Object {
-                        [Console]::WriteLine("Route:/cheater-found: Removing modify access for: $($_.IdentityReference)")
-                        $acl.RemoveAccessRule($_) | Out-Null
+                    if (-not $regKey) {
+                        [Console]::WriteLine('Route:/cheater-found: [ERROR] Could not open registry key for ACL modification')
+                        throw "Failed to open registry key: $dotNetPath"
                     }
                     
+                    # Get current ACL
+                    $acl = $regKey.GetAccessControl()
+                    
+                    # Disable inheritance and preserve existing rules
+                    $acl.SetAccessRuleProtection($true, $false)
+                    
                     # Create deny rule for standard users trying to delete or modify
-                    # Using WriteKey which includes SetValue, CreateSubKey, and other write operations
                     $rights = [System.Security.AccessControl.RegistryRights]::Delete -bor `
-                              [System.Security.AccessControl.RegistryRights]::WriteKey -bor `
+                              [System.Security.AccessControl.RegistryRights]::SetValue -bor `
+                              [System.Security.AccessControl.RegistryRights]::CreateSubKey -bor `
                               [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor `
                               [System.Security.AccessControl.RegistryRights]::TakeOwnership
                     
                     $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
                                    [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
                     
+                    # Add deny rule for BUILTIN\Users
+                    $usersSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545')  # BUILTIN\Users
                     $denyRule = New-Object System.Security.AccessControl.RegistryAccessRule(
-                        'BUILTIN\Users',
+                        $usersSid,
                         $rights,
                         $inheritance,
                         [System.Security.AccessControl.PropagationFlags]::None,
                         [System.Security.AccessControl.AccessControlType]::Deny
                     )
                     $acl.AddAccessRule($denyRule)
-                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for BUILTIN\Users (Delete, WriteKey, ChangePermissions, TakeOwnership)')
+                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for BUILTIN\Users (Delete, SetValue, CreateSubKey, ChangePermissions, TakeOwnership)')
                     
-                    # Add second deny rule for Everyone group as extra protection
+                    # Add deny rule for Everyone group
+                    $everyoneSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')  # Everyone
                     $denyRuleEveryone = New-Object System.Security.AccessControl.RegistryAccessRule(
-                        'Everyone',
+                        $everyoneSid,
                         $rights,
                         $inheritance,
                         [System.Security.AccessControl.PropagationFlags]::None,
                         [System.Security.AccessControl.AccessControlType]::Deny
                     )
                     $acl.AddAccessRule($denyRuleEveryone)
-                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for Everyone (Delete, WriteKey, ChangePermissions, TakeOwnership)')
+                    [Console]::WriteLine('Route:/cheater-found: Added Deny rule for Everyone (Delete, SetValue, CreateSubKey, ChangePermissions, TakeOwnership)')
                     
                     # Apply the modified ACL
-                    Set-Acl -Path $lockoutKeyPath -AclObject $acl
+                    $regKey.SetAccessControl($acl)
+                    $regKey.Close()
                     [Console]::WriteLine('Route:/cheater-found: ACL protection applied successfully')
                     
                     # Verify the deny rules were applied
