@@ -1,0 +1,98 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Naraka_Cheat_Detector</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <Nullable>enable</Nullable>
+    <!-- Publish as unpackaged app so single-file publish works -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- Application icon (.ico) to embed into the built executable -->
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    
+    <!-- Single-file and self-contained deployment settings for portable executable -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Windows App SDK Self-Contained (required for single-file with WinUI) -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+
+  <!-- Exclude legacy WinForms file from WinUI build (keeps file in repo for separate WinForms project or reference) -->
+  <ItemGroup>
+    <Compile Remove="Compile\CheatDetectorGUI.cs" />
+    <None Include="Compile\CheatDetectorGUI.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\background.png" />
+    <Content Include="Assets\icon.png" />
+    <Content Include="Assets\icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!-- Ensure all files under Assets are copied to output so Image Source can load at runtime for unpackaged apps -->
+  <ItemGroup>
+    <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
+    Tools extension to be activated for this project even if the Windows App SDK Nuget
+    package has not yet been restored.
+  -->
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.6584" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.250916003" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.0" />
+  </ItemGroup>
+
+  <!--
+    Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
+    Explorer "Package and Publish" context menu entry to be enabled for this project even if
+    the Windows App SDK Nuget package has not yet been restored.
+  -->
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- Publish Properties with Size Optimization -->
+  <PropertyGroup>
+    <!-- Disable ReadyToRun and Trimming - both cause issues with WinUI -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <PublishTrimmed>false</PublishTrimmed>
+    
+    <!-- Size optimization settings that work with WinUI -->
+    <IlcOptimizationPreference Condition="'$(Configuration)' != 'Debug'">Size</IlcOptimizationPreference>
+    <EnableUnsafeBinaryFormatterSerialization Condition="'$(Configuration)' != 'Debug'">false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableUnsafeUTF7Encoding Condition="'$(Configuration)' != 'Debug'">false</EnableUnsafeUTF7Encoding>
+    <HttpActivityPropagationSupport Condition="'$(Configuration)' != 'Debug'">false</HttpActivityPropagationSupport>
+    <MetadataUpdaterSupport Condition="'$(Configuration)' != 'Debug'">false</MetadataUpdaterSupport>
+    <UseSystemResourceKeys Condition="'$(Configuration)' != 'Debug'">true</UseSystemResourceKeys>
+    
+    <!-- Strip symbols and debug info from Release builds -->
+    <DebugType Condition="'$(Configuration)' != 'Debug'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' != 'Debug'">false</DebugSymbols>
+  </PropertyGroup>
+  
+  <!-- Runtime configuration for minor size optimization -->
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <RuntimeHostConfigurationOption Include="System.Globalization.PredefinedCulturesOnly" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MinThreads" Value="4" />
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MaxThreads" Value="25" />
+  </ItemGroup>
+</Project>

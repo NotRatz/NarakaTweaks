@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Naraka_Cheat_Detector.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Naraka_Cheat_Detector"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Naraka - System Inspector">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid>
+        <!-- Background image -->
+        <Image Source="Assets/background.png" Stretch="UniformToFill" Opacity="0.85"/>
+
+        <!-- Dark overlay -->
+        <Grid Background="#AA000000">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="3*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left control panel -->
+            <StackPanel Margin="36" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock Text="EGL - Morus Cup Tool" FontSize="28" FontWeight="Bold" Foreground="#FFBFEFFF" VerticalAlignment="Center" TextAlignment="Center"/>
+                    <Image Source="Assets/icon.png" Width="36" Height="36" Margin="12,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Text="System inspector and unauthorized software detection" Foreground="#FFDDEEFF" Opacity="0.9" TextAlignment="Center"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,18,0,0" HorizontalAlignment="Center">
+                    <Button x:Name="StartButton" Content="START SCAN" Width="220" Height="64" Click="StartButton_Click" Background="#0078D7" Foreground="White" FontSize="16" RenderTransformOrigin="0.5,0.5" PointerEntered="StartButton_PointerEntered" PointerExited="StartButton_PointerExited">
+                        <Button.RenderTransform>
+                            <ScaleTransform x:Name="StartButtonScale" ScaleX="1" ScaleY="1" />
+                        </Button.RenderTransform>
+                    </Button>
+
+                    <StackPanel Orientation="Vertical" Spacing="8" HorizontalAlignment="Center">
+                        <Button x:Name="CancelButton" Content="CANCEL" Width="120" Height="44" Click="CancelButton_Click" Background="#B32E2E" Foreground="White" FontSize="14" IsEnabled="False" />
+                        <Button x:Name="ExportButton" Content="EXPORT CSV" Width="120" Height="44" Click="ExportButton_Click" Background="#2E6DB3" Foreground="White" FontSize="14" />
+                    </StackPanel>
+
+                </StackPanel>
+
+                <ProgressBar x:Name="ScanProgress" Height="20" Minimum="0" Maximum="100" Value="0" Margin="0,18,0,0"/>
+                <TextBlock x:Name="StatusText" Text="Ready" Foreground="#FFEEF7FF" Opacity="0.95" TextAlignment="Center"/>
+
+                <TextBlock Text="By hitting start scan you consent to the use of this tool and scan." Foreground="#FFB0B7C7" FontStyle="Italic" Margin="0,18,0,0" TextAlignment="Center"/>
+
+                <Border Background="#22000000" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="Quick Summary" FontWeight="SemiBold" Foreground="#FFEFEFEF" TextAlignment="Center"/>
+                        <TextBlock x:Name="SummaryText" Text="No scan run yet." Foreground="#FFBFD3E6" TextAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- Right results panel -->
+            <Border Grid.Column="1" Margin="24" Background="#11000000" CornerRadius="10" Padding="12">
+                <StackPanel>
+                    <TextBlock Text="Scan Results" FontSize="20" FontWeight="SemiBold" Foreground="#FFEBFAFF" Margin="6" HorizontalAlignment="Center"/>
+
+                    <ListView x:Name="ResultsList" Margin="0,8,0,0" SelectionMode="Single">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:DetectionResult">
+                                <Border Padding="10" Margin="6" Background="#22000000" CornerRadius="6">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse Width="12" Height="12" Fill="{x:Bind StatusBrush}" Margin="0,0,8,0"/>
+                                            <TextBlock Text="{x:Bind Method}" FontWeight="SemiBold" Foreground="#FFFFFFFF" />
+                                            <TextBlock Text="  "/>
+                                            <TextBlock Text="{x:Bind Status}" FontWeight="Bold" Foreground="{x:Bind StatusBrush}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{x:Bind Details}" Foreground="#FFBFD3E6" TextWrapping="WrapWholeWords" Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
