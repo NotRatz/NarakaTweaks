@@ -28,8 +28,8 @@
 
   <!-- Exclude legacy WinForms file from WinUI build (keeps file in repo for separate WinForms project or reference) -->
   <ItemGroup>
-    <Compile Remove="Compile\CheatDetectorGUI.cs" />
-    <None Include="Compile\CheatDetectorGUI.cs" />
+    <Compile Remove="CheatDetectorGUI.cs" />
+    <None Include="CheatDetectorGUI.cs" />
   </ItemGroup>
 
   <ItemGroup>
