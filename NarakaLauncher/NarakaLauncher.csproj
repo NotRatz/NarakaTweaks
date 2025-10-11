@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>..\icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Launcher.Shared\Launcher.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\background.png" Link="Assets\background.png" />
+    <Resource Include="..\icon.png" Link="Assets\icon.png" />
+  </ItemGroup>
+</Project>
