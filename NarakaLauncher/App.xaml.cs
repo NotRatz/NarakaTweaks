@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Windows;
 using Launcher.Shared.Configuration;
 using NarakaLauncher.Services;
@@ -12,10 +13,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        var viewModel = new MainWindowViewModel();
-        viewModel.StatusMessages.Add("Initializing launcher services...");
-        var bootstrapper = new BootstrapperService(new LauncherPaths());
-        bootstrapper.Initialize(message => viewModel.StatusMessages.Add(message));
+        var statusMessages = new ObservableCollection<string>();
+        statusMessages.Add("Initializing launcher services...");
+
+        var paths = new LauncherPaths();
+        var bootstrapper = new BootstrapperService(paths);
+        var bootstrapContext = bootstrapper.Initialize(message => statusMessages.Add(message));
+
+        var viewModel = new MainWindowViewModel(bootstrapContext, statusMessages);
 
         var shell = new MainWindow
         {

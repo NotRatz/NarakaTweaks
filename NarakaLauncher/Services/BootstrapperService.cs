@@ -25,11 +25,18 @@ public class BootstrapperService
         _fileSystem = fileSystem;
     }
 
-    public void Initialize(Action<string>? reportStatus = null)
+    public LauncherBootstrapContext Initialize(Action<string>? reportStatus = null)
     {
         reportStatus?.Invoke("Verifying configuration folders...");
         _fileSystem.EnsureDirectory(_paths.ConfigurationRoot);
         _fileSystem.EnsureDirectory(_paths.CacheRoot);
+        reportStatus?.Invoke("Configuration directories verified");
+
+        reportStatus?.Invoke("Loading configuration profile...");
+        var configurationStore = new LauncherConfigurationStore(_paths, _fileSystem);
+        var configuration = configurationStore.LoadOrCreateDefault(reportStatus);
         reportStatus?.Invoke("Configuration ready");
+
+        return new LauncherBootstrapContext(_paths, configuration, configurationStore);
     }
 }
