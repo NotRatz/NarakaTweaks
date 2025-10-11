@@ -4,7 +4,7 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
-    <ApplicationIcon>..\icon.ico</ApplicationIcon>
+    <ApplicationIcon>..\Assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="..\background.png" Link="Assets\background.png" />
-    <Resource Include="..\icon.png" Link="Assets\icon.png" />
+    <Resource Include="..\Assets\background.png" Link="Assets\background.png" />
+    <Resource Include="..\Assets\icon.png" Link="Assets\icon.png" />
   </ItemGroup>
 </Project>
