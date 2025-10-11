@@ -1,0 +1,60 @@
+<UserControl x:Class="NarakaLauncher.Views.Sections.AuthenticationSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="Authenticate with Discord"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Foreground="White" />
+            <TextBlock Text="{Binding Instructions}"
+                       Margin="0,8,0,0"
+                       TextWrapping="Wrap"
+                       Foreground="#C6C6C8" />
+        </StackPanel>
+        <Border Grid.Row="1"
+                Margin="0,24,0,0"
+                Padding="16"
+                Background="#2D2D30"
+                CornerRadius="8">
+            <StackPanel>
+                <TextBlock Text="Current client"
+                           Foreground="#8E8E93"
+                           FontSize="12" />
+                <TextBlock Text="{Binding SelectedClientName}"
+                           FontSize="18"
+                           Foreground="White"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="Required OAuth scopes"
+                           Margin="0,16,0,8"
+                           Foreground="#8E8E93"
+                           FontSize="12" />
+                <ItemsControl ItemsSource="{Binding PendingScopes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,4,0,4">
+                                <TextBlock Text="•"
+                                           Foreground="#C6C6C8"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Text="{Binding}"
+                                           Foreground="#C6C6C8" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="When you click 'Sign in' the launcher opens a browser session, stores the token securely, and closes automatically."
+                           Margin="0,16,0,0"
+                           TextWrapping="Wrap"
+                           Foreground="#8E8E93" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

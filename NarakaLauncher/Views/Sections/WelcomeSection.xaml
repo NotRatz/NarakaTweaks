@@ -1,0 +1,124 @@
+<UserControl x:Class="NarakaLauncher.Views.Sections.WelcomeSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="Welcome to NarakaTweaks"
+                       FontSize="26"
+                       FontWeight="SemiBold"
+                       Foreground="White" />
+            <TextBlock Text="Break free from the PowerShell bootstrap and manage every tweak from one launcher."
+                       Margin="0,4,0,0"
+                       Foreground="#C6C6C8"
+                       TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal"
+                        Margin="0,16,0,0">
+                <Border Background="#333336"
+                        Padding="12"
+                        CornerRadius="8">
+                    <StackPanel>
+                        <TextBlock Text="Launcher Version"
+                                   Foreground="#8E8E93"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding LauncherVersion}"
+                                   Foreground="White"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                    </StackPanel>
+                </Border>
+                <Border Background="#333336"
+                        Padding="12"
+                        CornerRadius="8"
+                        Margin="12,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Active Client"
+                                   Foreground="#8E8E93"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding ActiveClientName}"
+                                   Foreground="White"
+                                   FontSize="16"
+                                   FontWeight="SemiBold" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+        <Border Grid.Row="1"
+                Margin="0,24,0,24"
+                Padding="16"
+                Background="#2D2D30"
+                CornerRadius="8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Configuration"
+                               FontWeight="SemiBold"
+                               Foreground="White" />
+                    <TextBlock Text="Configuration directory"
+                               Foreground="#8E8E93"
+                               FontSize="12"
+                               Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ConfigurationDirectory}"
+                               TextWrapping="Wrap"
+                               Foreground="#C6C6C8" />
+                    <Button Content="Open configuration"
+                            Margin="0,12,0,0"
+                            Padding="12,6"
+                            Command="{Binding OpenConfigurationFolderCommand}" />
+                    <TextBlock Text="Cache directory"
+                               Foreground="#8E8E93"
+                               FontSize="12"
+                               Margin="0,16,0,0" />
+                    <TextBlock Text="{Binding CacheDirectory}"
+                               TextWrapping="Wrap"
+                               Foreground="#C6C6C8" />
+                    <Button Content="Open cache"
+                            Margin="0,12,0,0"
+                            Padding="12,6"
+                            Command="{Binding OpenCacheFolderCommand}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Margin="24,0,0,0">
+                    <TextBlock Text="Bootstrap status"
+                               FontWeight="SemiBold"
+                               Foreground="White" />
+                    <Border Margin="0,12,0,0"
+                            Background="#1F1F22"
+                            Padding="12"
+                            CornerRadius="6">
+                        <ItemsControl ItemsSource="{Binding StatusMessages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}"
+                                               Foreground="#C6C6C8"
+                                               Margin="0,2" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <CheckBox Content="Initial setup completed"
+                              Margin="0,16,0,0"
+                              Foreground="#C6C6C8"
+                              IsChecked="{Binding HasCompletedInitialSetup}" />
+                    <Button Content="View documentation"
+                            Margin="0,12,0,0"
+                            Padding="12,6"
+                            Command="{Binding OpenDocsCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+        <TextBlock Grid.Row="2"
+                   Text="Review each section in order to fully prepare NarakaTweaks for deployment."
+                   Foreground="#8E8E93" />
+    </Grid>
+</UserControl>
