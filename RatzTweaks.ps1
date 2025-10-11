@@ -2247,9 +2247,9 @@ function Get-SteamAccounts {
     }
 
 
-    $bgUrl = 'background.png'
+    $bgUrl = 'Assets/background.png'
     $ratzImg = 'ratznaked.jpg'
-    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/background.png' }
+    if (-not (Test-Path $bgUrl)) { $bgUrl = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/Assets/background.png' }
     if (-not (Test-Path $ratzImg)) { $ratzImg = 'https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/ratznaked.jpg' }
 
     # Option definitions
