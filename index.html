@@ -74,44 +74,8 @@ body{
       </div>
     </section>
     
-    <section class="mt-6">
-      <h2 class="text-xl font-semibold text-white mb-3">How to Run</h2>
-      <p class="text-gray-300 mb-4">
-        <strong class="text-yellow-400">Important:</strong> Open <strong>PowerShell as Administrator</strong>, then copy and paste one of the commands below:
-      </p>
-      
-      <!-- Command option 1 -->
-      <div class="bg-gray-900 rounded-lg p-4 mb-3 border border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm text-gray-400">Option 1 (Recommended):</span>
-          <button onclick="copyCommand('irm')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1 rounded">
-            Copy
-          </button>
-        </div>
-        <code id="cmd-irm" class="block bg-black text-green-400 px-3 py-2 rounded text-sm overflow-x-auto">irm https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex</code>
-      </div>
-      
-      <!-- Command option 2 -->
-      <div class="bg-gray-900 rounded-lg p-4 mb-3 border border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm text-gray-400">Option 2 (Alternative):</span>
-          <button onclick="copyCommand('iwr')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1 rounded">
-            Copy
-          </button>
-        </div>
-        <code id="cmd-iwr" class="block bg-black text-green-400 px-3 py-2 rounded text-sm overflow-x-auto">iwr -useb https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex</code>
-      </div>
-      
-      <div class="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 text-sm">
-        <p class="text-yellow-200">
-          💡 <strong>Tip:</strong> To open PowerShell as admin, press <kbd class="bg-gray-800 px-2 py-1 rounded">Win + X</kbd> then select "Windows PowerShell (Admin)" or "Terminal (Admin)"
-        </p>
-      </div>
-    </section>
-    
-     <div class="my-8 flex items-center justify-center gap-3">
-      <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-2 px-4 rounded" onclick="downloadLauncher()">Start (Download Launcher)</button>
-      <button class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded" onclick="revertTweaks()">Revert</button>
+     <div class="my-8 flex items-center justify-center">
+      <button class="bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 px-6 rounded text-lg" onclick="downloadLauncher()">Start (Download Launcher)</button>
     </div>
     
     <!-- Legacy Commands Section -->
@@ -152,32 +116,10 @@ body{
   </main>
 
   <script>
-const revertCmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command irm https://raw.githubusercontent.com/notratz/NarakaTweaks/main/RatzTweaks.ps1 | iex; Revert-OptionalTweaks";
-
 const legacyCommands = {
   irm: "irm https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex",
   iwr: "iwr -useb https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex"
 };
-
-function copyCommand(type) {
-  const cmd = legacyCommands[type];
-  navigator.clipboard.writeText(cmd).then(function(){
-    // Visual feedback
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.textContent = '✓ Copied!';
-    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-    btn.classList.add('bg-green-600');
-    setTimeout(function(){
-      btn.textContent = originalText;
-      btn.classList.remove('bg-green-600');
-      btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-    }, 2000);
-  }).catch(function(){
-    // Fallback: show prompt if clipboard fails
-    prompt('Copy this command:', cmd);
-  });
-}
 
 function copyLegacyCommand(type) {
   const cmd = legacyCommands[type];
@@ -196,15 +138,6 @@ function copyLegacyCommand(type) {
   }).catch(function(){
     // Fallback: show prompt if clipboard fails
     prompt('Copy this command:', cmd);
-  });
-}
-
-function copyAndRun(cmd){
-  navigator.clipboard.writeText(cmd).then(function(){
-    alert('Command Copied! \n\n' + cmd + '\n\nPress Win+R, paste the command, and press Enter to begin!');
-  }).catch(function(){
-    // Fallback: show prompt if clipboard fails
-    prompt('Copy and run this command:', cmd);
   });
 }
 
@@ -237,10 +170,6 @@ async function downloadLauncher() {
     window.open('https://github.com/notratz/NotNaraka-Launcher/releases/latest', '_blank');
     alert('Auto-download failed. You will be redirected to the releases page to download manually.');
   }
-}
-
-function revertTweaks(){
-  copyAndRun(revertCmd);
 }
 </script>
 </body>
