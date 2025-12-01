@@ -82,65 +82,12 @@ body{
     <section class="mt-6 border-t border-gray-600 pt-6">
       <h2 class="text-xl font-semibold text-white mb-3">Legacy Commands</h2>
       <p class="text-gray-400 mb-4 text-sm">
-        These are the original PowerShell commands that have been retired for the new NotNaraka Launcher method. They are provided here just for now, but will be removed shortly!
+        These are the original PowerShell commands that have been retired for the new NotNaraka Launcher method.
       </p>
-      
-      <!-- Legacy Command option 1 -->
-      <div class="bg-gray-900 rounded-lg p-4 mb-3 border border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm text-gray-400">Legacy Option 1:</span>
-          <button onclick="copyLegacyCommand('irm')" class="bg-gray-600 hover:bg-gray-500 text-white text-xs font-semibold px-3 py-1 rounded">
-            Copy
-          </button>
-        </div>
-        <code id="legacy-cmd-irm" class="block bg-black text-green-400 px-3 py-2 rounded text-sm overflow-x-auto">irm https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex</code>
-      </div>
-      
-      <!-- Legacy Command option 2 -->
-      <div class="bg-gray-900 rounded-lg p-4 mb-3 border border-gray-700">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm text-gray-400">Legacy Option 2:</span>
-          <button onclick="copyLegacyCommand('iwr')" class="bg-gray-600 hover:bg-gray-500 text-white text-xs font-semibold px-3 py-1 rounded">
-            Copy
-          </button>
-        </div>
-        <code id="legacy-cmd-iwr" class="block bg-black text-green-400 px-3 py-2 rounded text-sm overflow-x-auto">iwr -useb https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex</code>
-      </div>
-      
-      <div class="bg-blue-900/30 border border-blue-600 rounded-lg p-3 text-sm">
-        <p class="text-blue-200">
-          ℹ️ <strong>Note:</strong> These legacy commands require opening PowerShell as Administrator manually.
-        </p>
-      </div>
     </section>
   </main>
 
   <script>
-const legacyCommands = {
-  irm: "irm https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex",
-  iwr: "iwr -useb https://raw.githubusercontent.com/NotRatz/NarakaTweaks/main/RatzTweaks.ps1 | iex"
-};
-
-function copyLegacyCommand(type) {
-  const cmd = legacyCommands[type];
-  navigator.clipboard.writeText(cmd).then(function(){
-    // Visual feedback
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.textContent = '✓ Copied!';
-    btn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
-    btn.classList.add('bg-green-600');
-    setTimeout(function(){
-      btn.textContent = originalText;
-      btn.classList.remove('bg-green-600');
-      btn.classList.add('bg-gray-600', 'hover:bg-gray-500');
-    }, 2000);
-  }).catch(function(){
-    // Fallback: show prompt if clipboard fails
-    prompt('Copy this command:', cmd);
-  });
-}
-
 async function downloadLauncher() {
   try {
     // Get the latest release from GitHub API
